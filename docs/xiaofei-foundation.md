@@ -1,0 +1,69 @@
+# Xiaofei domain foundation
+
+This is the first intentionally small extraction from the historical
+`xiaofei-harness` requirements. It establishes owned product contracts without
+copying the exploration demos or choosing a workflow engine prematurely.
+
+## Product boundary
+
+The long-term product is an Agent control plane. Customer support is its first
+validation scenario, not the whole platform. The stable core is:
+
+```text
+Agent configuration
+  → conversation admission and ownership
+  → session state
+  → knowledge and policy decisions
+  → guarded response or human handoff
+  → business-readable trace and evaluation
+```
+
+Frameworks such as Mastra or LangGraph will implement runtime adapters behind
+these contracts. Next.js and oRPC expose product surfaces. None of those
+frameworks owns the domain model.
+
+## Included in this increment
+
+`@repo/xiaofei` now owns the first contracts:
+
+- `AgentProfile`: tenant-scoped identity, lifecycle, language and safety bounds;
+- `ConversationState`: owner, owner epoch, stage, slots, risk and next action;
+- `AiRunLease`: the ownership epoch captured when an AI run starts;
+- `HandoffPackage`: the minimum context delivered to a human operator;
+- `TraceEvent`: a business-readable event envelope for future persistence;
+- pure ownership and handoff transitions.
+
+The hard invariant is that every owner change increments `ownerEpoch`. An AI run
+may send a reply only when its lease still matches the conversation. Human
+takeover or conversation closure therefore invalidates stale model output
+without depending on a prompt.
+
+This maps to the source requirements for session state, admission and handling
+rights, human handoff, response blocking, and execution records.
+
+## Deliberately not included
+
+This increment does not add:
+
+- Prisma tables or Redis state;
+- a knowledge ingestion pipeline, embeddings or RAG;
+- Mastra/LangGraph workflows;
+- Tool execution or external customer-service adapters;
+- a complete Agent Center UI;
+- evaluation runners or release gates.
+
+Adding these together would freeze demo assumptions into the product boundary.
+
+## Next thin slice
+
+The next recommended increment is conversation persistence plus one protected
+oRPC read/write boundary:
+
+1. persist `ConversationState` and `ownerEpoch`;
+2. acquire an `AiRunLease` before invoking the model;
+3. authorize the reply again immediately before streaming/sending;
+4. expose explicit human takeover and return-to-AI operations;
+5. record ownership and handoff `TraceEvent` entries.
+
+Only after this state/ownership path is proven should the project add the first
+structured `KnowledgeUnit` and a single low-risk information-gathering workflow.
