@@ -1,3 +1,4 @@
+import { getAllowedAppHosts } from "@repo/utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getBaseUrl } from "./base-url";
@@ -8,8 +9,11 @@ describe("getBaseUrl (saas)", () => {
 	beforeEach(() => {
 		process.env = { ...originalEnv };
 		delete process.env.NEXT_PUBLIC_SAAS_URL;
+		delete process.env.NEXT_PUBLIC_VERCEL_BRANCH_URL;
+		delete process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL;
 		delete process.env.NEXT_PUBLIC_VERCEL_URL;
 		delete process.env.VERCEL_BRANCH_URL;
+		delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
 		delete process.env.VERCEL_URL;
 		delete process.env.PORT;
 	});
@@ -56,5 +60,25 @@ describe("getBaseUrl (saas)", () => {
 		process.env.VERCEL_URL = "xiaofei-preview.vercel.app";
 		process.env.NEXT_PUBLIC_VERCEL_URL = "my-app.vercel.app";
 		expect(getBaseUrl()).toBe("https://app.example.com");
+	});
+
+	it("allows the exact production, branch, and deployment hosts on Vercel", () => {
+		process.env = { ...process.env, NODE_ENV: "production" };
+		process.env.VERCEL_PROJECT_PRODUCTION_URL = "xiaofei-preview.vercel.app";
+		process.env.VERCEL_BRANCH_URL = "xiaofei-preview-git-feature-flyranking16.vercel.app";
+		process.env.VERCEL_URL = "xiaofei-preview-abc123-flyranking16.vercel.app";
+
+		expect(getAllowedAppHosts()).toEqual([
+			"xiaofei-preview.vercel.app",
+			"xiaofei-preview-git-feature-flyranking16.vercel.app",
+			"xiaofei-preview-abc123-flyranking16.vercel.app",
+		]);
+	});
+
+	it("normalizes configured URLs and removes duplicate hosts", () => {
+		process.env = { ...process.env, NODE_ENV: "production" };
+		process.env.VERCEL_PROJECT_PRODUCTION_URL = "app.example.com";
+
+		expect(getAllowedAppHosts("https://app.example.com/path")).toEqual(["app.example.com"]);
 	});
 });
