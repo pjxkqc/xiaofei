@@ -1,0 +1,81 @@
+name: quality
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  BETTER_AUTH_SECRET: "github-actions-only-secret-with-at-least-32-characters"
+  DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/xiaofei_ci"
+  DIRECT_URL: "postgresql://postgres:postgres@127.0.0.1:5432/xiaofei_ci"
+  MAIL_FROM: "noreply@example.test"
+  MAIL_PROVIDER: "console"
+  NEXT_PUBLIC_MARKETING_URL: "http://localhost:3001"
+  NEXT_PUBLIC_SAAS_URL: "http://localhost:3000"
+  OPENAI_API_KEY: "github-actions-placeholder"
+
+jobs:
+  verify:
+    name: lint-type-test-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: xiaofei_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xiaofei_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Enable the locked pnpm version
+        run: corepack enable && corepack prepare pnpm@11.3.0 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Initialize the isolated CI database
+        run: pnpm --filter @repo/database push
+      - name: Lint
+        run: pnpm lint
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Type check
+        run: pnpm type-check
+      - name: Unit tests
+        run: pnpm test
+      - name: Build all applications
+        run: pnpm build
+      - name: Install Chromium
+        run: pnpm --filter saas exec playwright install --with-deps chromium
+      - name: SaaS browser tests
+        run: pnpm --filter saas exec playwright test --project chromium
+      - name: Marketing browser tests
+        run: pnpm --filter marketing exec playwright test --project chromium
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: |
+            apps/saas/playwright-report/
+            apps/marketing/playwright-report/
+          retention-days: 30
