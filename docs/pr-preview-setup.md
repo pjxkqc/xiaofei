@@ -38,6 +38,15 @@ Vercel's Git integration supplies the Preview deployment status after the projec
 is imported. Configure branch protection after the first real PR so both the
 `lint-type-test-build` check and the Vercel deployment are required.
 
+## Current cloud resources
+
+- Vercel project: `flyranking16/xiaofei-preview`
+- Production URL: `https://xiaofei-preview.vercel.app`
+- Neon project: `neon-bronze-paddle` in AWS Singapore
+- Neon plan: Free, with no payment method configured
+- Neon integration: Production and Preview environments connected, with an
+  isolated database branch created for each Preview deployment
+
 ## Signup behavior
 
 `packages/auth/config.ts` sets `requireEmailVerification` to `false`. Password
