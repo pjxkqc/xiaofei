@@ -20,6 +20,11 @@ runPnpm(["--filter", "@repo/database", "push"], {
 	DATABASE_URL: schemaDatabaseUrl,
 });
 
+runPnpm(["--filter", "@repo/database", "generate"], {
+	...process.env,
+	DATABASE_URL: schemaDatabaseUrl,
+});
+
 runPnpm(["--filter", "saas", "build"], {
 	...process.env,
 	DATABASE_URL: runtimeDatabaseUrl,
