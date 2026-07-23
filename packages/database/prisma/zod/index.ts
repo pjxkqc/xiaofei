@@ -82,6 +82,18 @@ export const UserNotificationPreferenceScalarFieldEnumSchema = z.enum(['id', 'us
 
 export type UserNotificationPreferenceScalarFieldEnum = z.infer<typeof UserNotificationPreferenceScalarFieldEnumSchema>;
 
+// File: XiaofeiWorkspaceScalarFieldEnum.schema.ts
+
+export const XiaofeiWorkspaceScalarFieldEnumSchema = z.enum(['id', 'tenantKey', 'snapshot', 'createdAt', 'updatedAt'])
+
+export type XiaofeiWorkspaceScalarFieldEnum = z.infer<typeof XiaofeiWorkspaceScalarFieldEnumSchema>;
+
+// File: XiaofeiConversationScalarFieldEnum.schema.ts
+
+export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'externalId', 'state', 'traceEvents', 'createdAt', 'updatedAt'])
+
+export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversationScalarFieldEnumSchema>;
+
 // File: SortOrder.schema.ts
 
 export const SortOrderSchema = z.enum(['asc', 'desc'])
@@ -327,3 +339,31 @@ export const UserNotificationPreferenceSchema = z.object({
 });
 
 export type UserNotificationPreferenceType = z.infer<typeof UserNotificationPreferenceSchema>;
+
+
+// File: XiaofeiWorkspace.schema.ts
+
+export const XiaofeiWorkspaceSchema = z.object({
+  id: z.string(),
+  tenantKey: z.string(),
+  snapshot: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiWorkspaceType = z.infer<typeof XiaofeiWorkspaceSchema>;
+
+
+// File: XiaofeiConversation.schema.ts
+
+export const XiaofeiConversationSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  externalId: z.string(),
+  state: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  traceEvents: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").default("[]"),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiConversationType = z.infer<typeof XiaofeiConversationSchema>;

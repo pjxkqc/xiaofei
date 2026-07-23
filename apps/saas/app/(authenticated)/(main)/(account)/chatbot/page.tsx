@@ -1,16 +1,18 @@
-import { AiChat } from "@ai/components/AiChat";
+import { XiaofeiAgentConsole } from "@ai/components/XiaofeiAgentConsole";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default async function AiDemoPage() {
 	return (
 		<>
 			<PageHeader
-				title="AI Chatbot"
-				subtitle="This is an example chatbot built with the OpenAI API"
-				className="max-w-3xl mx-auto"
+				title="Xiaofei Agent"
+				subtitle="Configure Knowledge Units and validate the governed P0 runtime in one place."
+				className="max-w-7xl mx-auto"
 			/>
 
-			<AiChat />
+			<div className="max-w-7xl mx-auto">
+				<XiaofeiAgentConsole />
+			</div>
 		</>
 	);
 }

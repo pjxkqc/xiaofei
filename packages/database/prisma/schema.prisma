@@ -241,3 +241,30 @@ model UserNotificationPreference {
   @@unique([userId, type, target])
   @@map("user_notification_preference")
 }
+
+model XiaofeiWorkspace {
+  id        String   @id @default(cuid())
+  tenantKey String   @unique
+  snapshot  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations XiaofeiConversation[]
+
+  @@map("xiaofei_workspace")
+}
+
+model XiaofeiConversation {
+  id             String            @id @default(cuid())
+  workspaceId    String
+  workspace      XiaofeiWorkspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  externalId     String
+  state          Json
+  traceEvents    Json              @default("[]")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId])
+  @@map("xiaofei_conversation")
+}

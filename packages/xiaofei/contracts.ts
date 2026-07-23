@@ -1,7 +1,10 @@
 import { z } from "zod";
 
+export const RuntimeKindSchema = z.enum(["mastra", "langgraph"]);
+export const GateStatusSchema = z.enum(["passed", "warning", "blocked"]);
 export const AgentLifecycleStatusSchema = z.enum(["draft", "review_ready", "released", "blocked"]);
 export const OwnerTypeSchema = z.enum(["ai", "human", "workflow", "closed"]);
+export const AiModeSchema = z.enum(["auto_handle", "monitor", "copilot", "draft"]);
 export const ConversationStageSchema = z.enum([
 	"admission",
 	"info_gathering",
@@ -33,12 +36,103 @@ export const AgentProfileSchema = z.object({
 	name: z.string().min(1),
 	status: AgentLifecycleStatusSchema,
 	version: z.string().min(1),
+	runtime: RuntimeKindSchema.default("langgraph"),
+	instructions: z.string().min(1),
 	serviceScopes: z.array(z.string().min(1)).default([]),
 	supportedLanguages: z.array(z.string().min(1)).default([]),
 	fallbackLanguage: z.string().min(1),
 	maxFollowUps: z.number().int().nonnegative(),
 	forbiddenOutputs: z.array(z.string().min(1)).default([]),
 	handoffRules: z.array(z.string().min(1)).default([]),
+});
+
+export const RequiredSlotSchema = z.object({
+	key: z.string().min(1),
+	label: z.string().min(1),
+	askText: z.string().min(1),
+	required: z.boolean().default(true),
+});
+
+export const KnowledgeQualitySchema = z.object({
+	status: GateStatusSchema,
+	blockers: z.array(z.string().min(1)).default([]),
+	warnings: z.array(z.string().min(1)).default([]),
+});
+
+export const KnowledgeUnitSchema = z.object({
+	id: z.string().min(1),
+	title: z.string().min(1),
+	status: AgentLifecycleStatusSchema,
+	scenarioKeywords: z.array(z.string().min(1)).default([]),
+	applicableScenarios: z.array(z.string().min(1)).default([]),
+	inapplicableScenarios: z.array(z.string().min(1)).default([]),
+	requiredSlots: z.array(RequiredSlotSchema).default([]),
+	forbiddenOutputs: z.array(z.string().min(1)).default([]),
+	handoffRules: z.array(z.string().min(1)).default([]),
+	standardReplyPolicy: z.string().min(1),
+	fallbackReply: z.string().min(1),
+	sourceSection: z.string().min(1),
+	quality: KnowledgeQualitySchema,
+});
+
+export const GuardrailPolicySchema = z.object({
+	forbiddenPhrases: z.array(z.string().min(1)).default([]),
+	handoffKeywords: z.array(z.string().min(1)).default([]),
+	requireReleasedKnowledge: z.boolean().default(true),
+});
+
+export const ToolDefinitionSchema = z.object({
+	id: z.string().min(1),
+	name: z.string().min(1),
+	category: z.enum(["adapter", "business_api", "action", "observer"]),
+	riskLevel: RiskLevelSchema,
+	status: z.enum(["available", "approval_required", "blocked"]),
+	description: z.string().min(1),
+});
+
+export const CapabilityPlanSchema = z.object({
+	takeoverScenarios: z.array(z.string().min(1)).default([]),
+	rejectScenarios: z.array(z.string().min(1)).default([]),
+	actionBoundaries: z.array(z.string().min(1)).default([]),
+	handoffBoundaries: z.array(z.string().min(1)).default([]),
+});
+
+export const EvalCaseResultSchema = z.object({
+	id: z.string().min(1),
+	title: z.string().min(1),
+	passed: z.boolean(),
+	expectedAction: NextActionSchema,
+	actualAction: NextActionSchema,
+	expectedOwner: OwnerTypeSchema,
+	actualOwner: OwnerTypeSchema,
+	failures: z.array(z.string()).default([]),
+});
+
+export const EvalSuiteSchema = z.object({
+	status: GateStatusSchema,
+	passed: z.number().int().nonnegative(),
+	failed: z.number().int().nonnegative(),
+	cases: z.array(EvalCaseResultSchema).default([]),
+	updatedAt: z.string().min(1),
+});
+
+export const ReleaseGateSchema = z.object({
+	id: z.string().min(1),
+	label: z.string().min(1),
+	status: GateStatusSchema,
+	detail: z.string().min(1),
+});
+
+export const XiaofeiWorkspaceSnapshotSchema = z.object({
+	agent: AgentProfileSchema,
+	knowledgeMarkdown: z.string().min(1),
+	knowledgeUnits: z.array(KnowledgeUnitSchema),
+	guardrails: GuardrailPolicySchema,
+	tools: z.array(ToolDefinitionSchema),
+	capabilityPlan: CapabilityPlanSchema,
+	evalSuite: EvalSuiteSchema,
+	gates: z.array(ReleaseGateSchema),
+	updatedAt: z.string().min(1),
 });
 
 export const SlotValueSchema = z.object({
@@ -52,6 +146,7 @@ export const SlotValueSchema = z.object({
 export const HandoffPackageSchema = z.object({
 	summary: z.string().min(1),
 	reason: z.string().min(1),
+	scenario: z.string().nullable().default(null),
 	riskLevel: RiskLevelSchema,
 	collectedSlots: z
 		.array(
@@ -73,15 +168,19 @@ export const ConversationStateSchema = z.object({
 	agentId: z.string().min(1),
 	ownerType: OwnerTypeSchema,
 	ownerEpoch: z.number().int().nonnegative(),
+	aiMode: AiModeSchema.default("auto_handle"),
 	stage: ConversationStageSchema,
 	scenario: z.string().nullable(),
+	matchedKnowledgeId: z.string().nullable().default(null),
 	slots: z.record(z.string(), SlotValueSchema).default({}),
 	missingSlots: z.array(z.string().min(1)).default([]),
 	riskLevel: RiskLevelSchema,
 	nextAction: NextActionSchema,
 	remainingFollowUps: z.number().int().nonnegative(),
+	handoffReason: z.string().optional(),
 	handoffPackage: HandoffPackageSchema.optional(),
 	sendBlockedReasons: z.array(z.string().min(1)).default([]),
+	lastReply: z.string().optional(),
 	updatedAt: z.string().min(1),
 });
 
@@ -95,13 +194,18 @@ export const TraceEventSchema = z.object({
 	conversationId: z.string().min(1),
 	at: z.string().min(1),
 	type: z.enum([
+		"mastra",
+		"langgraph",
 		"admission",
 		"owner",
 		"runtime",
 		"knowledge",
+		"slot",
 		"policy",
 		"guardrail",
 		"handoff",
+		"delivery",
+		"eval",
 		"adapter",
 	]),
 	title: z.string().min(1),
@@ -109,9 +213,38 @@ export const TraceEventSchema = z.object({
 	payload: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const RuntimeMetadataSchema = z.object({
+	runtime: RuntimeKindSchema,
+	knowledgeTitle: z.string().nullable(),
+	nextAction: NextActionSchema,
+	riskLevel: RiskLevelSchema,
+	ownerType: OwnerTypeSchema,
+	stage: ConversationStageSchema,
+	missingSlots: z.array(z.string()),
+	traces: z.array(TraceEventSchema),
+});
+
+export const RuntimeTurnResultSchema = z.object({
+	reply: z.string(),
+	state: ConversationStateSchema,
+	metadata: RuntimeMetadataSchema,
+});
+
+export type RuntimeKind = z.infer<typeof RuntimeKindSchema>;
+export type GateStatus = z.infer<typeof GateStatusSchema>;
 export type AgentLifecycleStatus = z.infer<typeof AgentLifecycleStatusSchema>;
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+export type RequiredSlot = z.infer<typeof RequiredSlotSchema>;
+export type KnowledgeUnit = z.infer<typeof KnowledgeUnitSchema>;
+export type GuardrailPolicy = z.infer<typeof GuardrailPolicySchema>;
+export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
+export type CapabilityPlan = z.infer<typeof CapabilityPlanSchema>;
+export type EvalCaseResult = z.infer<typeof EvalCaseResultSchema>;
+export type EvalSuite = z.infer<typeof EvalSuiteSchema>;
+export type ReleaseGate = z.infer<typeof ReleaseGateSchema>;
+export type XiaofeiWorkspaceSnapshot = z.infer<typeof XiaofeiWorkspaceSnapshotSchema>;
 export type OwnerType = z.infer<typeof OwnerTypeSchema>;
+export type AiMode = z.infer<typeof AiModeSchema>;
 export type ConversationStage = z.infer<typeof ConversationStageSchema>;
 export type SlotStatus = z.infer<typeof SlotStatusSchema>;
 export type SlotValue = z.infer<typeof SlotValueSchema>;
@@ -121,3 +254,5 @@ export type HandoffPackage = z.infer<typeof HandoffPackageSchema>;
 export type ConversationState = z.infer<typeof ConversationStateSchema>;
 export type AiRunLease = z.infer<typeof AiRunLeaseSchema>;
 export type TraceEvent = z.infer<typeof TraceEventSchema>;
+export type RuntimeMetadata = z.infer<typeof RuntimeMetadataSchema>;
+export type RuntimeTurnResult = z.infer<typeof RuntimeTurnResultSchema>;
