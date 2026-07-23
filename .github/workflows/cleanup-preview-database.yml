@@ -1,0 +1,27 @@
+name: cleanup-preview-database
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-neon-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: delete-neon-preview-branch
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITHUB_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Delete the disposable Neon branch
+        run: node scripts/cleanup-neon-preview.mjs
