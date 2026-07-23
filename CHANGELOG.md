@@ -879,8 +879,8 @@ All Biome configurations have been standardized across the monorepo for consiste
 1. If you have custom Biome rules, ensure they follow the new pattern:
    ```json
    {
-     "root": false,
-     "extends": "//"
+   	"root": false,
+   	"extends": "//"
    }
    ```
 2. Run `pnpm format` to apply new formatting rules
