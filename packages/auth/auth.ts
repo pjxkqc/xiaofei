@@ -12,7 +12,7 @@ import { logger } from "@repo/logs";
 import { sendEmail } from "@repo/mail";
 import { createWelcomeNotification } from "@repo/notifications";
 import { cancelSubscription } from "@repo/payments";
-import { getBaseUrl } from "@repo/utils";
+import { getAllowedAppHosts, getBaseUrl } from "@repo/utils";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { createAuthMiddleware } from "better-auth/api";
@@ -28,12 +28,14 @@ const getLocaleFromRequest = (request?: Request) => {
 	return (cookies[i18nConfig.localeCookieName] as Locale) ?? i18nConfig.defaultLocale;
 };
 
-const appUrl = getBaseUrl(process.env.NEXT_PUBLIC_SAAS_URL, 3000);
+const allowedAppHosts = getAllowedAppHosts(process.env.NEXT_PUBLIC_SAAS_URL, 3000);
 const requireEmailVerification = config.enableSignup && config.requireEmailVerification;
 
 export const auth = betterAuth({
-	baseURL: appUrl,
-	trustedOrigins: [appUrl],
+	baseURL: {
+		allowedHosts: allowedAppHosts,
+		protocol: "auto",
+	},
 	database: prismaAdapter(db, {
 		provider: "postgresql",
 	}),
