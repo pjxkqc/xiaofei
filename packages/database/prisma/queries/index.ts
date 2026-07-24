@@ -1,3 +1,4 @@
+export * from "./knowledge-documents";
 export * from "./notifications";
 export * from "./organizations";
 export * from "./purchases";

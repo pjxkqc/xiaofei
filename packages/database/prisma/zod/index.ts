@@ -94,6 +94,12 @@ export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspace
 
 export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversationScalarFieldEnumSchema>;
 
+// File: KnowledgeDocumentScalarFieldEnum.schema.ts
+
+export const KnowledgeDocumentScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'originalFileName', 'type', 'category', 'extractedBody', 'status', 'createdAt', 'updatedAt'])
+
+export type KnowledgeDocumentScalarFieldEnum = z.infer<typeof KnowledgeDocumentScalarFieldEnumSchema>;
+
 // File: SortOrder.schema.ts
 
 export const SortOrderSchema = z.enum(['asc', 'desc'])
@@ -141,6 +147,18 @@ export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NotificationTargetSchema = z.enum(['IN_APP', 'EMAIL'])
 
 export type NotificationTarget = z.infer<typeof NotificationTargetSchema>;
+
+// File: KnowledgeDocumentType.schema.ts
+
+export const KnowledgeDocumentTypeSchema = z.enum(['MARKDOWN', 'TEXT', 'DOCX'])
+
+export type KnowledgeDocumentType = z.infer<typeof KnowledgeDocumentTypeSchema>;
+
+// File: KnowledgeDocumentCategory.schema.ts
+
+export const KnowledgeDocumentCategorySchema = z.enum(['PRESALES', 'POSTSALES'])
+
+export type KnowledgeDocumentCategory = z.infer<typeof KnowledgeDocumentCategorySchema>;
 
 // File: User.schema.ts
 
@@ -374,3 +392,20 @@ export const XiaofeiConversationSchema = z.object({
 });
 
 export type XiaofeiConversationType = z.infer<typeof XiaofeiConversationSchema>;
+
+
+// File: KnowledgeDocument.schema.ts
+
+export const KnowledgeDocumentSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  originalFileName: z.string(),
+  type: KnowledgeDocumentTypeSchema,
+  category: KnowledgeDocumentCategorySchema,
+  extractedBody: z.string(),
+  status: z.string().default("draft"),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type KnowledgeDocumentModel = z.infer<typeof KnowledgeDocumentSchema>;

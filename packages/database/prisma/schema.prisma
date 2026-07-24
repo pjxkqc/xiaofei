@@ -250,6 +250,7 @@ model XiaofeiWorkspace {
   updatedAt DateTime @updatedAt
 
   conversations XiaofeiConversation[]
+  documents     KnowledgeDocument[]
 
   @@map("xiaofei_workspace")
 }
@@ -275,4 +276,32 @@ model XiaofeiConversation {
   @@index([workspaceId])
   @@index([workspaceId, updatedAt])
   @@map("xiaofei_conversation")
+}
+
+enum KnowledgeDocumentType {
+  MARKDOWN
+  TEXT
+  DOCX
+}
+
+enum KnowledgeDocumentCategory {
+  PRESALES
+  POSTSALES
+}
+
+model KnowledgeDocument {
+  id               String                    @id @default(cuid())
+  workspaceId      String
+  workspace        XiaofeiWorkspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  originalFileName String
+  type             KnowledgeDocumentType
+  category         KnowledgeDocumentCategory
+  extractedBody    String                    @db.Text
+  status           String                    @default("draft")
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, updatedAt])
+  @@map("knowledge_document")
 }
