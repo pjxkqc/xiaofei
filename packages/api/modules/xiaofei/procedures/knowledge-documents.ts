@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
 import {
+	knowledgeDocumentIdSchema,
+	knowledgeDocumentListInputSchema,
+} from "../knowledge-document-input";
+import {
 	MAX_KNOWLEDGE_BODY_CHARACTERS,
 	createKnowledgeDocument,
 	deleteKnowledgeDocumentForTenant,
@@ -10,7 +14,6 @@ import {
 	updateKnowledgeDocumentForTenant,
 } from "../knowledge-documents";
 
-const documentIdSchema = z.string().cuid();
 const fileNameSchema = z.string().trim().min(1).max(255);
 const categorySchema = z.enum(["PRESALES", "POSTSALES"]);
 const statusSchema = z.enum(["draft", "active", "archived"]);
@@ -39,7 +42,8 @@ export const listKnowledgeDocumentsProcedure = supportProcedure
 		tags: ["Xiaofei Knowledge"],
 		summary: "List tenant knowledge documents",
 	})
-	.handler(async ({ context }) => await listKnowledgeDocuments(context));
+	.input(knowledgeDocumentListInputSchema)
+	.handler(async ({ context, input }) => await listKnowledgeDocuments(context, input));
 
 export const getKnowledgeDocumentProcedure = supportProcedure
 	.route({
@@ -48,7 +52,7 @@ export const getKnowledgeDocumentProcedure = supportProcedure
 		tags: ["Xiaofei Knowledge"],
 		summary: "Get a tenant knowledge document",
 	})
-	.input(z.object({ id: documentIdSchema }))
+	.input(z.object({ id: knowledgeDocumentIdSchema }))
 	.handler(async ({ context, input }) => await getKnowledgeDocument(context, input.id));
 
 export const updateKnowledgeDocumentProcedure = supportProcedure
@@ -61,7 +65,7 @@ export const updateKnowledgeDocumentProcedure = supportProcedure
 	.input(
 		z
 			.object({
-				id: documentIdSchema,
+				id: knowledgeDocumentIdSchema,
 				originalFileName: fileNameSchema.optional(),
 				category: categorySchema.optional(),
 				bodyText: z.string().trim().min(1).max(MAX_KNOWLEDGE_BODY_CHARACTERS).optional(),
@@ -84,5 +88,5 @@ export const deleteKnowledgeDocumentProcedure = supportProcedure
 		tags: ["Xiaofei Knowledge"],
 		summary: "Delete a tenant knowledge document",
 	})
-	.input(z.object({ id: documentIdSchema }))
+	.input(z.object({ id: knowledgeDocumentIdSchema }))
 	.handler(async ({ context, input }) => await deleteKnowledgeDocumentForTenant(context, input.id));

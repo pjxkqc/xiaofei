@@ -32,6 +32,8 @@ The pages can:
 - persist public customer/human messages and poll the shared channel without
   introducing a second realtime stack.
 - upload, inspect, edit, change lifecycle status, and delete source documents.
+- page through bounded metadata-only document lists while loading body text
+  only for the selected document.
 
 The browser never receives model keys or database credentials.
 

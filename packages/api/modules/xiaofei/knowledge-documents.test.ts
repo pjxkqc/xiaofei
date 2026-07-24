@@ -8,6 +8,8 @@ vi.mock("@repo/database", () => ({
 	getXiaofeiKnowledgeDocument: vi.fn(),
 	listXiaofeiKnowledgeDocuments: vi.fn(),
 	updateXiaofeiKnowledgeDocument: vi.fn(),
+	DEFAULT_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE: 25,
+	MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE: 50,
 	XiaofeiKnowledgeDocumentCategory: {
 		PRESALES: "PRESALES",
 		POSTSALES: "POSTSALES",
@@ -16,6 +18,14 @@ vi.mock("@repo/database", () => ({
 		MARKDOWN: "MARKDOWN",
 		TEXT: "TEXT",
 		DOCX: "DOCX",
+	},
+	XiaofeiKnowledgeDocumentQuotaError: class XiaofeiKnowledgeDocumentQuotaError extends Error {
+		constructor(
+			readonly quota: "document_count" | "stored_body_bytes",
+			readonly limit: number,
+		) {
+			super("Knowledge document quota reached.");
+		}
 	},
 }));
 
@@ -33,9 +43,11 @@ import {
 	getXiaofeiKnowledgeDocument,
 	listXiaofeiKnowledgeDocuments,
 	updateXiaofeiKnowledgeDocument,
+	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
+import { knowledgeDocumentListInputSchema } from "./knowledge-document-input";
 import {
 	createKnowledgeDocument,
 	deleteKnowledgeDocumentForTenant,
@@ -173,6 +185,77 @@ describe("knowledge document application boundary", () => {
 		).rejects.toBeInstanceOf(ORPCError);
 	});
 
+	it("rejects out-of-range DOCX numeric entities with a safe bad-request error", async () => {
+		const docx = zipSync({
+			"word/document.xml": strToU8(
+				`<w:document><w:body><w:p><w:r><w:t>&#999999999;</w:t></w:r></w:p></w:body></w:document>`,
+			),
+		});
+
+		await expect(
+			createKnowledgeDocument(USER_CONTEXT, {
+				originalFileName: "invalid-entity.docx",
+				mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				category: "PRESALES",
+				contentBase64: Buffer.from(docx).toString("base64"),
+			}),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining("DOCX file is malformed"),
+		});
+	});
+
+	it.each([
+		{ quota: "document_count" as const, limit: 100, message: "100 knowledge documents" },
+		{ quota: "stored_body_bytes" as const, limit: 20 * 1024 * 1024, message: "20 MB" },
+	])("maps $quota quota errors to safe bad-request messages", async (example) => {
+		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValueOnce(
+			Promise.reject(new XiaofeiKnowledgeDocumentQuotaError(example.quota, example.limit)) as never,
+		);
+
+		await expect(
+			createKnowledgeDocument(USER_CONTEXT, {
+				originalFileName: "guide.txt",
+				mimeType: "text/plain",
+				category: "PRESALES",
+				contentBase64: Buffer.from("content").toString("base64"),
+			}),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining(example.message),
+		});
+	});
+
+	it("maps a body-update storage quota error without misreporting not found", async () => {
+		vi.mocked(getXiaofeiKnowledgeDocument).mockResolvedValueOnce({
+			id: "document-1",
+		} as never);
+		vi.mocked(updateXiaofeiKnowledgeDocument).mockReturnValueOnce(
+			Promise.reject(
+				new XiaofeiKnowledgeDocumentQuotaError("stored_body_bytes", 20 * 1024 * 1024),
+			) as never,
+		);
+
+		await expect(
+			updateKnowledgeDocumentForTenant(USER_CONTEXT, "document-1", {
+				bodyText: "replacement",
+			}),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining("20 MB"),
+		});
+	});
+
+	it("validates list cursors and limits at the procedure boundary", () => {
+		expect(knowledgeDocumentListInputSchema.parse({})).toEqual({ limit: 25 });
+		expect(knowledgeDocumentListInputSchema.safeParse({ limit: 0 }).success).toBe(false);
+		expect(knowledgeDocumentListInputSchema.safeParse({ limit: 51 }).success).toBe(false);
+		expect(knowledgeDocumentListInputSchema.safeParse({ limit: 1.5 }).success).toBe(false);
+		expect(knowledgeDocumentListInputSchema.safeParse({ cursor: "not-a-cuid" }).success).toBe(
+			false,
+		);
+	});
+
 	it("scopes document reads to the resolved workspace and hides cross-tenant rows", async () => {
 		vi.mocked(getXiaofeiKnowledgeDocument).mockResolvedValueOnce(null);
 		const context = {
@@ -195,7 +278,10 @@ describe("knowledge document application boundary", () => {
 			session: { activeOrganizationId: "org-a" },
 			user: { id: "user-1" },
 		};
-		vi.mocked(listXiaofeiKnowledgeDocuments).mockResolvedValueOnce([] as never);
+		vi.mocked(listXiaofeiKnowledgeDocuments).mockResolvedValueOnce({
+			items: [],
+			nextCursor: null,
+		});
 		vi.mocked(getXiaofeiKnowledgeDocument).mockResolvedValueOnce({
 			id: "document-1",
 		} as never);
@@ -204,11 +290,14 @@ describe("knowledge document application boundary", () => {
 		} as never);
 		vi.mocked(deleteXiaofeiKnowledgeDocument).mockResolvedValueOnce({ count: 1 });
 
-		await listKnowledgeDocuments(context);
+		await listKnowledgeDocuments(context, { cursor: "document-cursor", limit: 10 });
 		await updateKnowledgeDocumentForTenant(context, "document-1", { status: "active" });
 		await deleteKnowledgeDocumentForTenant(context, "document-1");
 
-		expect(listXiaofeiKnowledgeDocuments).toHaveBeenCalledWith("workspace-a");
+		expect(listXiaofeiKnowledgeDocuments).toHaveBeenCalledWith("workspace-a", {
+			cursor: "document-cursor",
+			limit: 10,
+		});
 		expect(updateXiaofeiKnowledgeDocument).toHaveBeenCalledWith("workspace-a", "document-1", {
 			status: "active",
 		});

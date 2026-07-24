@@ -6,6 +6,7 @@ import {
 	Card,
 	CardContent,
 	CardDescription,
+	CardFooter,
 	CardHeader,
 	CardTitle,
 } from "@repo/ui/components/card";
@@ -25,6 +26,11 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 type KnowledgeDocument = Awaited<ReturnType<typeof orpcClient.xiaofei.getKnowledgeDocument>>;
+type KnowledgeDocumentSummary = Awaited<
+	ReturnType<typeof orpcClient.xiaofei.listKnowledgeDocuments>
+>["items"][number];
+
+const DOCUMENT_PAGE_SIZE = 25;
 
 interface DocumentDraft {
 	originalFileName: string;
@@ -34,27 +40,30 @@ interface DocumentDraft {
 }
 
 export function KnowledgeDocuments() {
-	const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+	const [documents, setDocuments] = useState<KnowledgeDocumentSummary[]>([]);
 	const [selected, setSelected] = useState<KnowledgeDocument | null>(null);
 	const [draft, setDraft] = useState<DocumentDraft | null>(null);
 	const [uploadCategory, setUploadCategory] = useState<"PRESALES" | "POSTSALES">("PRESALES");
+	const [pageCursor, setPageCursor] = useState<string | undefined>();
+	const [previousCursors, setPreviousCursors] = useState<Array<string | undefined>>([]);
+	const [nextCursor, setNextCursor] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
 
-	const refreshDocuments = useCallback(async () => {
-		const items = await orpcClient.xiaofei.listKnowledgeDocuments();
-		setDocuments(items);
-		setSelected((current) => {
-			if (!current) return null;
-			return items.find((item) => item.id === current.id) ?? null;
+	const refreshDocuments = useCallback(async (cursor?: string) => {
+		const page = await orpcClient.xiaofei.listKnowledgeDocuments({
+			cursor,
+			limit: DOCUMENT_PAGE_SIZE,
 		});
+		setDocuments(page.items);
+		setNextCursor(page.nextCursor);
 	}, []);
 
 	useEffect(() => {
-		void refreshDocuments()
+		void refreshDocuments(pageCursor)
 			.catch(() => toastError("无法读取知识文档"))
 			.finally(() => setLoading(false));
-	}, [refreshDocuments]);
+	}, [pageCursor, refreshDocuments]);
 
 	async function openDocument(id: string) {
 		setBusy(true);
@@ -85,7 +94,9 @@ export function KnowledgeDocuments() {
 				contentBase64: await fileToBase64(file),
 			});
 			form.reset();
-			await refreshDocuments();
+			setPageCursor(undefined);
+			setPreviousCursors([]);
+			await refreshDocuments(undefined);
 			await openDocument(created.id);
 			toastSuccess("文档已上传", "文本已提取并保存到当前租户。");
 		} catch (error) {
@@ -106,7 +117,7 @@ export function KnowledgeDocuments() {
 			});
 			setSelected(updated);
 			setDraft(toDraft(updated));
-			await refreshDocuments();
+			await refreshDocuments(pageCursor);
 			toastSuccess("文档已保存");
 		} catch (error) {
 			toastError("文档保存失败", getErrorMessage(error));
@@ -124,13 +135,36 @@ export function KnowledgeDocuments() {
 			await orpcClient.xiaofei.deleteKnowledgeDocument({ id: selected.id });
 			setSelected(null);
 			setDraft(null);
-			await refreshDocuments();
+			if (documents.length === 1 && previousCursors.length > 0) {
+				goToPreviousPage();
+			} else {
+				await refreshDocuments(pageCursor);
+			}
 			toastSuccess("文档已删除");
 		} catch (error) {
 			toastError("文档删除失败", getErrorMessage(error));
 		} finally {
 			setBusy(false);
 		}
+	}
+
+	function goToNextPage() {
+		if (!nextCursor) return;
+		setLoading(true);
+		setSelected(null);
+		setDraft(null);
+		setPreviousCursors((current) => [...current, pageCursor]);
+		setPageCursor(nextCursor);
+	}
+
+	function goToPreviousPage() {
+		if (previousCursors.length === 0) return;
+		setLoading(true);
+		setSelected(null);
+		setDraft(null);
+		const cursors = previousCursors.slice(0, -1);
+		setPageCursor(previousCursors.at(-1));
+		setPreviousCursors(cursors);
 	}
 
 	return (
@@ -190,7 +224,9 @@ export function KnowledgeDocuments() {
 				<Card className="overflow-hidden">
 					<CardHeader className="border-b">
 						<CardTitle>文档列表</CardTitle>
-						<CardDescription>{documents.length} 个当前租户文档</CardDescription>
+						<CardDescription>
+							第 {previousCursors.length + 1} 页 · 本页 {documents.length} 个文档
+						</CardDescription>
 					</CardHeader>
 					<CardContent className="p-2 gap-1 flex max-h-[620px] flex-col overflow-y-auto">
 						{loading ? (
@@ -232,6 +268,26 @@ export function KnowledgeDocuments() {
 							))
 						)}
 					</CardContent>
+					<CardFooter className="p-3 gap-2 justify-between border-t">
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={goToPreviousPage}
+							disabled={busy || loading || previousCursors.length === 0}
+						>
+							上一页
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={goToNextPage}
+							disabled={busy || loading || !nextCursor}
+						>
+							下一页
+						</Button>
+					</CardFooter>
 				</Card>
 
 				<Card className="min-w-0">

@@ -20,7 +20,7 @@ persistence.
 | `setAgentConversationOwner` | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                 |
 | `sendAgentMessage`          | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                        |
 | `createKnowledgeDocument`   | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a tenant source document              |
-| `listKnowledgeDocuments`    | `GET /xiaofei/knowledge/documents`                  | List source documents for the active operator tenant                 |
+| `listKnowledgeDocuments`    | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only source document summaries                 |
 | `getKnowledgeDocument`      | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                               |
 | `updateKnowledgeDocument`   | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status          |
 | `deleteKnowledgeDocument`   | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                             |
@@ -65,6 +65,11 @@ Document uploads are limited to 2 MB and require matching `.md`, `.txt`, or
 `.docx` MIME and extension pairs. Markdown and TXT must be UTF-8. DOCX parsing
 extracts bounded ordinary paragraph text from `word/document.xml` while
 excluding tables; it does not support images, OCR, or complex tables.
+
+List accepts a validated optional cursor and a 1–50 limit (25 by default), and
+never returns body text; `getKnowledgeDocument` is the only full-body read.
+Database document-count and UTF-8 storage quota exceptions are translated to
+clear `BAD_REQUEST` messages without exposing database details.
 
 ## Adding a procedure
 

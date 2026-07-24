@@ -4,9 +4,11 @@ import {
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
 	listXiaofeiKnowledgeDocuments,
+	type ListXiaofeiKnowledgeDocumentsOptions,
 	updateXiaofeiKnowledgeDocument,
 	XiaofeiKnowledgeDocumentCategory,
 	XiaofeiKnowledgeDocumentFileType,
+	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
 import { strFromU8, unzipSync } from "fflate";
 
@@ -67,19 +69,26 @@ export async function createKnowledgeDocument(
 	const file = validateAndExtractFile(input);
 	const { workspace } = await getKnowledgeWorkspace(context);
 
-	return await createXiaofeiKnowledgeDocument({
-		workspaceId: workspace.id,
-		originalFileName: input.originalFileName,
-		mimeType: input.mimeType,
-		fileType: file.fileType,
-		category: XiaofeiKnowledgeDocumentCategory[input.category],
-		bodyText: file.bodyText,
-	});
+	try {
+		return await createXiaofeiKnowledgeDocument({
+			workspaceId: workspace.id,
+			originalFileName: input.originalFileName,
+			mimeType: input.mimeType,
+			fileType: file.fileType,
+			category: XiaofeiKnowledgeDocumentCategory[input.category],
+			bodyText: file.bodyText,
+		});
+	} catch (error) {
+		throwKnowledgeDocumentWriteError(error);
+	}
 }
 
-export async function listKnowledgeDocuments(context: XiaofeiAuthContext) {
+export async function listKnowledgeDocuments(
+	context: XiaofeiAuthContext,
+	options: ListXiaofeiKnowledgeDocumentsOptions,
+) {
 	const { workspace } = await getKnowledgeWorkspace(context);
-	return await listXiaofeiKnowledgeDocuments(workspace.id);
+	return await listXiaofeiKnowledgeDocuments(workspace.id, options);
 }
 
 export async function getKnowledgeDocument(context: XiaofeiAuthContext, id: string) {
@@ -107,8 +116,8 @@ export async function updateKnowledgeDocumentForTenant(
 			...input,
 			category: input.category ? XiaofeiKnowledgeDocumentCategory[input.category] : undefined,
 		});
-	} catch {
-		throw new ORPCError("NOT_FOUND", { message: "Knowledge document not found." });
+	} catch (error) {
+		throwKnowledgeDocumentWriteError(error);
 	}
 }
 
@@ -229,8 +238,21 @@ function decodeXmlEntities(value: string): string {
 		const radix = code.toLowerCase().startsWith("#x") ? 16 : 10;
 		const digits = code.slice(radix === 16 ? 2 : 1);
 		const point = Number.parseInt(digits, radix);
-		return Number.isSafeInteger(point) ? String.fromCodePoint(point) : entity;
+		if (!isValidXmlCodePoint(point)) throw invalidDocxError();
+		return String.fromCodePoint(point);
 	});
+}
+
+function isValidXmlCodePoint(point: number): boolean {
+	return (
+		Number.isSafeInteger(point) &&
+		(point === 0x9 ||
+			point === 0xa ||
+			point === 0xd ||
+			(point >= 0x20 && point <= 0xd7ff) ||
+			(point >= 0xe000 && point <= 0xfffd) ||
+			(point >= 0x10000 && point <= 0x10ffff))
+	);
 }
 
 function getFileExtension(fileName: string): string {
@@ -242,4 +264,33 @@ function invalidDocxError(): ORPCError<"BAD_REQUEST", unknown> {
 	return new ORPCError("BAD_REQUEST", {
 		message: "The DOCX file is malformed or does not contain ordinary paragraph text.",
 	});
+}
+
+function throwKnowledgeDocumentWriteError(error: unknown): never {
+	if (error instanceof XiaofeiKnowledgeDocumentQuotaError) {
+		const message =
+			error.quota === "document_count"
+				? `This workspace can store up to ${error.limit} knowledge documents. Delete one before uploading another.`
+				: `This workspace has reached its ${formatMegabytes(error.limit)} MB knowledge document storage limit. Delete or shorten a document before trying again.`;
+		throw new ORPCError("BAD_REQUEST", { message });
+	}
+	if (isPrismaNotFoundError(error)) {
+		throw new ORPCError("NOT_FOUND", { message: "Knowledge document not found." });
+	}
+	throw new ORPCError("INTERNAL_SERVER_ERROR", {
+		message: "The knowledge document could not be saved.",
+	});
+}
+
+function isPrismaNotFoundError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as { code?: unknown }).code === "P2025"
+	);
+}
+
+function formatMegabytes(bytes: number): number {
+	return bytes / 1024 / 1024;
 }
