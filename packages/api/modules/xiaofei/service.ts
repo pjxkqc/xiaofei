@@ -14,6 +14,7 @@ import {
 	XiaofeiWorkspaceSnapshotSchema,
 	createConversationState,
 	createDefaultWorkspaceSnapshot,
+	deriveReleaseGates,
 	type ConversationState,
 	type TraceEvent,
 	type XiaofeiWorkspaceSnapshot,
@@ -42,9 +43,13 @@ export async function getOrCreateXiaofeiWorkspace(context: XiaofeiAuthContext) {
 	const tenantKey = await getXiaofeiTenantKey(context);
 	const existing = await getXiaofeiWorkspace(tenantKey);
 	if (existing) {
+		const parsed = XiaofeiWorkspaceSnapshotSchema.parse(existing.snapshot);
 		return {
 			workspace: existing,
-			snapshot: XiaofeiWorkspaceSnapshotSchema.parse(existing.snapshot),
+			snapshot: XiaofeiWorkspaceSnapshotSchema.parse({
+				...parsed,
+				gates: deriveReleaseGates(parsed.knowledgeUnits, parsed.evalSuite.status, parsed.tools),
+			}),
 		};
 	}
 
