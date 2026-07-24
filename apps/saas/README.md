@@ -6,7 +6,7 @@ organization features inherited from supastarter.
 
 ## Xiaofei surface
 
-The product surface is deliberately kept to four small pages:
+The product surface is deliberately kept to five small pages:
 
 - `/support` is a public, no-login customer conversation page;
 - `/inbox` is the authenticated support-agent inbox for online state, ownership,
@@ -15,6 +15,8 @@ The product surface is deliberately kept to four small pages:
   validation;
 - `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
   Unit, release-gate, and Eval configuration.
+- `/knowledge/documents` manages tenant-scoped Markdown, TXT, and DOCX source
+  documents through authenticated oRPC procedures.
 
 The pages can:
 
@@ -29,6 +31,7 @@ The pages can:
 - reset the server-side demonstration conversation.
 - persist public customer/human messages and poll the shared channel without
   introducing a second realtime stack.
+- upload, inspect, edit, change lifecycle status, and delete source documents.
 
 The browser never receives model keys or database credentials.
 
@@ -73,7 +76,9 @@ pnpm --filter saas dev
 
 The app listens on `http://localhost:3000`. Use `/support` without logging in.
 Create a password user, complete onboarding, then use `/inbox` and
-`/agent-settings` as the support role.
+`/agent-settings` as the support role. Use `/knowledge/documents` to upload a
+UTF-8 `.md` or `.txt` file, or a `.docx` containing ordinary paragraphs; DOCX
+images, OCR, and complex tables are intentionally not supported.
 
 ## Tests
 

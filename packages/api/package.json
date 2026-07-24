@@ -26,6 +26,7 @@
 		"@repo/utils": "workspace:*",
 		"@repo/xiaofei": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
+		"fflate": "^0.8.3",
 		"hono": "catalog:",
 		"nanoid": "catalog:",
 		"zod": "catalog:"

@@ -29,6 +29,7 @@ import { NotificationCenter } from "@shared/components/NotificationCenter";
 import { UserMenu } from "@shared/components/UserMenu";
 import {
 	BotMessageSquareIcon,
+	BookOpenTextIcon,
 	ChevronRightIcon,
 	HomeIcon,
 	MenuIcon,
@@ -328,6 +329,12 @@ export function NavBar() {
 				href: "/agent-settings",
 				icon: Settings2Icon,
 				isActive: pathname.startsWith("/agent-settings"),
+			},
+			{
+				label: t("app.menu.knowledgeDocuments"),
+				href: "/knowledge/documents",
+				icon: BookOpenTextIcon,
+				isActive: pathname.startsWith("/knowledge/documents"),
 			},
 			...(organizationSubItems
 				? [

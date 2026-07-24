@@ -19,6 +19,11 @@ persistence.
 | `listAgentConversations`    | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role          |
 | `setAgentConversationOwner` | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                 |
 | `sendAgentMessage`          | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                        |
+| `createKnowledgeDocument`   | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a tenant source document              |
+| `listKnowledgeDocuments`    | `GET /xiaofei/knowledge/documents`                  | List source documents for the active operator tenant                 |
+| `getKnowledgeDocument`      | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                               |
+| `updateKnowledgeDocument`   | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status          |
+| `deleteKnowledgeDocument`   | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                             |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
 because it is the existing AI SDK transport. That procedure now loads the
@@ -37,6 +42,11 @@ conversations or choose a workspace. Inbox and governance procedures use
 future `support` role, or `admin`. Flyranking/LoopDesk tenant and channel
 mapping remains a future adapter concern.
 
+Knowledge documents use a separate authenticated operator tenant key: the
+active organization ID when present, otherwise the authenticated user ID.
+Every document query receives the resolved workspace ID; a caller cannot choose
+a workspace ID, and cross-tenant reads or mutations return not found.
+
 ## Persistence boundary
 
 The service validates JSON snapshots with schemas from `@repo/xiaofei` before
@@ -50,6 +60,11 @@ The API refuses to run Eval before the current capability plan is reviewed.
 P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on
 `XiaofeiConversation` because the support inbox queries those lifecycle fields.
+
+Document uploads are limited to 2 MB and require matching `.md`, `.txt`, or
+`.docx` MIME and extension pairs. Markdown and TXT must be UTF-8. DOCX parsing
+extracts bounded ordinary paragraph text from `word/document.xml` while
+excluding tables; it does not support images, OCR, or complex tables.
 
 ## Adding a procedure
 
