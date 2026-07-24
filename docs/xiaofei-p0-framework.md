@@ -10,7 +10,7 @@ demos wholesale.
 ```text
 Minimal SaaS surface
   ├─ /agent-settings
-  │    └─ Agent + Markdown KU + release gates + P0 Eval
+  │    └─ Agent + Markdown KU → capability review → P0 Eval
   └─ /chatbot
        └─ governed conversation + business traces
           │
@@ -52,15 +52,19 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 2. Saving deterministically parses each `##` section into a `KnowledgeUnit`.
    Missing keywords, forbidden outputs, handoff rules, reply policy or fallback
    blocks that unit.
-3. A Mastra Workflow checks the knowledge and policy boundary.
-4. The tenant can run four deterministic business assertions covering slot
-   collection, high-risk handoff, knowledge missing and safe knowledge reply.
-5. Chat turns always enter the LangGraph StateGraph. Only the safe reply branch
-   invokes the Mastra Agent for a candidate response.
-6. The complete candidate reply is generated before it becomes customer
+3. The domain derives a capability plan from released KUs: callable KU IDs,
+   takeover/reject boundaries, field matrices, action boundaries, and Eval
+   suggestions. A human must review it before automatic handling is admitted.
+4. A Mastra Workflow checks the knowledge and policy boundary.
+5. The tenant can run four deterministic business assertions covering KU
+   matching, slot collection, high-risk handoff, knowledge missing, Action, and
+   Owner. Saving KU or changing capability review invalidates old Eval evidence.
+6. Chat turns always enter the LangGraph StateGraph. Only reviewed capability
+   KUs are callable, and only the safe reply branch invokes Mastra Agent.
+7. The complete candidate reply is generated before it becomes customer
    visible. The final Guardrail can replace it with a safe fallback and transfer
    ownership to a human.
-7. `ownerEpoch` changes on handoff, invalidating stale AI work. Conversation
+8. `ownerEpoch` changes on handoff, invalidating stale AI work. Conversation
    state and business-readable traces are stored in Neon.
 
 ## Tool and adapter boundary
@@ -88,6 +92,8 @@ This is a framework slice, not a production-complete Agent Center:
   deferred;
 - KU matching is keyword/state based; embeddings, vector search and reranking
   are deferred;
+- capability plans are deterministically derived and reviewed as part of the
+  workspace snapshot; LLM planning, version history, and rollback are deferred;
 - the LangGraph graph uses Neon as the product persistence boundary rather than
   adding a second production checkpointer;
 - no real customer-service send, private-note or refund API is called;

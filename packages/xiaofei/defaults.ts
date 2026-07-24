@@ -1,5 +1,7 @@
 import {
 	XiaofeiWorkspaceSnapshotSchema,
+	type CapabilityPlan,
+	type KnowledgeUnit,
 	type ReleaseGate,
 	type XiaofeiWorkspaceSnapshot,
 } from "./contracts";
@@ -82,6 +84,7 @@ export function createDefaultWorkspaceSnapshot(
 		forbiddenOutputs: ["已退款", "一定退款", "已赔偿", "已补发", "guaranteed refund"],
 		handoffRules: ["投诉", "赔偿", "立即退款", "知识缺失", "资料冲突"],
 	};
+	const capabilityPlan = deriveCapabilityPlan(knowledgeUnits, updatedAt);
 
 	return XiaofeiWorkspaceSnapshotSchema.parse({
 		agent,
@@ -93,14 +96,9 @@ export function createDefaultWorkspaceSnapshot(
 			requireReleasedKnowledge: true,
 		},
 		tools,
-		capabilityPlan: {
-			takeoverScenarios: knowledgeUnits.flatMap((unit) => unit.applicableScenarios),
-			rejectScenarios: ["高风险投诉", "退款/赔偿/补发执行", "知识缺失"],
-			actionBoundaries: ["允许回复", "允许收集资料", "允许生成转人工摘要", "禁止写业务系统"],
-			handoffBoundaries: agent.handoffRules,
-		},
+		capabilityPlan,
 		evalSuite,
-		gates: deriveReleaseGates(knowledgeUnits, evalSuite.status, tools),
+		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, evalSuite.status, tools),
 		updatedAt,
 	});
 }
@@ -114,6 +112,8 @@ export function rebuildWorkspaceSnapshot(input: {
 }): XiaofeiWorkspaceSnapshot {
 	const knowledgeUnits = parseKnowledgeMarkdown(input.knowledgeMarkdown);
 	const now = input.now ?? (() => new Date().toISOString());
+	const updatedAt = now();
+	const capabilityPlan = deriveCapabilityPlan(knowledgeUnits, updatedAt);
 
 	return XiaofeiWorkspaceSnapshotSchema.parse({
 		...input.previous,
@@ -132,19 +132,89 @@ export function rebuildWorkspaceSnapshot(input: {
 			passed: 0,
 			failed: 0,
 			cases: [],
-			updatedAt: now(),
+			updatedAt,
 		},
-		capabilityPlan: {
-			...input.previous.capabilityPlan,
-			takeoverScenarios: knowledgeUnits.flatMap((unit) => unit.applicableScenarios),
-		},
-		gates: deriveReleaseGates(knowledgeUnits, "warning", input.previous.tools),
-		updatedAt: now(),
+		capabilityPlan,
+		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, "warning", input.previous.tools),
+		updatedAt,
+	});
+}
+
+export function deriveCapabilityPlan(
+	knowledgeUnits: KnowledgeUnit[],
+	generatedAt: string = new Date().toISOString(),
+): CapabilityPlan {
+	const releasedUnits = knowledgeUnits.filter((unit) => unit.status === "released");
+
+	return {
+		status: releasedUnits.length > 0 ? "review_ready" : "blocked",
+		version: `cap-${generatedAt.replace(/\D/gu, "").slice(0, 14) || "v1"}`,
+		reviewed: false,
+		generatedAt,
+		knowledgeUnitIds: releasedUnits.map((unit) => unit.id),
+		takeoverScenarios: unique(
+			releasedUnits.flatMap((unit) =>
+				unit.applicableScenarios.length > 0 ? unit.applicableScenarios : [unit.title],
+			),
+		),
+		rejectScenarios: unique([
+			...releasedUnits.flatMap((unit) => unit.inapplicableScenarios),
+			"知识缺失",
+			"高风险业务动作",
+		]),
+		fieldMatrix: releasedUnits.map((unit) => ({
+			knowledgeId: unit.id,
+			scenario: unit.title,
+			fields: unit.requiredSlots.map((slot) => slot.label),
+			exitWhen:
+				unit.requiredSlots.length > 0
+					? "必问字段齐全后转人工核实"
+					: "低风险回复完成或触发转人工条件",
+		})),
+		actionBoundaries: ["允许回复", "允许收集资料", "允许生成转人工摘要", "禁止写业务系统"],
+		handoffBoundaries: unique(releasedUnits.flatMap((unit) => unit.handoffRules)),
+		evalSuggestions: [
+			...releasedUnits.map((unit) => `${unit.title}：验证 KU 命中、next_action 与禁止输出`),
+			"知识缺失：不得硬答并转交人工",
+		],
+	};
+}
+
+export function setCapabilityPlanReview(
+	snapshot: XiaofeiWorkspaceSnapshot,
+	reviewed: boolean,
+	now: () => string = () => new Date().toISOString(),
+): XiaofeiWorkspaceSnapshot {
+	const updatedAt = now();
+	const capabilityPlan = {
+		...snapshot.capabilityPlan,
+		reviewed,
+	};
+	const evalSuite = {
+		status: "warning" as const,
+		passed: 0,
+		failed: 0,
+		cases: [],
+		updatedAt,
+	};
+
+	return XiaofeiWorkspaceSnapshotSchema.parse({
+		...snapshot,
+		capabilityPlan,
+		evalSuite,
+		gates: deriveReleaseGates(
+			snapshot.knowledgeUnits,
+			capabilityPlan,
+			evalSuite.status,
+			snapshot.tools,
+		),
+		updatedAt,
 	});
 }
 
 export function deriveReleaseGates(
 	knowledgeUnits: XiaofeiWorkspaceSnapshot["knowledgeUnits"],
+	capabilityPlan: XiaofeiWorkspaceSnapshot["capabilityPlan"],
 	evalStatus: XiaofeiWorkspaceSnapshot["evalSuite"]["status"],
 	tools: XiaofeiWorkspaceSnapshot["tools"],
 ): ReleaseGate[] {
@@ -172,6 +242,15 @@ export function deriveReleaseGates(
 			detail: guardrailReady ? "禁止输出与转人工条件完整" : "存在缺失的安全边界",
 		},
 		{
+			id: "capability",
+			label: "KU → 能力方案审核",
+			status:
+				capabilityPlan.status === "review_ready" && capabilityPlan.reviewed ? "passed" : "blocked",
+			detail: capabilityPlan.reviewed
+				? `${capabilityPlan.knowledgeUnitIds.length} 个 KU 已纳入能力边界`
+				: "保存 KU 后需要审核能力方案",
+		},
+		{
 			id: "eval",
 			label: "P0 Eval 门禁",
 			status: evalStatus,
@@ -191,4 +270,8 @@ export function deriveReleaseGates(
 			detail: "LangGraph 编排状态，Mastra Agent 按需生成",
 		},
 	];
+}
+
+function unique(values: string[]): string[] {
+	return [...new Set(values.filter(Boolean))];
 }

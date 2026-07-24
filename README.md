@@ -15,6 +15,8 @@ production-complete Agent Center.
 - configure Agent instructions, follow-up limits, and a Markdown knowledge
   source from a dedicated settings page;
 - parse each Markdown section into a governed `KnowledgeUnit`;
+- derive a reviewable capability plan with callable KU IDs, scenario boundaries,
+  required-field matrices, and Eval suggestions;
 - run a LangGraph state graph as the canonical conversation orchestrator;
 - call a Mastra Agent only when the graph needs a model-generated candidate
   reply, and run a separate Mastra governance Workflow on configuration save;
@@ -159,8 +161,10 @@ pnpm --filter saas test
 The manual P0 smoke path is:
 
 1. open `/agent-settings`, save the default configuration, and confirm the
-   Mastra governance Workflow leaves the Agent review-ready;
-2. run P0 Eval and confirm `4/4` assertions pass;
+   Mastra governance Workflow produces released KUs and a pending capability
+   plan;
+2. review the KU-derived capability plan, then run P0 Eval and confirm `4/4`
+   KU, Action, and Owner assertions pass;
 3. open `/chatbot` and send a damaged-item message;
 4. provide an order ID and then a damage-photo reference across separate turns;
 5. confirm the owner changes from AI to human only after the required

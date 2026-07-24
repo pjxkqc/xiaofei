@@ -17,7 +17,8 @@ The pages can:
 
 - edit Agent instructions, follow-up limits, and Markdown knowledge;
 - save configuration through the protected Xiaofei oRPC module;
-- run deterministic P0 release assertions;
+- review the capability plan derived from released KUs;
+- run deterministic KU-match, Action, and Owner release assertions;
 - stream guarded replies through the existing `ai.stream` procedure;
 - display LangGraph/Mastra execution, KU, owner, next-action, and trace
   evidence;

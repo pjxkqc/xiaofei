@@ -16,7 +16,7 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 | `knowledge.ts`    | Deterministic Markdown parsing, KU validation, and knowledge selection                                        |
 | `runtime.ts`      | P0 turn preparation, risk decisions, candidate finalization, Guardrail, handoff, and trace creation           |
 | `eval.ts`         | Four deterministic P0 release assertions                                                                      |
-| `defaults.ts`     | Small default workspace, KU source, policies, tools, and release gates                                        |
+| `defaults.ts`     | Default workspace plus deterministic KU capability plans, review transitions, and release gates               |
 | `ports.ts`        | Product-owned channel adapter interface                                                                       |
 
 `index.ts` is the public package boundary. Consumers should import from
@@ -31,15 +31,18 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
    final Guardrail evaluation.
 4. Missing released knowledge, high risk, conflicting information, exhausted
    follow-ups, or a configured handoff condition must fail safely.
-5. High-risk business actions may be described in the tool registry but remain
+5. Automatic handling requires an explicitly reviewed capability plan, and the
+   runtime may only select KUs listed in that plan.
+6. High-risk business actions may be described in the tool registry but remain
    blocked until an explicit policy and audited adapter authorize them.
-6. Trace events describe business decisions without storing credentials.
+7. Trace events describe business decisions without storing credentials.
 
 ## Turn lifecycle
 
 ```text
 message
-  → select released KU
+  → require reviewed capability plan
+  → select only KUs admitted by that plan
   → update slots and risk
   → choose reply / follow-up / handoff / stop
   → run selected model adapter when permitted
@@ -61,6 +64,10 @@ mandatory for collection flows.
 Parsing is deterministic so configuration review and Eval results are
 reproducible. Embeddings, vector stores, and document ingestion belong in a
 future retrieval adapter, not in these P0 contracts.
+
+Saving knowledge regenerates the capability plan and invalidates its previous
+review and Eval evidence. Review admits the exact KU IDs and field matrices;
+Eval then asserts KU matching together with Action and Owner behavior.
 
 ## Tests
 

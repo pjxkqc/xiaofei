@@ -89,10 +89,26 @@ export const ToolDefinitionSchema = z.object({
 });
 
 export const CapabilityPlanSchema = z.object({
+	status: AgentLifecycleStatusSchema.default("review_ready"),
+	version: z.string().min(1).default("cap-v1"),
+	reviewed: z.boolean().default(false),
+	generatedAt: z.string().optional(),
+	knowledgeUnitIds: z.array(z.string().min(1)).default([]),
 	takeoverScenarios: z.array(z.string().min(1)).default([]),
 	rejectScenarios: z.array(z.string().min(1)).default([]),
+	fieldMatrix: z
+		.array(
+			z.object({
+				knowledgeId: z.string().min(1),
+				scenario: z.string().min(1),
+				fields: z.array(z.string().min(1)).default([]),
+				exitWhen: z.string().min(1),
+			}),
+		)
+		.default([]),
 	actionBoundaries: z.array(z.string().min(1)).default([]),
 	handoffBoundaries: z.array(z.string().min(1)).default([]),
+	evalSuggestions: z.array(z.string().min(1)).default([]),
 });
 
 export const EvalCaseResultSchema = z.object({
@@ -103,6 +119,9 @@ export const EvalCaseResultSchema = z.object({
 	actualAction: NextActionSchema,
 	expectedOwner: OwnerTypeSchema,
 	actualOwner: OwnerTypeSchema,
+	expectedKnowledgeId: z.string().nullable().default(null),
+	actualKnowledgeId: z.string().nullable().default(null),
+	knowledgeMatched: z.boolean().default(false),
 	failures: z.array(z.string()).default([]),
 });
 
