@@ -69,7 +69,7 @@ the product data model.
 | [`packages/ai`](./packages/ai/README.md)                                   | Model provider plus Mastra and LangGraph adapters                              |
 | [`packages/api/modules/xiaofei`](./packages/api/modules/xiaofei/README.md) | Tenant authorization, configuration, evaluation, and persistence orchestration |
 | [`packages/database/prisma`](./packages/database/prisma/README.md)         | Prisma schema, generated client, and Xiaofei persistence                       |
-| [`docs`](./docs/README.md)                                                 | Architecture decisions and PR Preview operating guides                         |
+| [`docs`](./docs/README.md)                                                 | Architecture, operations, and multi-Agent collaboration guides                 |
 | [`.github/workflows`](./.github/workflows)                                 | Quality gate and Neon Preview cleanup                                          |
 | [`scripts`](./scripts)                                                     | Vercel schema/build orchestration and Neon cleanup implementation              |
 
@@ -198,7 +198,9 @@ configuration, required evidence, cleanup semantics, and troubleshooting.
 - [P0 framework architecture](./docs/xiaofei-p0-framework.md)
 - [Domain foundation and invariants](./docs/xiaofei-foundation.md)
 - [PR Preview CI/CD](./docs/pr-preview-setup.md)
-- [Coding agent guidelines](./agents.md)
+- [Repository structure and ownership](./docs/repository-structure.md)
+- [Multica import and multi-Agent workflow](./docs/multica/README.md)
+- [Coding agent guidelines](./AGENTS.md)
 
 ## Deliberate P0 limits
 

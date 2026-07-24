@@ -1,0 +1,96 @@
+# Repository-owned import blueprint for a human or bootstrap Agent.
+# This is NOT a native Multica CLI manifest and must not be executed directly.
+
+schema_version: xiaofei.multica.bootstrap/v1
+kind: RepositoryImportBlueprint
+
+project:
+  title: Xiaofei
+  description: >
+    Governed customer-service Agent platform with public customer chat,
+    authenticated support operations, knowledge governance, safe handoff, and
+    PR-isolated delivery.
+  repository:
+    type: github_repo
+    url: https://github.com/pjxkqc/xiaofei
+
+defaults:
+  runtime: codex
+  visibility: workspace
+  max_concurrent_tasks: 1
+  global_instructions: ../../AGENTS.md
+  collaboration: collaboration.md
+
+agents:
+  - slug: xiaofei-lead
+    name: Xiaofei Lead
+    instructions: agents.md#xiaofei-lead
+    owns:
+      - issue triage and decomposition
+      - architecture boundaries
+      - cross-agent integration
+      - repository and Multica governance documents
+
+  - slug: xiaofei-runtime
+    name: Xiaofei Runtime
+    instructions: agents.md#xiaofei-runtime
+    owns:
+      - packages/xiaofei/**
+      - packages/ai/**
+
+  - slug: xiaofei-app
+    name: Xiaofei App
+    instructions: agents.md#xiaofei-app
+    owns:
+      - apps/saas/**
+      - packages/api/**
+      - packages/auth/**
+
+  - slug: xiaofei-platform
+    name: Xiaofei Platform
+    instructions: agents.md#xiaofei-platform
+    owns:
+      - packages/database/**
+      - .github/workflows/**
+      - scripts/**
+      - vercel.json
+      - docs/pr-preview-setup.md
+
+  - slug: xiaofei-quality
+    name: Xiaofei Quality
+    instructions: agents.md#xiaofei-quality
+    owns:
+      - review and acceptance evidence
+      - repository-wide quality checks
+      - security and documentation consistency
+
+squad:
+  name: Xiaofei Delivery
+  leader: xiaofei-lead
+  instructions: collaboration.md
+  members:
+    - agent: xiaofei-runtime
+      role: Domain kernel, Mastra, LangGraph, and model adapters
+    - agent: xiaofei-app
+      role: Next.js product surfaces, oRPC, auth, and tenant boundary
+    - agent: xiaofei-platform
+      role: Prisma, Neon, Vercel, GitHub Actions, and Preview lifecycle
+    - agent: xiaofei-quality
+      role: Independent review, test evidence, safety, and docs consistency
+
+routing:
+  default_assignee: Xiaofei Delivery
+  single_implementation_owner: true
+  split_cross_boundary_issues: true
+  quality_review_for:
+    - public unauthenticated endpoints
+    - authorization or ownership changes
+    - model send or Guardrail changes
+    - persistence schema changes
+    - CI/CD and production delivery changes
+
+github:
+  branch_pattern: agent/<issue-key>-<short-slug>
+  pull_request_title_pattern: "[<issue-key>] <outcome>"
+  require_issue_key_in_pull_request_body: true
+  delete_merged_branch: true
