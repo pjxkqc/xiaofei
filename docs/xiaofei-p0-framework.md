@@ -9,7 +9,7 @@ demos wholesale.
 
 ```text
 Minimal SaaS surface
-  ├─ /chatbot/settings
+  ├─ /agent-settings
   │    └─ Agent + Markdown KU + release gates + P0 Eval
   └─ /chatbot
        └─ governed conversation + business traces
@@ -48,7 +48,7 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 ## Implemented P0 path
 
 1. The tenant edits Agent instructions, a follow-up limit, and a compact
-   Markdown knowledge source on `/chatbot/settings`.
+   Markdown knowledge source on `/agent-settings`.
 2. Saving deterministically parses each `##` section into a `KnowledgeUnit`.
    Missing keywords, forbidden outputs, handoff rules, reply policy or fallback
    blocks that unit.

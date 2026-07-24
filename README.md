@@ -26,13 +26,13 @@ production-complete Agent Center.
 - run four deterministic release assertions from the same control page.
 
 The authenticated Chatbot is available at `/chatbot`; Agent, KU, governance,
-and Eval settings are available at `/chatbot/settings`.
+and Eval settings are available at `/agent-settings`.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-  SETTINGS["Next.js /chatbot/settings"] --> API["Protected oRPC boundary"]
+  SETTINGS["Next.js /agent-settings"] --> API["Protected oRPC boundary"]
   CHAT["Next.js /chatbot"] --> API
   API --> GOVERN["Mastra governance Workflow"]
   API --> LANGGRAPH["LangGraph StateGraph"]
@@ -110,7 +110,7 @@ Development services:
 | MinIO console     | `http://localhost:9001` |
 
 Create a password account, complete onboarding, configure the Agent at
-`http://localhost:3000/chatbot/settings`, then open
+`http://localhost:3000/agent-settings`, then open
 `http://localhost:3000/chatbot`. Signup email verification is disabled in
 `packages/auth/config.ts`; password users are signed in immediately.
 
@@ -158,7 +158,7 @@ pnpm --filter saas test
 
 The manual P0 smoke path is:
 
-1. open `/chatbot/settings`, save the default configuration, and confirm the
+1. open `/agent-settings`, save the default configuration, and confirm the
    Mastra governance Workflow leaves the Agent review-ready;
 2. run P0 Eval and confirm `4/4` assertions pass;
 3. open `/chatbot` and send a damaged-item message;

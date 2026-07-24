@@ -153,7 +153,7 @@ For every infrastructure-affecting PR:
 3. Confirm Neon shows one branch named for the PR's Git branch.
 4. Create a disposable user on the Preview; registration must return success
    and continue to `/onboarding` without email verification.
-5. Finish onboarding, open `/chatbot/settings`, save the default configuration,
+5. Finish onboarding, open `/agent-settings`, save the default configuration,
    and confirm the Mastra governance Workflow completes.
 6. Run P0 Eval and confirm all deterministic assertions pass.
 7. Open `/chatbot` and verify LangGraph multi-turn collection plus the

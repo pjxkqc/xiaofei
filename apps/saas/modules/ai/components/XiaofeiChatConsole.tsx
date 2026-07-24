@@ -42,7 +42,7 @@ export function XiaofeiChatConsole() {
 					</div>
 					<div className="gap-2 flex shrink-0">
 						<Button variant="outline" size="sm" asChild>
-							<Link href="/chatbot/settings">
+							<Link href="/agent-settings">
 								<Settings2Icon className="mr-2 size-4" />
 								Agent 设置
 							</Link>

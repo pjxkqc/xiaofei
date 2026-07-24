@@ -10,7 +10,7 @@ The protected surface is deliberately split into two small pages:
 
 - `/chatbot` renders `XiaofeiChatConsole.tsx` for conversation and trace
   validation;
-- `/chatbot/settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
+- `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
   Unit, release-gate, and Eval configuration.
 
 The pages can:
@@ -59,7 +59,7 @@ pnpm --filter saas dev
 ```
 
 The app listens on `http://localhost:3000`. Create a password user, complete
-onboarding, configure `/chatbot/settings`, then validate `/chatbot`.
+onboarding, configure `/agent-settings`, then validate `/chatbot`.
 
 ## Tests
 

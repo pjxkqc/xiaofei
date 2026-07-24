@@ -325,9 +325,9 @@ export function NavBar() {
 			},
 			{
 				label: t("app.menu.agentSettings"),
-				href: "/chatbot/settings",
+				href: "/agent-settings",
 				icon: Settings2Icon,
-				isActive: pathname.startsWith("/chatbot/settings"),
+				isActive: pathname.startsWith("/agent-settings"),
 			},
 			...(organizationSubItems
 				? [
