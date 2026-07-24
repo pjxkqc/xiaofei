@@ -90,7 +90,7 @@ export type XiaofeiWorkspaceScalarFieldEnum = z.infer<typeof XiaofeiWorkspaceSca
 
 // File: XiaofeiConversationScalarFieldEnum.schema.ts
 
-export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'externalId', 'state', 'traceEvents', 'createdAt', 'updatedAt'])
+export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'externalId', 'customerName', 'status', 'assignedUserId', 'assignedUserName', 'state', 'messages', 'traceEvents', 'lastCustomerSeenAt', 'lastMessageAt', 'createdAt', 'updatedAt'])
 
 export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversationScalarFieldEnumSchema>;
 
@@ -360,8 +360,15 @@ export const XiaofeiConversationSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
   externalId: z.string(),
+  customerName: z.string().nullish(),
+  status: z.string().default("open"),
+  assignedUserId: z.string().nullish(),
+  assignedUserName: z.string().nullish(),
   state: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  messages: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").default("[]"),
   traceEvents: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").default("[]"),
+  lastCustomerSeenAt: z.date().nullish(),
+  lastMessageAt: z.date().nullish(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

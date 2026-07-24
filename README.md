@@ -25,19 +25,27 @@ production-complete Agent Center.
 - prevent stale AI output with `ownerEpoch`;
 - guard the complete candidate reply before it becomes customer-visible;
 - transfer high-risk, incomplete, or exhausted conversations to a human;
+- expose a no-login `/support` channel where customers can continue one
+  browser-bound conversation with Xiaofei or a human agent;
+- let authenticated support users monitor customer online/owner state, take
+  over, reply, and return a conversation to Xiaofei from `/inbox`;
 - run four deterministic release assertions from the same control page.
 
-The authenticated Chatbot is available at `/chatbot`; Agent, KU, governance,
-and Eval settings are available at `/agent-settings`.
+The public customer channel is available at `/support`; the authenticated
+support inbox is at `/inbox`. Agent, KU, governance, and Eval settings are
+available at `/agent-settings`, while `/chatbot` remains a runtime evidence
+console.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-  SETTINGS["Next.js /agent-settings"] --> API["Protected oRPC boundary"]
-  CHAT["Next.js /chatbot"] --> API
+  CUSTOMER["Public /support"] --> PUBLIC_API["Public token-scoped oRPC"]
+  INBOX["Protected /inbox"] --> API["Support-role oRPC boundary"]
+  SETTINGS["Protected /agent-settings"] --> API
+  PUBLIC_API --> LANGGRAPH["LangGraph StateGraph"]
   API --> GOVERN["Mastra governance Workflow"]
-  API --> LANGGRAPH["LangGraph StateGraph"]
+  API --> LANGGRAPH
   LANGGRAPH --> MASTRA["Mastra Agent candidate generation"]
   GOVERN --> DOMAIN["@repo/xiaofei domain kernel"]
   MASTRA --> DOMAIN
@@ -56,7 +64,7 @@ the product data model.
 
 | Path                                                                       | Responsibility                                                                 |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [`apps/saas`](./apps/saas/README.md)                                       | Authenticated SaaS application with minimal Chatbot and Agent settings pages   |
+| [`apps/saas`](./apps/saas/README.md)                                       | Public customer chat plus authenticated support, Chatbot, and Agent settings   |
 | [`packages/xiaofei`](./packages/xiaofei/README.md)                         | Vendor-neutral domain contracts and deterministic P0 runtime                   |
 | [`packages/ai`](./packages/ai/README.md)                                   | Model provider plus Mastra and LangGraph adapters                              |
 | [`packages/api/modules/xiaofei`](./packages/api/modules/xiaofei/README.md) | Tenant authorization, configuration, evaluation, and persistence orchestration |
@@ -111,10 +119,10 @@ Development services:
 | Mail preview      | `http://localhost:3003` |
 | MinIO console     | `http://localhost:9001` |
 
-Create a password account, complete onboarding, configure the Agent at
-`http://localhost:3000/agent-settings`, then open
-`http://localhost:3000/chatbot`. Signup email verification is disabled in
-`packages/auth/config.ts`; password users are signed in immediately.
+Open `http://localhost:3000/support` as a customer. Create a password account,
+complete onboarding, then use `http://localhost:3000/inbox` as a support agent
+and `http://localhost:3000/agent-settings` for knowledge governance. Signup
+email verification is disabled in `packages/auth/config.ts`.
 
 ## Environment
 
@@ -160,19 +168,18 @@ pnpm --filter saas test
 
 The manual P0 smoke path is:
 
-1. open `/agent-settings`, save the default configuration, and confirm the
+1. log in as a support user, open `/agent-settings`, import or edit Markdown,
+   save the configuration, and confirm the
    Mastra governance Workflow produces released KUs and a pending capability
    plan;
 2. review the KU-derived capability plan, then run P0 Eval and confirm `4/4`
    KU, Action, and Owner assertions pass;
-3. open `/chatbot` and send a damaged-item message;
-4. provide an order ID and then a damage-photo reference across separate turns;
-5. confirm the owner changes from AI to human only after the required
-   information is complete;
-6. reset, ask about service scope, and confirm LangGraph and Mastra execution,
-   KU, ownership, next-action, and trace evidence are displayed;
-7. send a refund or complaint request and confirm no business action is
-   executed and the conversation exits to a human.
+3. open `/support` in a signed-out browser and start a customer conversation;
+4. open `/inbox` as the support user and confirm online and Xiaofei-owner status;
+5. send a low-risk question and confirm Xiaofei replies from reviewed KU;
+6. request a refund or complaint and confirm the conversation exits to human;
+7. take over in `/inbox`, send a human reply, and confirm it appears on
+   `/support`; then return the conversation to Xiaofei.
 
 ## Delivery
 
@@ -196,9 +203,10 @@ configuration, required evidence, cleanup semantics, and troubleshooting.
 ## Deliberate P0 limits
 
 The current slice uses deterministic Markdown parsing, keyword/state matching,
-JSON aggregate snapshots, deterministic evaluation, and adapter stubs for real
-customer-service delivery. Vector retrieval, document ingestion, normalized
-versioned releases, model judges, production channel SDKs, and high-risk
-business writes remain deferred until the framework is validated.
+JSON aggregate snapshots, deterministic evaluation, a single public support
+channel, and short polling. Vector retrieval, rich document ingestion,
+normalized versioned releases, model judges, Flyranking/LoopDesk channel SDKs,
+realtime sockets, and high-risk business writes remain deferred until the
+framework is validated.
 
 The original SaaS foundation is [supastarter for Next.js](https://supastarter.dev).

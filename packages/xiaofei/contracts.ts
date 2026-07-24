@@ -246,6 +246,36 @@ export const RuntimeTurnResultSchema = z.object({
 	metadata: RuntimeMetadataSchema,
 });
 
+export const SupportMessageRoleSchema = z.enum(["customer", "ai", "human"]);
+
+export const SupportMessageSchema = z.object({
+	id: z.string().min(1),
+	role: SupportMessageRoleSchema,
+	authorName: z.string().min(1),
+	text: z.string().min(1),
+	createdAt: z.string().min(1),
+});
+
+export const SupportConversationStatusSchema = z.enum(["open", "closed"]);
+
+export const SupportConversationSummarySchema = z.object({
+	id: z.string().min(1),
+	customerName: z.string().min(1),
+	status: SupportConversationStatusSchema,
+	ownerType: OwnerTypeSchema,
+	stage: ConversationStageSchema,
+	online: z.boolean(),
+	assignedUserName: z.string().nullable(),
+	lastMessage: z.string(),
+	lastMessageAt: z.string().nullable(),
+	updatedAt: z.string().min(1),
+});
+
+export const SupportConversationSchema = SupportConversationSummarySchema.extend({
+	messages: z.array(SupportMessageSchema),
+	handoffReason: z.string().nullable(),
+});
+
 export type GateStatus = z.infer<typeof GateStatusSchema>;
 export type AgentLifecycleStatus = z.infer<typeof AgentLifecycleStatusSchema>;
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
@@ -271,3 +301,8 @@ export type AiRunLease = z.infer<typeof AiRunLeaseSchema>;
 export type TraceEvent = z.infer<typeof TraceEventSchema>;
 export type RuntimeMetadata = z.infer<typeof RuntimeMetadataSchema>;
 export type RuntimeTurnResult = z.infer<typeof RuntimeTurnResultSchema>;
+export type SupportMessageRole = z.infer<typeof SupportMessageRoleSchema>;
+export type SupportMessage = z.infer<typeof SupportMessageSchema>;
+export type SupportConversationStatus = z.infer<typeof SupportConversationStatusSchema>;
+export type SupportConversationSummary = z.infer<typeof SupportConversationSummarySchema>;
+export type SupportConversation = z.infer<typeof SupportConversationSchema>;

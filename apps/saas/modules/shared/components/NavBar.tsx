@@ -318,10 +318,10 @@ export function NavBar() {
 				isActive: pathname === "/" || pathname === basePath,
 			},
 			{
-				label: t("app.menu.aiChatbot"),
-				href: "/chatbot",
+				label: t("app.menu.supportInbox"),
+				href: "/inbox",
 				icon: BotMessageSquareIcon,
-				isActive: pathname === "/chatbot",
+				isActive: pathname === "/inbox",
 			},
 			{
 				label: t("app.menu.agentSettings"),

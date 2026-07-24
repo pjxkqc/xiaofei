@@ -255,16 +255,24 @@ model XiaofeiWorkspace {
 }
 
 model XiaofeiConversation {
-  id             String            @id @default(cuid())
-  workspaceId    String
-  workspace      XiaofeiWorkspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  externalId     String
-  state          Json
-  traceEvents    Json              @default("[]")
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id                 String           @id @default(cuid())
+  workspaceId        String
+  workspace          XiaofeiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  externalId         String
+  customerName       String?
+  status             String           @default("open")
+  assignedUserId     String?
+  assignedUserName   String?
+  state              Json
+  messages           Json             @default("[]")
+  traceEvents        Json             @default("[]")
+  lastCustomerSeenAt DateTime?
+  lastMessageAt      DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   @@unique([workspaceId, externalId])
   @@index([workspaceId])
+  @@index([workspaceId, updatedAt])
   @@map("xiaofei_conversation")
 }
