@@ -94,6 +94,12 @@ export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspace
 
 export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversationScalarFieldEnumSchema>;
 
+// File: XiaofeiKnowledgeDocumentScalarFieldEnum.schema.ts
+
+export const XiaofeiKnowledgeDocumentScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'originalFileName', 'mimeType', 'fileType', 'category', 'bodyText', 'status', 'createdAt', 'updatedAt'])
+
+export type XiaofeiKnowledgeDocumentScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeDocumentScalarFieldEnumSchema>;
+
 // File: SortOrder.schema.ts
 
 export const SortOrderSchema = z.enum(['asc', 'desc'])
@@ -141,6 +147,18 @@ export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NotificationTargetSchema = z.enum(['IN_APP', 'EMAIL'])
 
 export type NotificationTarget = z.infer<typeof NotificationTargetSchema>;
+
+// File: XiaofeiKnowledgeDocumentFileType.schema.ts
+
+export const XiaofeiKnowledgeDocumentFileTypeSchema = z.enum(['MARKDOWN', 'TEXT', 'DOCX'])
+
+export type XiaofeiKnowledgeDocumentFileType = z.infer<typeof XiaofeiKnowledgeDocumentFileTypeSchema>;
+
+// File: XiaofeiKnowledgeDocumentCategory.schema.ts
+
+export const XiaofeiKnowledgeDocumentCategorySchema = z.enum(['PRESALES', 'POSTSALES'])
+
+export type XiaofeiKnowledgeDocumentCategory = z.infer<typeof XiaofeiKnowledgeDocumentCategorySchema>;
 
 // File: User.schema.ts
 
@@ -374,3 +392,20 @@ export const XiaofeiConversationSchema = z.object({
 });
 
 export type XiaofeiConversationType = z.infer<typeof XiaofeiConversationSchema>;
+
+// File: XiaofeiKnowledgeDocument.schema.ts
+
+export const XiaofeiKnowledgeDocumentSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  originalFileName: z.string(),
+  mimeType: z.string(),
+  fileType: XiaofeiKnowledgeDocumentFileTypeSchema,
+  category: XiaofeiKnowledgeDocumentCategorySchema,
+  bodyText: z.string(),
+  status: z.string().default("draft"),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiKnowledgeDocumentType = z.infer<typeof XiaofeiKnowledgeDocumentSchema>;

@@ -1,5 +1,26 @@
 import { db } from "../client";
-import type { Prisma } from "../generated/client";
+import type {
+	Prisma,
+	XiaofeiKnowledgeDocumentCategory,
+	XiaofeiKnowledgeDocumentFileType,
+} from "../generated/client";
+
+export interface CreateXiaofeiKnowledgeDocumentInput {
+	workspaceId: string;
+	originalFileName: string;
+	mimeType: string;
+	fileType: XiaofeiKnowledgeDocumentFileType;
+	category: XiaofeiKnowledgeDocumentCategory;
+	bodyText: string;
+	status?: string;
+}
+
+export interface UpdateXiaofeiKnowledgeDocumentInput {
+	originalFileName?: string;
+	category?: XiaofeiKnowledgeDocumentCategory;
+	bodyText?: string;
+	status?: string;
+}
 
 export function getXiaofeiWorkspace(tenantKey: string) {
 	return db.xiaofeiWorkspace.findUnique({
@@ -109,5 +130,51 @@ export function upsertXiaofeiConversation(input: {
 export function deleteXiaofeiConversation(workspaceId: string, externalId: string) {
 	return db.xiaofeiConversation.deleteMany({
 		where: { workspaceId, externalId },
+	});
+}
+
+export function createXiaofeiKnowledgeDocument(input: CreateXiaofeiKnowledgeDocumentInput) {
+	return db.xiaofeiKnowledgeDocument.create({
+		data: input,
+	});
+}
+
+export function listXiaofeiKnowledgeDocuments(workspaceId: string) {
+	return db.xiaofeiKnowledgeDocument.findMany({
+		where: { workspaceId },
+		orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+	});
+}
+
+export function getXiaofeiKnowledgeDocument(workspaceId: string, id: string) {
+	return db.xiaofeiKnowledgeDocument.findUnique({
+		where: {
+			workspaceId_id: {
+				workspaceId,
+				id,
+			},
+		},
+	});
+}
+
+export function updateXiaofeiKnowledgeDocument(
+	workspaceId: string,
+	id: string,
+	data: UpdateXiaofeiKnowledgeDocumentInput,
+) {
+	return db.xiaofeiKnowledgeDocument.update({
+		where: {
+			workspaceId_id: {
+				workspaceId,
+				id,
+			},
+		},
+		data,
+	});
+}
+
+export function deleteXiaofeiKnowledgeDocument(workspaceId: string, id: string) {
+	return db.xiaofeiKnowledgeDocument.deleteMany({
+		where: { workspaceId, id },
 	});
 }
