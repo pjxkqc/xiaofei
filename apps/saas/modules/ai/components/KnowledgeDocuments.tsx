@@ -25,10 +25,21 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-type KnowledgeDocument = Awaited<ReturnType<typeof orpcClient.xiaofei.getKnowledgeDocument>>;
-type KnowledgeDocumentSummary = Awaited<
-	ReturnType<typeof orpcClient.xiaofei.listKnowledgeDocuments>
->["items"][number];
+interface KnowledgeDocumentSummary {
+	id: string;
+	originalFileName: string;
+	mimeType: string;
+	fileType: "MARKDOWN" | "TEXT" | "DOCX";
+	category: "PRESALES" | "POSTSALES";
+	status: string;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+interface KnowledgeDocument extends KnowledgeDocumentSummary {
+	workspaceId: string;
+	bodyText: string;
+}
 
 const DOCUMENT_PAGE_SIZE = 25;
 const MAX_UPLOAD_FILE_BYTES = 2 * 1024 * 1024;
