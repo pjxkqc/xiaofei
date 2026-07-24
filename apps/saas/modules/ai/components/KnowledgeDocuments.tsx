@@ -31,6 +31,7 @@ type KnowledgeDocumentSummary = Awaited<
 >["items"][number];
 
 const DOCUMENT_PAGE_SIZE = 25;
+const MAX_UPLOAD_FILE_BYTES = 2 * 1024 * 1024;
 
 interface DocumentDraft {
 	originalFileName: string;
@@ -85,6 +86,11 @@ export function KnowledgeDocuments() {
 		if (!(fileInput instanceof HTMLInputElement) || !fileInput.files?.[0]) return;
 
 		const file = fileInput.files[0];
+		if (file.size > MAX_UPLOAD_FILE_BYTES) {
+			toastError("文档上传失败", "文件不能超过 2 MB。");
+			return;
+		}
+
 		setBusy(true);
 		try {
 			const created = await orpcClient.xiaofei.createKnowledgeDocument({
