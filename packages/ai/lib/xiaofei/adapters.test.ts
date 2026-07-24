@@ -7,6 +7,7 @@ import { runXiaofeiTurn } from "./runtime";
 
 function setup() {
 	const snapshot = createDefaultWorkspaceSnapshot("tenant-1");
+	snapshot.capabilityPlan.reviewed = true;
 	return {
 		snapshot,
 		state: createConversationState({

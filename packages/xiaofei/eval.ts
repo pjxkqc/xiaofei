@@ -14,6 +14,7 @@ const CASES = [
 		message: "杯子碎了，需要售后",
 		expectedAction: "ask_followup" as const,
 		expectedOwner: "ai" as const,
+		expectedKnowledgeId: "商品破损资料收集",
 	},
 	{
 		id: "high-risk-handoff",
@@ -21,6 +22,7 @@ const CASES = [
 		message: "我要投诉并要求人工客服处理",
 		expectedAction: "stop" as const,
 		expectedOwner: "human" as const,
+		expectedKnowledgeId: null,
 	},
 	{
 		id: "knowledge-missing",
@@ -28,6 +30,7 @@ const CASES = [
 		message: "请告诉我火星门店的保修政策",
 		expectedAction: "stop" as const,
 		expectedOwner: "human" as const,
+		expectedKnowledgeId: null,
 	},
 	{
 		id: "safe-knowledge-reply",
@@ -35,6 +38,7 @@ const CASES = [
 		message: "你们能处理哪些售后问题？",
 		expectedAction: "reply" as const,
 		expectedOwner: "ai" as const,
+		expectedKnowledgeId: "服务范围说明",
 	},
 ] as const;
 
@@ -74,6 +78,13 @@ export async function runP0EvalSuite(
 			...(result.state.ownerType === testCase.expectedOwner
 				? []
 				: [`expected owner ${testCase.expectedOwner}, got ${result.state.ownerType}`]),
+			...(result.state.matchedKnowledgeId === testCase.expectedKnowledgeId
+				? []
+				: [
+						`expected knowledge ${testCase.expectedKnowledgeId ?? "none"}, got ${
+							result.state.matchedKnowledgeId ?? "none"
+						}`,
+					]),
 		];
 		results.push({
 			id: testCase.id,
@@ -83,6 +94,9 @@ export async function runP0EvalSuite(
 			actualAction: result.state.nextAction,
 			expectedOwner: testCase.expectedOwner,
 			actualOwner: result.state.ownerType,
+			expectedKnowledgeId: testCase.expectedKnowledgeId,
+			actualKnowledgeId: result.state.matchedKnowledgeId,
+			knowledgeMatched: result.state.matchedKnowledgeId === testCase.expectedKnowledgeId,
 			failures,
 		});
 	}

@@ -63,8 +63,43 @@ export function prepareTurn(input: {
 		};
 	}
 
+	if (
+		!input.snapshot.capabilityPlan.reviewed ||
+		input.snapshot.capabilityPlan.status !== "review_ready"
+	) {
+		return {
+			state: withDecision(state, {
+				knowledge: null,
+				riskLevel: "medium",
+				action: "handoff",
+				handoffReason: "capability_not_reviewed",
+				at,
+			}),
+			knowledge: null,
+			action: "handoff",
+			riskLevel: "medium",
+			reply: "当前能力方案尚未完成审核，我会把问题转交人工客服处理。",
+			handoffReason: "capability_not_reviewed",
+			traces: [
+				...traces,
+				trace(
+					state.id,
+					"admission",
+					at,
+					"能力方案准入阻塞",
+					"KnowledgeUnit 尚未形成已审核的可调用能力边界。",
+				),
+			],
+		};
+	}
+
 	const risk = detectRisk(input.message, input.snapshot);
-	const knowledge = selectKnowledge(input.message, state, input.snapshot.knowledgeUnits);
+	const callableKnowledgeIds = new Set(input.snapshot.capabilityPlan.knowledgeUnitIds);
+	const knowledge = selectKnowledge(
+		input.message,
+		state,
+		input.snapshot.knowledgeUnits.filter((unit) => callableKnowledgeIds.has(unit.id)),
+	);
 	traces.push(
 		trace(
 			state.id,
@@ -243,7 +278,12 @@ export async function finalizeTurn(input: {
 		});
 	}
 
-	const blockedReasons = validateReply(reply, input.snapshot, input.prepared.knowledge);
+	const blockedReasons = validateReply(
+		reply,
+		input.snapshot,
+		input.prepared.knowledge,
+		input.prepared.action === "reply",
+	);
 	if (blockedReasons.length > 0) {
 		reply =
 			input.prepared.knowledge?.fallbackReply ?? "这个问题需要人工客服核实，我会转交人工继续处理。";
@@ -437,9 +477,10 @@ function validateReply(
 	reply: string,
 	snapshot: XiaofeiWorkspaceSnapshot,
 	knowledge: KnowledgeUnit | null,
+	requireKnowledge: boolean,
 ): string[] {
 	if (!reply.trim()) return ["候选回复为空"];
-	if (snapshot.guardrails.requireReleasedKnowledge && !knowledge) {
+	if (requireKnowledge && snapshot.guardrails.requireReleasedKnowledge && !knowledge) {
 		return ["没有已发布 KnowledgeUnit"];
 	}
 	const forbidden = new Set([

@@ -9,6 +9,7 @@ Xiaofei domain kernel, AI adapters, and persistence.
 | ------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
 | `getConfig`         | `GET /xiaofei/config`                            | Load or create the tenant workspace snapshot                         |
 | `saveConfig`        | `PUT /xiaofei/config`                            | Rebuild Markdown KU, run Mastra governance, and persist the snapshot |
+| `reviewCapability`  | `POST /xiaofei/capability/review`                | Review or revoke the capability plan derived from released KUs       |
 | `runEval`           | `POST /xiaofei/eval`                             | Run deterministic P0 assertions and update release gates             |
 | `resetConversation` | `DELETE /xiaofei/conversations/{conversationId}` | Delete the selected demonstration conversation                       |
 
@@ -34,6 +35,9 @@ The service validates JSON snapshots with schemas from `@repo/xiaofei` before
 and after persistence. New workspaces start from the domain default. New
 conversations start from `createConversationState`; existing state and traces
 must parse successfully before use.
+
+Knowledge changes regenerate the capability plan and clear stale Eval evidence.
+The API refuses to run Eval before the current capability plan is reviewed.
 
 P0 intentionally stores aggregates as JSON. Normalize a field only when a real
 query, lifecycle, or consistency requirement justifies the extra schema.

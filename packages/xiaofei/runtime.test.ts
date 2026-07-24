@@ -14,6 +14,7 @@ const now = () => NOW;
 
 function setup() {
 	const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
+	snapshot.capabilityPlan.reviewed = true;
 	const state = createConversationState({
 		id: "conversation-1",
 		tenantId: "tenant-1",
@@ -25,6 +26,36 @@ function setup() {
 }
 
 describe("P0 runtime kernel", () => {
+	it("blocks automatic handling until the KU capability plan is reviewed", async () => {
+		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
+		const state = createConversationState({
+			id: "conversation-unreviewed",
+			tenantId: "tenant-1",
+			agentId: snapshot.agent.id,
+			maxFollowUps: snapshot.agent.maxFollowUps,
+			now,
+		});
+		const prepared = prepareTurn({
+			message: "你们能处理哪些售后问题？",
+			state,
+			snapshot,
+			now,
+		});
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "你们能处理哪些售后问题？",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+
+		expect(result.state).toMatchObject({
+			ownerType: "human",
+			handoffReason: "capability_not_reviewed",
+		});
+		expect(result.reply).toContain("能力方案尚未完成审核");
+	});
+
 	it("collects only the next missing slot and keeps AI ownership", async () => {
 		const { snapshot, state } = setup();
 		const prepared = prepareTurn({
@@ -114,5 +145,6 @@ describe("P0 runtime kernel", () => {
 		expect(suite.status).toBe("passed");
 		expect(suite.failed).toBe(0);
 		expect(suite.passed).toBe(4);
+		expect(suite.cases.every((testCase) => testCase.knowledgeMatched)).toBe(true);
 	});
 });
