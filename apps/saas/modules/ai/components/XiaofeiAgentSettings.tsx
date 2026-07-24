@@ -11,42 +11,32 @@ import {
 } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@repo/ui/components/select";
 import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
-import type { RuntimeKind, XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
+import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
 import {
 	DatabaseIcon,
+	MessageSquareIcon,
 	NetworkIcon,
-	RefreshCcwIcon,
 	SaveIcon,
 	ShieldCheckIcon,
 	SparklesIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { AiChat } from "./AiChat";
-
 interface ConfigDraft {
-	runtime: RuntimeKind;
 	instructions: string;
 	maxFollowUps: number;
 	knowledgeMarkdown: string;
 }
 
-export function XiaofeiAgentConsole() {
+export function XiaofeiAgentSettings() {
 	const [snapshot, setSnapshot] = useState<XiaofeiWorkspaceSnapshot | null>(null);
 	const [draft, setDraft] = useState<ConfigDraft | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [evaluating, setEvaluating] = useState(false);
-	const [conversationId, setConversationId] = useState(() => globalThis.crypto.randomUUID());
 
 	useEffect(() => {
 		void orpcClient.xiaofei
@@ -63,27 +53,14 @@ export function XiaofeiAgentConsole() {
 		setSaving(true);
 		try {
 			const updated = await orpcClient.xiaofei.saveConfig(draft);
-			await orpcClient.xiaofei.resetConversation({ conversationId }).catch(() => undefined);
 			setSnapshot(updated);
 			setDraft(toDraft(updated));
-			setConversationId(globalThis.crypto.randomUUID());
 			toastSuccess("配置已保存", "Mastra 治理 Workflow 已重新执行，KU 与门禁状态已更新。");
 		} catch {
 			toastError("配置保存失败", "请检查 Markdown 必填字段和 Agent 指令。");
 		} finally {
 			setSaving(false);
 		}
-	};
-
-	const resetChat = async () => {
-		const previousId = conversationId;
-		try {
-			await orpcClient.xiaofei.resetConversation({ conversationId: previousId });
-		} catch {
-			// A missing persisted conversation is equivalent to a reset.
-		}
-		setConversationId(globalThis.crypto.randomUUID());
-		toastSuccess("演示会话已重置");
 	};
 
 	const runEval = async () => {
@@ -107,21 +84,21 @@ export function XiaofeiAgentConsole() {
 		return (
 			<div className="py-24 text-sm flex items-center justify-center text-muted-foreground">
 				<SparklesIcon className="mr-2 size-4 animate-pulse" />
-				正在加载 Xiaofei Agent 框架…
+				正在加载 Xiaofei Agent 设置…
 			</div>
 		);
 	}
 
 	return (
-		<div className="gap-6 lg:grid-cols-[minmax(0,0.92fr)_minmax(480px,1.08fr)] grid">
+		<div className="gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] grid">
 			<div className="gap-6 min-w-0 flex flex-col">
 				<Card>
 					<CardHeader>
 						<div className="gap-3 flex items-start justify-between">
 							<div>
-								<CardTitle>Agent 与 Runtime</CardTitle>
+								<CardTitle>Agent 配置</CardTitle>
 								<CardDescription className="mt-1.5">
-									Mastra 负责 Agent/治理，LangGraph 负责强状态客服链路。
+									运行链路固定为 LangGraph 状态编排 + Mastra Agent 按需生成。
 								</CardDescription>
 							</div>
 							<Badge status={snapshot.agent.status === "blocked" ? "error" : "success"}>
@@ -130,22 +107,6 @@ export function XiaofeiAgentConsole() {
 						</div>
 					</CardHeader>
 					<CardContent className="gap-5 flex flex-col">
-						<div className="gap-2 flex flex-col">
-							<Label>对话 Runtime</Label>
-							<Select
-								value={draft.runtime}
-								onValueChange={(value) => setDraft({ ...draft, runtime: value as RuntimeKind })}
-							>
-								<SelectTrigger>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="langgraph">LangGraph · P0 强状态客服</SelectItem>
-									<SelectItem value="mastra">Mastra · 通用 Agent</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-
 						<div className="gap-2 flex flex-col">
 							<Label htmlFor="agent-instructions">Agent 指令</Label>
 							<Textarea
@@ -208,73 +169,61 @@ export function XiaofeiAgentConsole() {
 						</div>
 					</CardContent>
 				</Card>
-
-				<Card>
-					<CardHeader>
-						<CardTitle>框架门禁</CardTitle>
-						<CardDescription>当前只暴露最关键的 P0 发布证据。</CardDescription>
-					</CardHeader>
-					<CardContent className="gap-3 flex flex-col">
-						{snapshot.gates.map((gate) => (
-							<div key={gate.id} className="gap-3 flex items-start justify-between">
-								<div>
-									<p className="text-sm font-medium">{gate.label}</p>
-									<p className="text-xs text-muted-foreground">{gate.detail}</p>
-								</div>
-								<Badge
-									status={
-										gate.status === "passed"
-											? "success"
-											: gate.status === "warning"
-												? "warning"
-												: "error"
-									}
-								>
-									{gate.status}
-								</Badge>
-							</div>
-						))}
-						<div className="mt-2 gap-2 flex flex-wrap">
-							<Capability icon={SparklesIcon} label="Mastra Agent" />
-							<Capability icon={NetworkIcon} label="LangGraph" />
-							<Capability icon={DatabaseIcon} label="Neon State" />
-							<Capability icon={ShieldCheckIcon} label="Guardrail" />
-						</div>
-						<div className="mt-2 gap-2 sm:grid-cols-2 grid">
-							<Button onClick={save} disabled={saving || evaluating}>
-								<SaveIcon className="mr-2 size-4" />
-								{saving ? "正在验证…" : "保存并运行治理"}
-							</Button>
-							<Button variant="outline" onClick={runEval} disabled={saving || evaluating}>
-								<ShieldCheckIcon className="mr-2 size-4" />
-								{evaluating ? "正在评测…" : "运行 P0 Eval"}
-							</Button>
-						</div>
-						{snapshot.evalSuite.cases.length > 0 && (
-							<p className="text-xs text-center text-muted-foreground">
-								最近评测：{snapshot.evalSuite.passed}/{snapshot.evalSuite.cases.length} 通过
-							</p>
-						)}
-					</CardContent>
-				</Card>
 			</div>
 
-			<Card className="lg:sticky lg:top-6 min-w-0 h-fit overflow-hidden">
-				<CardHeader className="border-b">
-					<div className="gap-3 flex items-center justify-between">
-						<div>
-							<CardTitle>P0 Chatbot 运行验证</CardTitle>
-							<CardDescription className="mt-1.5">
-								回复先完整生成，再通过 Guardrail 后才展示。
-							</CardDescription>
+			<Card className="lg:sticky lg:top-6 min-w-0 h-fit">
+				<CardHeader>
+					<CardTitle>框架门禁</CardTitle>
+					<CardDescription>保存时运行治理 Workflow，评测通过后才具备完整发布证据。</CardDescription>
+				</CardHeader>
+				<CardContent className="gap-3 flex flex-col">
+					{snapshot.gates.map((gate) => (
+						<div key={gate.id} className="gap-3 flex items-start justify-between">
+							<div>
+								<p className="text-sm font-medium">{gate.label}</p>
+								<p className="text-xs text-muted-foreground">{gate.detail}</p>
+							</div>
+							<Badge
+								status={
+									gate.status === "passed"
+										? "success"
+										: gate.status === "warning"
+											? "warning"
+											: "error"
+								}
+							>
+								{gate.status}
+							</Badge>
 						</div>
-						<Button variant="outline" size="sm" onClick={resetChat}>
-							<RefreshCcwIcon className="mr-2 size-4" />
-							重置会话
+					))}
+					<div className="mt-2 gap-2 flex flex-wrap">
+						<Capability icon={NetworkIcon} label="LangGraph StateGraph" />
+						<Capability icon={SparklesIcon} label="Mastra Agent" />
+						<Capability icon={DatabaseIcon} label="Neon State" />
+						<Capability icon={ShieldCheckIcon} label="Guardrail" />
+					</div>
+					<div className="mt-2 gap-2 grid">
+						<Button onClick={save} disabled={saving || evaluating}>
+							<SaveIcon className="mr-2 size-4" />
+							{saving ? "正在验证…" : "保存并运行治理"}
+						</Button>
+						<Button variant="outline" onClick={runEval} disabled={saving || evaluating}>
+							<ShieldCheckIcon className="mr-2 size-4" />
+							{evaluating ? "正在评测…" : "运行 P0 Eval"}
+						</Button>
+						<Button variant="outline" asChild>
+							<Link href="/chatbot">
+								<MessageSquareIcon className="mr-2 size-4" />
+								打开 Chatbot 验证
+							</Link>
 						</Button>
 					</div>
-				</CardHeader>
-				<AiChat key={conversationId} conversationId={conversationId} />
+					{snapshot.evalSuite.cases.length > 0 && (
+						<p className="text-xs text-center text-muted-foreground">
+							最近评测：{snapshot.evalSuite.passed}/{snapshot.evalSuite.cases.length} 通过
+						</p>
+					)}
+				</CardContent>
 			</Card>
 		</div>
 	);
@@ -297,7 +246,6 @@ function Capability({
 
 function toDraft(snapshot: XiaofeiWorkspaceSnapshot): ConfigDraft {
 	return {
-		runtime: snapshot.agent.runtime,
 		instructions: snapshot.agent.instructions,
 		maxFollowUps: snapshot.agent.maxFollowUps,
 		knowledgeMarkdown: snapshot.knowledgeMarkdown,

@@ -6,20 +6,21 @@ surface.
 
 ## Xiaofei surface
 
-The protected `/chatbot` route renders
-`modules/ai/components/XiaofeiAgentConsole.tsx`. The page deliberately combines
-the first Agent configuration, Knowledge Unit, release-gate, Eval, Chatbot, and
-trace views so the framework can be validated before the product is split into
-specialized workspaces.
+The protected surface is deliberately split into two small pages:
 
-The console can:
+- `/chatbot` renders `XiaofeiChatConsole.tsx` for conversation and trace
+  validation;
+- `/chatbot/settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
+  Unit, release-gate, and Eval configuration.
 
-- select `langgraph` or `mastra` as the conversation runtime;
+The pages can:
+
 - edit Agent instructions, follow-up limits, and Markdown knowledge;
 - save configuration through the protected Xiaofei oRPC module;
 - run deterministic P0 release assertions;
 - stream guarded replies through the existing `ai.stream` procedure;
-- display runtime, KU, owner, next-action, and trace evidence;
+- display LangGraph/Mastra execution, KU, owner, next-action, and trace
+  evidence;
 - reset the server-side demonstration conversation.
 
 The browser never receives model keys or database credentials.
@@ -28,7 +29,7 @@ The browser never receives model keys or database credentials.
 
 ```text
 configuration / eval
-  XiaofeiAgentConsole
+  XiaofeiAgentSettings
     → same-origin /api/rpc
     → protected xiaofei.* procedure
     → tenant snapshot in PostgreSQL / Neon
@@ -37,7 +38,8 @@ conversation
   AiChat
     → same-origin /api/rpc
     → protected ai.stream procedure
-    → governed Xiaofei runtime
+    → LangGraph state orchestration
+    → Mastra Agent generation when the graph permits it
     → final UI message only after Guardrail authorization
 ```
 
@@ -57,7 +59,7 @@ pnpm --filter saas dev
 ```
 
 The app listens on `http://localhost:3000`. Create a password user, complete
-onboarding, then open `/chatbot`.
+onboarding, configure `/chatbot/settings`, then validate `/chatbot`.
 
 ## Tests
 

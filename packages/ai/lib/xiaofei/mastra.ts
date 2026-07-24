@@ -1,12 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import {
-	finalizeTurn,
-	prepareTurn,
-	type ReplyGenerator,
-	type RuntimeTurnResult,
-	type XiaofeiWorkspaceSnapshot,
-	type ConversationState,
-} from "@repo/xiaofei";
+import { type ReplyGenerator } from "@repo/xiaofei";
 
 import { createTextModel } from "../../model";
 
@@ -37,21 +30,6 @@ class MastraReplyGenerator implements ReplyGenerator {
 	}
 }
 
-export async function runMastraTurn(input: {
-	message: string;
-	state: ConversationState;
-	snapshot: XiaofeiWorkspaceSnapshot;
-}): Promise<RuntimeTurnResult> {
-	const prepared = prepareTurn({
-		...input,
-		runtime: "mastra",
-	});
-
-	return await finalizeTurn({
-		prepared,
-		snapshot: input.snapshot,
-		runtime: "mastra",
-		message: input.message,
-		replyGenerator: new MastraReplyGenerator(),
-	});
+export function createMastraReplyGenerator(): ReplyGenerator {
+	return new MastraReplyGenerator();
 }

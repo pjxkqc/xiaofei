@@ -10,14 +10,15 @@ into the product kernel.
 | --------------------------- | --------------------------------------------------------------------- |
 | `model.ts`                  | Creates the server-side OpenAI-compatible Chat Completions model      |
 | `lib/xiaofei/governance.ts` | Mastra Workflow that validates knowledge and policy readiness on save |
-| `lib/xiaofei/mastra.ts`     | Mastra Agent conversation adapter                                     |
-| `lib/xiaofei/langgraph.ts`  | LangGraph StateGraph conversation adapter                             |
-| `lib/xiaofei/runtime.ts`    | Dispatches a turn to the configured runtime                           |
+| `lib/xiaofei/mastra.ts`     | Mastra Agent candidate-reply generator                                |
+| `lib/xiaofei/langgraph.ts`  | Canonical LangGraph conversation state machine                        |
+| `lib/xiaofei/runtime.ts`    | Stable entry point into the unified graph                             |
 
-Mastra governance runs when configuration is saved even when LangGraph is the
-selected conversation runtime. Both conversation adapters use the same domain
-preparation and finalization functions, so ownership and Guardrail behavior do
-not depend on the engine.
+Mastra governance runs when configuration is saved. At conversation time,
+LangGraph is the single orchestrator: it runs domain admission, knowledge,
+slot, and routing decisions, asks the Mastra Agent for a candidate only on the
+safe reply path, then returns to the domain kernel for final Guardrail and
+ownership authorization.
 
 ## Model configuration
 
@@ -33,10 +34,11 @@ Chat Completions mode is explicit because compatible gateways are not required
 to implement the OpenAI Responses API. Credential values must never be passed
 to React components, traces, test snapshots, or logs.
 
-## Adapter contract
+## Generation contract
 
-Each runtime receives a message, current `ConversationState`, and validated
-`XiaofeiWorkspaceSnapshot`, and returns a `RuntimeTurnResult`.
+The graph receives a message, current `ConversationState`, and validated
+`XiaofeiWorkspaceSnapshot`, and returns a `RuntimeTurnResult`. The Mastra Agent
+implements the smaller `ReplyGenerator` boundary.
 
 An adapter may generate a candidate response, but it cannot:
 
@@ -46,12 +48,14 @@ An adapter may generate a candidate response, but it cannot:
 - execute refund, compensation, reshipment, or another high-risk write;
 - decide that an unreleased KU is safe.
 
-## Adding a runtime
+## Extending the conversation flow
 
-1. Implement an adapter behind the existing `RuntimeTurnResult` contract.
+1. Add or refine LangGraph nodes behind the existing `RuntimeTurnResult`
+   contract.
 2. Reuse domain preparation and finalization instead of cloning safety logic.
-3. Add the runtime literal to the domain schema and configuration UI.
-4. Add adapter tests for safe reply, handoff, and Guardrail replacement.
+3. Add alternative model behavior behind `ReplyGenerator`, without exposing a
+   product-facing Runtime selector.
+4. Add tests for safe reply, handoff, and Guardrail replacement.
 5. Keep PostgreSQL/Neon as the product persistence boundary unless a separate
    checkpointer has an explicit lifecycle and consistency design.
 

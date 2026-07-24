@@ -4,13 +4,12 @@ import {
 	prepareTurn,
 	type ConversationState,
 	type PreparedTurn,
-	type ReplyGenerator,
 	type RuntimeTurnResult,
+	type TraceEvent,
 	type XiaofeiWorkspaceSnapshot,
 } from "@repo/xiaofei";
-import { generateText } from "ai";
 
-import { createTextModel } from "../../model";
+import { createMastraReplyGenerator } from "./mastra";
 
 const GraphState = Annotation.Root({
 	message: Annotation<string>(),
@@ -28,46 +27,51 @@ const GraphState = Annotation.Root({
 
 type GraphStateValue = typeof GraphState.State;
 
-class LangGraphReplyGenerator implements ReplyGenerator {
-	async generate(input: Parameters<ReplyGenerator["generate"]>[0]): Promise<string> {
-		const result = await generateText({
-			model: createTextModel(),
-			system: [
-				input.agentInstructions,
-				"你正在 LangGraph 的受控回复节点中。",
-				"只能依据给定 KnowledgeUnit 回答，不能执行或声称执行任何业务动作。",
-				"回复简练并跟随客户语言。",
-			].join("\n"),
-			prompt: [
-				`客户消息：${input.message}`,
-				`KnowledgeUnit：${input.knowledge.title}`,
-				`标准口径：${input.knowledge.standardReplyPolicy}`,
-				`禁止输出：${input.knowledge.forbiddenOutputs.join("、")}`,
-			].join("\n"),
-		});
-
-		return result.text.trim();
-	}
-}
-
 const graph = new StateGraph(GraphState)
-	.addNode("admission_knowledge_slots", (state: GraphStateValue) => ({
-		prepared: prepareTurn({
+	.addNode("admission_knowledge_slots", (state: GraphStateValue) => {
+		const prepared = prepareTurn({
 			message: state.message,
 			state: state.conversation,
 			snapshot: state.snapshot,
-			runtime: "langgraph",
-		}),
-	}))
+		});
+		return {
+			prepared: {
+				...prepared,
+				traces: [
+					frameworkTrace(
+						state.conversation.id,
+						"langgraph",
+						"LangGraph 状态机开始处理",
+						"执行会话准入、知识选择、槽位与路由节点。",
+					),
+					...prepared.traces,
+				],
+			},
+		};
+	})
 	.addNode("guarded_generation", async (state: GraphStateValue) => {
 		if (!state.prepared) throw new Error("LangGraph turn was not prepared.");
+		const prepared =
+			state.prepared.action === "reply"
+				? {
+						...state.prepared,
+						traces: [
+							...state.prepared.traces,
+							frameworkTrace(
+								state.conversation.id,
+								"mastra",
+								"Mastra Agent 生成候选回复",
+								"仅依据已发布 KnowledgeUnit 生成，随后仍需通过 Guardrail。",
+							),
+						],
+					}
+				: state.prepared;
 		return {
 			result: await finalizeTurn({
-				prepared: state.prepared,
+				prepared,
 				snapshot: state.snapshot,
-				runtime: "langgraph",
 				message: state.message,
-				replyGenerator: new LangGraphReplyGenerator(),
+				replyGenerator: createMastraReplyGenerator(),
 			}),
 		};
 	})
@@ -88,4 +92,20 @@ export async function runLangGraphTurn(input: {
 	});
 	if (!output.result) throw new Error("LangGraph did not produce a runtime result.");
 	return output.result;
+}
+
+function frameworkTrace(
+	conversationId: string,
+	type: "langgraph" | "mastra",
+	title: string,
+	detail: string,
+): TraceEvent {
+	return {
+		id: globalThis.crypto.randomUUID(),
+		conversationId,
+		at: new Date().toISOString(),
+		type,
+		title,
+		detail,
+	};
 }

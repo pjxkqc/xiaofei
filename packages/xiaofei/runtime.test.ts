@@ -31,14 +31,12 @@ describe("P0 runtime kernel", () => {
 			message: "我收到的杯子碎了",
 			state,
 			snapshot,
-			runtime: "langgraph",
 			now,
 		});
 		const generate = vi.fn();
 		const result = await finalizeTurn({
 			prepared,
 			snapshot,
-			runtime: "langgraph",
 			message: "我收到的杯子碎了",
 			replyGenerator: { generate } as ReplyGenerator,
 			now,
@@ -60,20 +58,17 @@ describe("P0 runtime kernel", () => {
 			message: "商品碎了，订单号是 ABC12345",
 			state,
 			snapshot,
-			runtime: "langgraph",
 			now,
 		});
 		const second = prepareTurn({
 			message: "照片已经作为附件发给你",
 			state: first.state,
 			snapshot,
-			runtime: "langgraph",
 			now,
 		});
 		const result = await finalizeTurn({
 			prepared: second,
 			snapshot,
-			runtime: "langgraph",
 			message: "照片已经作为附件发给你",
 			replyGenerator: { generate: vi.fn() },
 			now,
@@ -95,13 +90,11 @@ describe("P0 runtime kernel", () => {
 			message: "你们能处理哪些售后问题？",
 			state,
 			snapshot,
-			runtime: "mastra",
 			now,
 		});
 		const result = await finalizeTurn({
 			prepared,
 			snapshot,
-			runtime: "mastra",
 			message: "你们能处理哪些售后问题？",
 			replyGenerator: {
 				generate: async () => "可以，我已经退款并保证处理。",

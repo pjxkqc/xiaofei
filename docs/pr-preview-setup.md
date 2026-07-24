@@ -121,17 +121,18 @@ production database.
 
 The browser calls the same-origin `/api/rpc` endpoint. The authenticated
 `ai.stream` procedure loads the tenant workspace and conversation, runs the
-selected Mastra or LangGraph adapter through the vendor-neutral Xiaofei kernel,
-persists state and traces, and returns text only after final Guardrail
-authorization. Model calls use `@ai-sdk/openai` in explicit Chat Completions
-mode:
+LangGraph state machine through the vendor-neutral Xiaofei kernel, invokes
+Mastra Agent generation only on the permitted reply path, persists state and
+traces, and returns text only after final Guardrail authorization. Model calls
+use `@ai-sdk/openai` in explicit Chat Completions mode:
 
 ```text
 Browser /chatbot
   → same-origin /api/rpc
   → protected server procedure
   → tenant workspace + conversation state
-  → Mastra Agent or LangGraph StateGraph
+  → LangGraph StateGraph
+  → Mastra Agent when candidate generation is permitted
   → OPENAI_BASE_URL/chat/completions when generation is permitted
   → Xiaofei Guardrail + owner lease check
   → persisted state + business traces
@@ -152,12 +153,12 @@ For every infrastructure-affecting PR:
 3. Confirm Neon shows one branch named for the PR's Git branch.
 4. Create a disposable user on the Preview; registration must return success
    and continue to `/onboarding` without email verification.
-5. Finish onboarding, open `/chatbot`, save the default configuration, and
-   confirm the Mastra governance Workflow completes.
+5. Finish onboarding, open `/chatbot/settings`, save the default configuration,
+   and confirm the Mastra governance Workflow completes.
 6. Run P0 Eval and confirm all deterministic assertions pass.
-7. Verify the LangGraph multi-turn collection flow and the Mastra
-   service-scope reply. Confirm runtime, KU, owner, action, and trace evidence
-   appears and a high-risk request transfers to a human.
+7. Open `/chatbot` and verify LangGraph multi-turn collection plus the
+   Mastra-generated service-scope reply. Confirm framework, KU, owner, action,
+   and trace evidence appears and a high-risk request transfers to a human.
 8. Confirm Vercel runtime logs show successful auth and AI requests with no
    `Invalid origin`, database, or provider errors.
 9. Merge the PR, confirm GitHub deletes the source branch, and confirm

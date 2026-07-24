@@ -5,7 +5,6 @@ import {
 	type KnowledgeUnit,
 	type NextAction,
 	type RiskLevel,
-	type RuntimeKind,
 	type RuntimeTurnResult,
 	type SlotValue,
 	type TraceEvent,
@@ -38,21 +37,12 @@ export function prepareTurn(input: {
 	message: string;
 	state: ConversationState;
 	snapshot: XiaofeiWorkspaceSnapshot;
-	runtime: RuntimeKind;
 	now?: () => string;
 }): PreparedTurn {
 	const now = input.now ?? (() => new Date().toISOString());
 	const at = now();
 	const state = ConversationStateSchema.parse(input.state);
-	const traces = [
-		trace(
-			state.id,
-			input.runtime,
-			at,
-			`${runtimeLabel(input.runtime)} 开始处理`,
-			"进入 P0 运行链路。",
-		),
-	];
+	const traces: TraceEvent[] = [];
 
 	if (state.ownerType !== "ai" || state.aiMode !== "auto_handle") {
 		return {
@@ -235,7 +225,6 @@ export function prepareTurn(input: {
 export async function finalizeTurn(input: {
 	prepared: PreparedTurn;
 	snapshot: XiaofeiWorkspaceSnapshot;
-	runtime: RuntimeKind;
 	message: string;
 	replyGenerator: ReplyGenerator;
 	now?: () => string;
@@ -317,7 +306,6 @@ export async function finalizeTurn(input: {
 		reply,
 		state,
 		metadata: {
-			runtime: input.runtime,
 			knowledgeTitle: input.prepared.knowledge?.title ?? null,
 			nextAction: state.nextAction,
 			riskLevel: state.riskLevel,
@@ -480,8 +468,4 @@ function trace(
 		detail,
 		payload,
 	};
-}
-
-function runtimeLabel(runtime: RuntimeKind): string {
-	return runtime === "langgraph" ? "LangGraph StateGraph" : "Mastra Agent";
 }

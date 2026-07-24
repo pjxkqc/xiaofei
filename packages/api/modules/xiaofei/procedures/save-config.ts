@@ -1,5 +1,5 @@
 import { runMastraGovernance } from "@repo/ai";
-import { rebuildWorkspaceSnapshot, RuntimeKindSchema } from "@repo/xiaofei";
+import { rebuildWorkspaceSnapshot } from "@repo/xiaofei";
 import { z } from "zod";
 
 import { protectedProcedure } from "../../../orpc/procedures";
@@ -14,7 +14,6 @@ export const saveXiaofeiConfig = protectedProcedure
 	})
 	.input(
 		z.object({
-			runtime: RuntimeKindSchema,
 			instructions: z.string().min(20).max(4_000),
 			maxFollowUps: z.number().int().min(1).max(5),
 			knowledgeMarkdown: z.string().min(50).max(50_000),

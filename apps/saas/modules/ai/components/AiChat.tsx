@@ -214,10 +214,12 @@ export function AiChat({ conversationId }: { conversationId: string }) {
 
 function RuntimeEvidence({ data }: { data: RuntimeMetadata }) {
 	const latestTraces = data.traces.slice(-3);
+	const usedMastra = data.traces.some((trace) => trace.type === "mastra");
 	return (
 		<div className="p-3 text-xs w-full max-w-[94%] rounded-xl border bg-card">
 			<div className="gap-2 flex flex-wrap items-center">
-				<Badge>{data.runtime === "langgraph" ? "LangGraph" : "Mastra"}</Badge>
+				<Badge>LangGraph 编排</Badge>
+				{usedMastra && <Badge>Mastra 生成</Badge>}
 				<Badge status={data.ownerType === "ai" ? "success" : "warning"}>
 					{data.ownerType === "ai" ? "AI 托管" : "人工接管"}
 				</Badge>

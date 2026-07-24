@@ -8,18 +8,18 @@ demos wholesale.
 ## Architecture
 
 ```text
-Single Agent page
-  ├─ configuration + Markdown knowledge source
-  ├─ parsed KnowledgeUnit and release gates
-  ├─ deterministic P0 Eval
-  └─ governed Chatbot + business traces
+Minimal SaaS surface
+  ├─ /chatbot/settings
+  │    └─ Agent + Markdown KU + release gates + P0 Eval
+  └─ /chatbot
+       └─ governed conversation + business traces
           │
           ▼
 protected oRPC boundary
           │
           ├─ Mastra governance Workflow
-          ├─ Mastra Agent adapter
-          └─ LangGraph StateGraph adapter
+          └─ LangGraph StateGraph
+                 └─ Mastra Agent candidate generation
                     │
                     ▼
 @repo/xiaofei domain kernel
@@ -30,10 +30,10 @@ Neon JSON snapshots
   XiaofeiWorkspace + XiaofeiConversation
 ```
 
-`@repo/xiaofei` is vendor-neutral and remains authoritative. Mastra and
-LangGraph are replaceable runtime adapters in `@repo/ai`; neither framework
-owns tenant configuration, handling rights, knowledge, guardrails or release
-decisions.
+`@repo/xiaofei` is vendor-neutral and remains authoritative. LangGraph owns
+conversation sequencing while Mastra owns Agent generation and the separate
+configuration-governance Workflow. Neither framework owns tenant
+configuration, handling rights, knowledge, guardrails, or release decisions.
 
 ## Implementation map
 
@@ -47,16 +47,16 @@ decisions.
 
 ## Implemented P0 path
 
-1. The tenant edits an Agent instruction, runtime choice, follow-up limit and a
-   compact Markdown knowledge source.
+1. The tenant edits Agent instructions, a follow-up limit, and a compact
+   Markdown knowledge source on `/chatbot/settings`.
 2. Saving deterministically parses each `##` section into a `KnowledgeUnit`.
    Missing keywords, forbidden outputs, handoff rules, reply policy or fallback
    blocks that unit.
 3. A Mastra Workflow checks the knowledge and policy boundary.
 4. The tenant can run four deterministic business assertions covering slot
    collection, high-risk handoff, knowledge missing and safe knowledge reply.
-5. Chat turns run through either a Mastra Agent or LangGraph StateGraph using
-   the same domain kernel.
+5. Chat turns always enter the LangGraph StateGraph. Only the safe reply branch
+   invokes the Mastra Agent for a candidate response.
 6. The complete candidate reply is generated before it becomes customer
    visible. The final Guardrail can replace it with a safe fallback and transfer
    ownership to a human.
@@ -80,7 +80,8 @@ business action.
 
 This is a framework slice, not a production-complete Agent Center:
 
-- one page replaces separate Agent, Knowledge, Eval and Trace workspaces;
+- two minimal pages separate configuration from conversation without yet
+  introducing full Agent, Knowledge, Eval, and Trace workspaces;
 - workspace and conversation aggregates use JSON snapshots instead of fully
   normalized tables;
 - Markdown parsing is deterministic; PDF, URL, Feishu and Excel ingestion are
@@ -102,11 +103,12 @@ The complete slice has been exercised in an isolated Vercel + Neon Preview:
 - all four deterministic P0 assertions passed;
 - LangGraph collected an order ID and damage-photo reference across separate
   turns, then transferred ownership to a human;
-- Mastra produced a real model response for a released service-scope KU;
-- runtime, KU, owner, action and trace evidence were visible in the control
-  page;
+- the LangGraph safe-reply path asked Mastra Agent for a real model response
+  using a released service-scope KU;
+- LangGraph/Mastra execution, KU, owner, action, and trace evidence were visible
+  in the Chatbot;
 - a refund/complaint scenario exited to human handling without executing a
   business action.
 
-The next iteration can split product pages and normalize storage only where
-review of this working slice identifies a real need.
+The next iteration can further split specialized workspaces and normalize
+storage only where review of this working slice identifies a real need.

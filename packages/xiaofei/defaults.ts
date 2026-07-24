@@ -73,7 +73,6 @@ export function createDefaultWorkspaceSnapshot(
 		name: "小飞客服 Agent",
 		status: "review_ready" as const,
 		version: "p0-v1",
-		runtime: "langgraph" as const,
 		instructions:
 			"你是小飞客服 Agent。只做低风险首响、知识问答、资料收集和人工转接；不得承诺退款、赔偿、补发、责任或时效。",
 		serviceScopes: ["售后首响", "资料收集", "常见问题", "人工转接"],
@@ -108,7 +107,6 @@ export function createDefaultWorkspaceSnapshot(
 
 export function rebuildWorkspaceSnapshot(input: {
 	previous: XiaofeiWorkspaceSnapshot;
-	runtime: "mastra" | "langgraph";
 	instructions: string;
 	maxFollowUps: number;
 	knowledgeMarkdown: string;
@@ -121,7 +119,6 @@ export function rebuildWorkspaceSnapshot(input: {
 		...input.previous,
 		agent: {
 			...input.previous.agent,
-			runtime: input.runtime,
 			instructions: input.instructions,
 			maxFollowUps: input.maxFollowUps,
 			status: knowledgeUnits.some((unit) => unit.status === "released")
@@ -189,9 +186,9 @@ export function deriveReleaseGates(
 		},
 		{
 			id: "runtime",
-			label: "Runtime Adapter",
+			label: "统一 Agent Runtime",
 			status: "passed",
-			detail: "Mastra 与 LangGraph 共享同一领域契约",
+			detail: "LangGraph 编排状态，Mastra Agent 按需生成",
 		},
 	];
 }

@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-export const RuntimeKindSchema = z.enum(["mastra", "langgraph"]);
 export const GateStatusSchema = z.enum(["passed", "warning", "blocked"]);
 export const AgentLifecycleStatusSchema = z.enum(["draft", "review_ready", "released", "blocked"]);
 export const OwnerTypeSchema = z.enum(["ai", "human", "workflow", "closed"]);
@@ -36,7 +35,6 @@ export const AgentProfileSchema = z.object({
 	name: z.string().min(1),
 	status: AgentLifecycleStatusSchema,
 	version: z.string().min(1),
-	runtime: RuntimeKindSchema.default("langgraph"),
 	instructions: z.string().min(1),
 	serviceScopes: z.array(z.string().min(1)).default([]),
 	supportedLanguages: z.array(z.string().min(1)).default([]),
@@ -214,7 +212,6 @@ export const TraceEventSchema = z.object({
 });
 
 export const RuntimeMetadataSchema = z.object({
-	runtime: RuntimeKindSchema,
 	knowledgeTitle: z.string().nullable(),
 	nextAction: NextActionSchema,
 	riskLevel: RiskLevelSchema,
@@ -230,7 +227,6 @@ export const RuntimeTurnResultSchema = z.object({
 	metadata: RuntimeMetadataSchema,
 });
 
-export type RuntimeKind = z.infer<typeof RuntimeKindSchema>;
 export type GateStatus = z.infer<typeof GateStatusSchema>;
 export type AgentLifecycleStatus = z.infer<typeof AgentLifecycleStatusSchema>;
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;

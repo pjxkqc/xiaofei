@@ -12,11 +12,12 @@ production-complete Agent Center.
 
 ## What works in P0
 
-- configure an Agent instruction, runtime, follow-up limit, and Markdown
-  knowledge source;
+- configure Agent instructions, follow-up limits, and a Markdown knowledge
+  source from a dedicated settings page;
 - parse each Markdown section into a governed `KnowledgeUnit`;
-- run Mastra Agent and governance Workflow adapters;
-- run a LangGraph state graph for multi-turn slot collection;
+- run a LangGraph state graph as the canonical conversation orchestrator;
+- call a Mastra Agent only when the graph needs a model-generated candidate
+  reply, and run a separate Mastra governance Workflow on configuration save;
 - persist tenant snapshots, conversation state, and trace events in PostgreSQL
   or Neon;
 - prevent stale AI output with `ownerEpoch`;
@@ -24,17 +25,18 @@ production-complete Agent Center.
 - transfer high-risk, incomplete, or exhausted conversations to a human;
 - run four deterministic release assertions from the same control page.
 
-The authenticated control page is available at `/chatbot`.
+The authenticated Chatbot is available at `/chatbot`; Agent, KU, governance,
+and Eval settings are available at `/chatbot/settings`.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-  UI["Next.js /chatbot control page"] --> API["Protected oRPC boundary"]
+  SETTINGS["Next.js /chatbot/settings"] --> API["Protected oRPC boundary"]
+  CHAT["Next.js /chatbot"] --> API
   API --> GOVERN["Mastra governance Workflow"]
-  API --> RUNTIME{"Selected runtime"}
-  RUNTIME --> MASTRA["Mastra Agent"]
-  RUNTIME --> LANGGRAPH["LangGraph StateGraph"]
+  API --> LANGGRAPH["LangGraph StateGraph"]
+  LANGGRAPH --> MASTRA["Mastra Agent candidate generation"]
   GOVERN --> DOMAIN["@repo/xiaofei domain kernel"]
   MASTRA --> DOMAIN
   LANGGRAPH --> DOMAIN
@@ -44,14 +46,15 @@ flowchart TD
 ```
 
 The domain kernel owns Agent, KU, ownership, policy, evaluation, handoff, and
-trace contracts. Mastra and LangGraph are replaceable adapters; neither is
-allowed to become the product data model.
+trace contracts. LangGraph sequences the conversation state machine and calls
+Mastra Agent generation where needed. Neither framework is allowed to become
+the product data model.
 
 ## Repository map
 
 | Path                                                                       | Responsibility                                                                 |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| [`apps/saas`](./apps/saas/README.md)                                       | Authenticated SaaS application and the minimal Xiaofei control page            |
+| [`apps/saas`](./apps/saas/README.md)                                       | Authenticated SaaS application with minimal Chatbot and Agent settings pages   |
 | [`packages/xiaofei`](./packages/xiaofei/README.md)                         | Vendor-neutral domain contracts and deterministic P0 runtime                   |
 | [`packages/ai`](./packages/ai/README.md)                                   | Model provider plus Mastra and LangGraph adapters                              |
 | [`packages/api/modules/xiaofei`](./packages/api/modules/xiaofei/README.md) | Tenant authorization, configuration, evaluation, and persistence orchestration |
@@ -106,7 +109,8 @@ Development services:
 | Mail preview      | `http://localhost:3003` |
 | MinIO console     | `http://localhost:9001` |
 
-Create a password account, complete onboarding, and open
+Create a password account, complete onboarding, configure the Agent at
+`http://localhost:3000/chatbot/settings`, then open
 `http://localhost:3000/chatbot`. Signup email verification is disabled in
 `packages/auth/config.ts`; password users are signed in immediately.
 
@@ -154,15 +158,15 @@ pnpm --filter saas test
 
 The manual P0 smoke path is:
 
-1. save the default configuration and confirm the Mastra governance Workflow
-   leaves the Agent review-ready;
+1. open `/chatbot/settings`, save the default configuration, and confirm the
+   Mastra governance Workflow leaves the Agent review-ready;
 2. run P0 Eval and confirm `4/4` assertions pass;
-3. select LangGraph and send a damaged-item message;
+3. open `/chatbot` and send a damaged-item message;
 4. provide an order ID and then a damage-photo reference across separate turns;
 5. confirm the owner changes from AI to human only after the required
    information is complete;
-6. reset, select Mastra, ask about service scope, and confirm runtime, KU,
-   ownership, next-action, and trace evidence are displayed;
+6. reset, ask about service scope, and confirm LangGraph and Mastra execution,
+   KU, ownership, next-action, and trace evidence are displayed;
 7. send a refund or complaint request and confirm no business action is
    executed and the conversation exits to a human.
 

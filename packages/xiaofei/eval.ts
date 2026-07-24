@@ -56,13 +56,11 @@ export async function runP0EvalSuite(
 			message: testCase.message,
 			state,
 			snapshot,
-			runtime: snapshot.agent.runtime,
 			now,
 		});
 		const result = await finalizeTurn({
 			prepared,
 			snapshot,
-			runtime: snapshot.agent.runtime,
 			message: testCase.message,
 			replyGenerator: {
 				generate: async () => "小飞可以协助低风险售后首响、资料收集、常见问题说明和人工转接。",

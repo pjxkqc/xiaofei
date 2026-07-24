@@ -22,7 +22,7 @@ export const streamMessage = protectedProcedure
 		path: "/ai/stream",
 		tags: ["AI"],
 		summary: "Run a governed Xiaofei Agent turn",
-		description: "Run Mastra or LangGraph behind the Xiaofei P0 governance boundary",
+		description: "Run LangGraph state orchestration with governed Mastra Agent generation",
 	})
 	.input(
 		z.object({

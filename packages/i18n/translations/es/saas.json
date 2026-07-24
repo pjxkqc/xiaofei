@@ -73,6 +73,7 @@
 		"menu": {
 			"accountSettings": "Configuración de cuenta",
 			"admin": "Admin",
+			"agentSettings": "Configuración del agente",
 			"aiChatbot": "Chatbot IA",
 			"navigationTitle": "Menú",
 			"openNavigation": "Abrir navegación",
