@@ -45,3 +45,6 @@ dist/
 .react-email/
 .content-collections/
 .prisma-zod-generator-manifest.json
+
+# Multica task runtime metadata (the import blueprint lives in docs/multica/)
+.multica/project/resources.json

@@ -1,10 +1,42 @@
 # Coding Agent Guidelines
 
-> Comprehensive guide for AI coding agents working with this supastarter Next.js codebase.
+> Canonical repository instructions for human and AI contributors working on
+> Xiaofei. Multica role-specific instructions extend this file; they never
+> replace it.
 
 ## Purpose
 
-Use this document whenever generating or updating code in this repository. Mirror existing project conventions; do not invent new patterns without a strong reason.
+Use this document whenever generating or updating code in this repository.
+Mirror existing project conventions; do not invent new patterns without a
+strong reason.
+
+Read these sources in order before making a change:
+
+1. this root `AGENTS.md`;
+2. [`docs/repository-structure.md`](./docs/repository-structure.md);
+3. the README nearest to the files being changed;
+4. the issue acceptance criteria and linked architecture document.
+
+For work routed through Multica, also follow
+[`docs/multica/collaboration.md`](./docs/multica/collaboration.md) and the
+assigned role in [`docs/multica/agents.md`](./docs/multica/agents.md).
+
+## Repository working contract
+
+- One issue has one implementation owner. Other agents review or receive an
+  explicit child issue instead of editing the same boundary concurrently.
+- Keep changes inside the assigned paths. Ask the lead to split cross-boundary
+  work before expanding scope.
+- Preserve the vendor-neutral kernel: `@repo/xiaofei` cannot depend on Next.js,
+  oRPC, Prisma, Mastra, LangGraph, or channel SDKs.
+- Treat public support endpoints, tenant authorization, ownership leases,
+  Guardrail decisions, and production delivery as security-sensitive.
+- Never commit secrets or copy credentials into issues, prompts, logs,
+  screenshots, fixtures, or traces.
+- Do not mutate production data or deployment settings unless the issue
+  explicitly authorizes that operation.
+- Finish with focused tests plus the smallest relevant workspace quality
+  checks. Report commands and results in the handoff.
 
 ---
 
@@ -13,7 +45,7 @@ Use this document whenever generating or updating code in this repository. Mirro
 You are an expert in:
 
 - **TypeScript** – Strict typing, interfaces over type aliases
-- **Node.js** – Server-side runtime (≥20)
+- **Node.js** – Server-side runtime (≥22)
 - **Next.js App Router** – React Server Components, layouts, route handlers
 - **React** – Functional components, hooks
 - **Shadcn UI & Radix** – Accessible, composable primitives
@@ -34,44 +66,33 @@ You are an expert in:
 /
 ├── apps/
 │   ├── marketing/               # Marketing site (public pages, blog, changelog)
-│   │   ├── app/[locale]/        # App Router routes
-│   │   ├── modules/             # Feature modules
-│   │   │   ├── home/            # Home page components
-│   │   │   ├── blog/            # Blog components
-│   │   │   ├── changelog/       # Changelog components
-│   │   │   ├── shared/          # Cross-cutting components
-│   │   │   └── analytics/       # Analytics providers
-│   │   ├── content/             # MDX content (legal, blog posts)
-│   │   └── tests/               # Playwright E2E tests
-│   ├── saas/                    # SaaS application (protected app)
+│   ├── saas/                    # Public support + authenticated operations
 │   │   ├── app/                 # App Router routes
-│   │   │   ├── (unauthenticated)/  # Login, signup, forgot-password
-│   │   │   ├── (authenticated)/    # Protected routes, account, organizations
+│   │   │   ├── (public)/        # No-login customer support
+│   │   │   ├── (unauthenticated)/  # Login, signup, password recovery
+│   │   │   ├── (authenticated)/    # Inbox, governance, account, organizations
 │   │   │   └── api/             # API route handlers
-│   │   └── modules/             # Feature modules
-│   │       ├── auth/            # Authentication components
-│   │       ├── organizations/   # Organization management
-│   │       ├── settings/        # User & account settings
-│   │       ├── payments/        # Billing & subscriptions
-│   │       ├── admin/           # Admin panel
-│   │       ├── shared/          # Cross-cutting components
-│   │       └── ...
+│   │   └── modules/             # Product and inherited UI modules
 │   ├── docs/                    # Documentation site
 │   └── mail-preview/            # Email template preview
-├── packages/                    # Shared backend packages
+├── packages/
+│   ├── xiaofei/                 # Vendor-neutral contracts and decisions
+│   ├── ai/                      # Mastra, LangGraph, and model adapters
 │   ├── api/                     # oRPC procedures and HTTP handlers
 │   ├── auth/                    # Better Auth configuration
-│   ├── database/                # Prisma/Drizzle schema and queries
-│   ├── ai/                      # AI integrations
-│   ├── i18n/                    # Translations and locale utilities
-│   ├── logs/                    # Logging configuration
-│   ├── mail/                    # Email providers and templates
-│   ├── payments/                # Payment processing (Stripe, etc.)
-│   ├── storage/                 # File storage (S3, etc.)
-│   ├── ui/                      # Shadcn UI components
-│   └── utils/                   # Shared utility functions
-└── tooling/                     # Build tooling and shared configs
+│   ├── database/                # Prisma schema, clients, and persistence
+│   └── ...                      # i18n, mail, payments, storage, UI, utilities
+├── docs/
+│   ├── multica/                 # Import blueprint and collaboration protocol
+│   └── *.md                     # Architecture and operating guides
+├── scripts/                     # Delivery and Preview lifecycle scripts
+├── .github/workflows/           # Quality and Preview cleanup workflows
+└── tooling/                     # Shared build and lint configuration
 ```
+
+The authoritative ownership and dependency map is
+[`docs/repository-structure.md`](./docs/repository-structure.md). Do not infer
+ownership from directory names alone.
 
 ### Import Conventions
 
@@ -309,6 +330,7 @@ export const createItem = protectedProcedure
 
 - `publicProcedure` – No authentication required
 - `protectedProcedure` – Requires authenticated session
+- `supportProcedure` – Requires an authenticated user with support access
 - `adminProcedure` – Requires admin role
 
 ### Database Queries
@@ -697,7 +719,8 @@ Avoid `"use client"` for:
 ### Documentation Updates
 
 - Update relevant MDX docs under `apps/marketing/content` when altering user-facing behavior
-- Update `agents.md` when architectural conventions, app boundaries, aliases, or shared workflows change
+- Update `AGENTS.md` when architectural conventions, app boundaries, aliases, or shared workflows change
+- Update `docs/multica/` when agent ownership, routing, or handoff rules change
 - Keep README files current with setup instructions
 
 ### Changelog
