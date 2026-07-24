@@ -35,6 +35,7 @@ import {
 	PanelLeftCloseIcon,
 	PanelLeftOpenIcon,
 	SettingsIcon,
+	Settings2Icon,
 	ShieldUserIcon,
 	UserCogIcon,
 } from "lucide-react";
@@ -320,7 +321,13 @@ export function NavBar() {
 				label: t("app.menu.aiChatbot"),
 				href: "/chatbot",
 				icon: BotMessageSquareIcon,
-				isActive: pathname.startsWith("/chatbot"),
+				isActive: pathname === "/chatbot",
+			},
+			{
+				label: t("app.menu.agentSettings"),
+				href: "/agent-settings",
+				icon: Settings2Icon,
+				isActive: pathname.startsWith("/agent-settings"),
 			},
 			...(organizationSubItems
 				? [

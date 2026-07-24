@@ -31,7 +31,8 @@ flowchart LR
   PR --> VP["Vercel Preview"]
   VP --> NB["Neon preview/<branch>"]
   VP --> CHAT["/chatbot"]
-  CHAT --> AI["OpenAI-compatible gateway"]
+  CHAT --> RT["Xiaofei governed runtime"]
+  RT --> AI["OpenAI-compatible gateway"]
   MERGE["Merge + delete branch"] --> CLEAN["Neon obsolete branch cleanup"]
   MERGE --> RETAIN["Vercel deployment retention"]
 ```
@@ -119,14 +120,22 @@ production database.
 ## Chatbot request path
 
 The browser calls the same-origin `/api/rpc` endpoint. The authenticated
-`ai.stream` procedure converts UI messages, then the server uses
-`@ai-sdk/openai` in explicit Chat Completions mode:
+`ai.stream` procedure loads the tenant workspace and conversation, runs the
+LangGraph state machine through the vendor-neutral Xiaofei kernel, invokes
+Mastra Agent generation only on the permitted reply path, persists state and
+traces, and returns text only after final Guardrail authorization. Model calls
+use `@ai-sdk/openai` in explicit Chat Completions mode:
 
 ```text
 Browser /chatbot
   → same-origin /api/rpc
   → protected server procedure
-  → OPENAI_BASE_URL/chat/completions
+  → tenant workspace + conversation state
+  → LangGraph StateGraph
+  → Mastra Agent when candidate generation is permitted
+  → OPENAI_BASE_URL/chat/completions when generation is permitted
+  → Xiaofei Guardrail + owner lease check
+  → persisted state + business traces
   → streamed UI message
 ```
 
@@ -144,14 +153,18 @@ For every infrastructure-affecting PR:
 3. Confirm Neon shows one branch named for the PR's Git branch.
 4. Create a disposable user on the Preview; registration must return success
    and continue to `/onboarding` without email verification.
-5. Finish onboarding, open `/chatbot`, send a unique prompt, and confirm a real
-   streamed model response appears.
-6. Confirm Vercel runtime logs show successful auth and AI requests with no
+5. Finish onboarding, open `/agent-settings`, save the default configuration,
+   and confirm the Mastra governance Workflow completes.
+6. Run P0 Eval and confirm all deterministic assertions pass.
+7. Open `/chatbot` and verify LangGraph multi-turn collection plus the
+   Mastra-generated service-scope reply. Confirm framework, KU, owner, action,
+   and trace evidence appears and a high-risk request transfers to a human.
+8. Confirm Vercel runtime logs show successful auth and AI requests with no
    `Invalid origin`, database, or provider errors.
-7. Merge the PR, confirm GitHub deletes the source branch, and confirm
+9. Merge the PR, confirm GitHub deletes the source branch, and confirm
    `delete-neon-preview-branch` removes the corresponding Neon Preview branch.
-8. Confirm the production deployment becomes Ready and the `main` quality
-   workflow succeeds.
+10. Confirm the production deployment becomes Ready and the `main` quality
+    workflow succeeds.
 
 Never put test passwords, API keys, database URLs, or response headers into a
 PR description, Actions artifact, screenshot, or application log.

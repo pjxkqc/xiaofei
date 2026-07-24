@@ -73,6 +73,7 @@
 		"menu": {
 			"accountSettings": "Account settings",
 			"admin": "Admin",
+			"agentSettings": "Agent settings",
 			"aiChatbot": "AI Chatbot",
 			"navigationTitle": "Menu",
 			"openNavigation": "Open navigation",

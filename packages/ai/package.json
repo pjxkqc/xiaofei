@@ -11,7 +11,12 @@
 	"dependencies": {
 		"@ai-sdk/openai": "catalog:",
 		"@ai-sdk/react": "catalog:",
-		"ai": "catalog:"
+		"@langchain/core": "catalog:",
+		"@langchain/langgraph": "catalog:",
+		"@mastra/core": "catalog:",
+		"@repo/xiaofei": "workspace:*",
+		"ai": "catalog:",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@repo/tsconfig": "workspace:*",
