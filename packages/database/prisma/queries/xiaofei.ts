@@ -26,6 +26,65 @@ export function getXiaofeiConversation(workspaceId: string, externalId: string) 
 	});
 }
 
+export function listXiaofeiConversations(workspaceId: string) {
+	return db.xiaofeiConversation.findMany({
+		where: { workspaceId },
+		orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
+		take: 50,
+	});
+}
+
+export function upsertXiaofeiSupportConversation(input: {
+	workspaceId: string;
+	externalId: string;
+	customerName: string;
+	state: Prisma.InputJsonValue;
+	traceEvents: Prisma.InputJsonValue;
+	messages: Prisma.InputJsonValue;
+	lastCustomerSeenAt: Date;
+	lastMessageAt: Date;
+}) {
+	return db.xiaofeiConversation.upsert({
+		where: {
+			workspaceId_externalId: {
+				workspaceId: input.workspaceId,
+				externalId: input.externalId,
+			},
+		},
+		create: input,
+		update: {
+			customerName: input.customerName,
+			lastCustomerSeenAt: input.lastCustomerSeenAt,
+		},
+	});
+}
+
+export function updateXiaofeiSupportConversation(
+	workspaceId: string,
+	externalId: string,
+	data: {
+		customerName?: string;
+		status?: string;
+		assignedUserId?: string | null;
+		assignedUserName?: string | null;
+		state?: Prisma.InputJsonValue;
+		messages?: Prisma.InputJsonValue;
+		traceEvents?: Prisma.InputJsonValue;
+		lastCustomerSeenAt?: Date;
+		lastMessageAt?: Date;
+	},
+) {
+	return db.xiaofeiConversation.update({
+		where: {
+			workspaceId_externalId: {
+				workspaceId,
+				externalId,
+			},
+		},
+		data,
+	});
+}
+
 export function upsertXiaofeiConversation(input: {
 	workspaceId: string;
 	externalId: string;

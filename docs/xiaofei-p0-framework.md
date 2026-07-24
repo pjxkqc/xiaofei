@@ -9,13 +9,17 @@ demos wholesale.
 
 ```text
 Minimal SaaS surface
+  ├─ /support (public)
+  │    └─ customer messages ↔ Xiaofei or human owner
+  ├─ /inbox (support role)
+  │    └─ online state + takeover + human reply
   ├─ /agent-settings
   │    └─ Agent + Markdown KU → capability review → P0 Eval
   └─ /chatbot
        └─ governed conversation + business traces
           │
           ▼
-protected oRPC boundary
+public token / protected support-role oRPC boundaries
           │
           ├─ Mastra governance Workflow
           └─ LangGraph StateGraph
@@ -66,6 +70,10 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
    ownership to a human.
 8. `ownerEpoch` changes on handoff, invalidating stale AI work. Conversation
    state and business-readable traces are stored in Neon.
+9. A no-login customer receives a random conversation token. The public page
+   polls messages and online presence; authenticated support users see the same
+   conversation in `/inbox`, can take ownership, reply, and return it to
+   Xiaofei.
 
 ## Tool and adapter boundary
 
@@ -84,7 +92,8 @@ business action.
 
 This is a framework slice, not a production-complete Agent Center:
 
-- two minimal pages separate configuration from conversation without yet
+- four minimal pages separate public chat, support inbox, configuration, and
+  runtime evidence without yet
   introducing full Agent, Knowledge, Eval, and Trace workspaces;
 - workspace and conversation aggregates use JSON snapshots instead of fully
   normalized tables;
@@ -96,7 +105,9 @@ This is a framework slice, not a production-complete Agent Center:
   workspace snapshot; LLM planning, version history, and rollback are deferred;
 - the LangGraph graph uses Neon as the product persistence boundary rather than
   adding a second production checkpointer;
-- no real customer-service send, private-note or refund API is called;
+- the built-in public channel is a validation adapter; Flyranking source
+  ingestion, LoopDesk send/private-note APIs, and realtime sockets are not yet
+  connected;
 - Eval currently uses deterministic business assertions, not model graders;
 - no release versioning, rollback UI, scheduling or multi-channel hosting UI.
 

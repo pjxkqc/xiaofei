@@ -1,7 +1,5 @@
-import { ORPCError } from "@orpc/server";
 import {
 	deleteXiaofeiConversation,
-	getOrganizationMembership,
 	getXiaofeiConversation,
 	getXiaofeiWorkspace,
 	type Prisma,
@@ -31,17 +29,22 @@ export interface XiaofeiAuthContext {
 	};
 }
 
-export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<string> {
-	const organizationId = context.session.activeOrganizationId;
-	if (!organizationId) return `user:${context.user.id}`;
+export const PUBLIC_SUPPORT_TENANT_KEY = "channel:public-support";
 
-	const membership = await getOrganizationMembership(organizationId, context.user.id);
-	if (!membership) throw new ORPCError("FORBIDDEN");
-	return `organization:${organizationId}`;
+export async function getXiaofeiTenantKey(_context: XiaofeiAuthContext): Promise<string> {
+	return PUBLIC_SUPPORT_TENANT_KEY;
 }
 
 export async function getOrCreateXiaofeiWorkspace(context: XiaofeiAuthContext) {
 	const tenantKey = await getXiaofeiTenantKey(context);
+	return await getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey);
+}
+
+export async function getOrCreatePublicXiaofeiWorkspace() {
+	return await getOrCreateXiaofeiWorkspaceByTenantKey(PUBLIC_SUPPORT_TENANT_KEY);
+}
+
+async function getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey: string) {
 	const existing = await getXiaofeiWorkspace(tenantKey);
 	if (existing) {
 		const parsed = XiaofeiWorkspaceSnapshotSchema.parse(existing.snapshot);

@@ -2,10 +2,10 @@ import { ORPCError } from "@orpc/server";
 import { setCapabilityPlanReview } from "@repo/xiaofei";
 import { z } from "zod";
 
-import { protectedProcedure } from "../../../orpc/procedures";
+import { supportProcedure } from "../../../orpc/procedures";
 import { getOrCreateXiaofeiWorkspace, saveXiaofeiSnapshot } from "../service";
 
-export const reviewXiaofeiCapability = protectedProcedure
+export const reviewXiaofeiCapability = supportProcedure
 	.route({
 		method: "POST",
 		path: "/xiaofei/capability/review",

@@ -25,6 +25,7 @@ import {
 	SaveIcon,
 	ShieldCheckIcon,
 	SparklesIcon,
+	UploadIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -64,6 +65,23 @@ export function XiaofeiAgentSettings() {
 			toastError("配置保存失败", "请检查 Markdown 必填字段和 Agent 指令。");
 		} finally {
 			setSaving(false);
+		}
+	};
+
+	const importKnowledgeMarkdown = async (event: React.ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		event.target.value = "";
+		if (!file || !draft) return;
+		if (file.size > 1_000_000) {
+			toastError("知识文件过大", "本轮支持 1MB 以内的 Markdown 或文本文件。");
+			return;
+		}
+
+		try {
+			setDraft({ ...draft, knowledgeMarkdown: await file.text() });
+			toastSuccess("知识文件已载入", "检查内容后保存，即可重新生成 KU 与能力方案。");
+		} catch {
+			toastError("无法读取知识文件");
 		}
 	};
 
@@ -153,7 +171,7 @@ export function XiaofeiAgentSettings() {
 					<FlowStep
 						number={4}
 						title="会话验证"
-						detail={evalReady ? "可进入 Chatbot" : "测试通过后开放"}
+						detail={evalReady ? "可进入客户会话" : "测试通过后开放"}
 						done={!hasUnsavedChanges && evalReady}
 					/>
 				</CardContent>
@@ -218,6 +236,24 @@ export function XiaofeiAgentSettings() {
 							</div>
 						</CardHeader>
 						<CardContent className="gap-4 flex flex-col">
+							<div className="gap-3 sm:flex-row sm:items-center sm:justify-between p-3 flex flex-col rounded-xl border bg-muted/30">
+								<p className="text-xs text-muted-foreground">
+									可直接编辑，也可导入 `.md` / `.txt` 文件覆盖当前草稿。
+								</p>
+								<Button variant="outline" size="sm" asChild>
+									<label htmlFor="knowledge-file" className="cursor-pointer">
+										<UploadIcon className="mr-2 size-4" />
+										导入知识文件
+										<input
+											id="knowledge-file"
+											type="file"
+											accept=".md,.txt,text/markdown,text/plain"
+											className="hidden"
+											onChange={(event) => void importKnowledgeMarkdown(event)}
+										/>
+									</label>
+								</Button>
+							</div>
 							<Textarea
 								value={draft.knowledgeMarkdown}
 								onChange={(event) => setDraft({ ...draft, knowledgeMarkdown: event.target.value })}
@@ -404,12 +440,17 @@ export function XiaofeiAgentSettings() {
 						</div>
 						<div className="mt-2">
 							{evalReady && !hasUnsavedChanges ? (
-								<Button className="w-full" asChild>
-									<Link href="/chatbot">
-										<MessageSquareIcon className="mr-2 size-4" />
-										4. 打开 Chatbot 验证
-									</Link>
-								</Button>
+								<div className="gap-2 sm:grid-cols-2 grid">
+									<Button asChild>
+										<Link href="/support" target="_blank">
+											<MessageSquareIcon className="mr-2 size-4" />
+											4. 客户页面验证
+										</Link>
+									</Button>
+									<Button variant="outline" asChild>
+										<Link href="/inbox">进入客服工作台</Link>
+									</Button>
+								</div>
 							) : (
 								<Button className="w-full" disabled>
 									<MessageSquareIcon className="mr-2 size-4" />

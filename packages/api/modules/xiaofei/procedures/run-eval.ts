@@ -1,10 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import { deriveReleaseGates, runP0EvalSuite } from "@repo/xiaofei";
 
-import { protectedProcedure } from "../../../orpc/procedures";
+import { supportProcedure } from "../../../orpc/procedures";
 import { getOrCreateXiaofeiWorkspace, saveXiaofeiSnapshot } from "../service";
 
-export const runXiaofeiEval = protectedProcedure
+export const runXiaofeiEval = supportProcedure
 	.route({
 		method: "POST",
 		path: "/xiaofei/eval",

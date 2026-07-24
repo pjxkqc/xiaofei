@@ -29,3 +29,12 @@ export const adminProcedure = protectedProcedure.use(async ({ context, next }) =
 
 	return await next();
 });
+
+export const supportProcedure = protectedProcedure.use(async ({ context, next }) => {
+	const role = context.user.role ?? "user";
+	if (!["user", "support", "admin"].includes(role)) {
+		throw new ORPCError("FORBIDDEN");
+	}
+
+	return await next();
+});

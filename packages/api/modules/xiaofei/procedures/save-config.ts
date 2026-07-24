@@ -2,10 +2,10 @@ import { runMastraGovernance } from "@repo/ai";
 import { rebuildWorkspaceSnapshot } from "@repo/xiaofei";
 import { z } from "zod";
 
-import { protectedProcedure } from "../../../orpc/procedures";
+import { supportProcedure } from "../../../orpc/procedures";
 import { getOrCreateXiaofeiWorkspace, saveXiaofeiSnapshot } from "../service";
 
-export const saveXiaofeiConfig = protectedProcedure
+export const saveXiaofeiConfig = supportProcedure
 	.route({
 		method: "PUT",
 		path: "/xiaofei/config",

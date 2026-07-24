@@ -1,13 +1,16 @@
 # SaaS application
 
-`apps/saas` is the authenticated Next.js application. It hosts account and
-organization features from supastarter and the current Xiaofei P0 control
-surface.
+`apps/saas` is the Next.js product surface. It hosts the public customer
+support channel, authenticated support operations, and the account and
+organization features inherited from supastarter.
 
 ## Xiaofei surface
 
-The protected surface is deliberately split into two small pages:
+The product surface is deliberately kept to four small pages:
 
+- `/support` is a public, no-login customer conversation page;
+- `/inbox` is the authenticated support-agent inbox for online state, ownership,
+  takeover, and human replies;
 - `/chatbot` renders `XiaofeiChatConsole.tsx` for conversation and trace
   validation;
 - `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
@@ -15,7 +18,8 @@ The protected surface is deliberately split into two small pages:
 
 The pages can:
 
-- edit Agent instructions, follow-up limits, and Markdown knowledge;
+- edit Agent instructions and follow-up limits, or import/edit Markdown
+  knowledge;
 - save configuration through the protected Xiaofei oRPC module;
 - review the capability plan derived from released KUs;
 - run deterministic KU-match, Action, and Owner release assertions;
@@ -23,6 +27,8 @@ The pages can:
 - display LangGraph/Mastra execution, KU, owner, next-action, and trace
   evidence;
 - reset the server-side demonstration conversation.
+- persist public customer/human messages and poll the shared channel without
+  introducing a second realtime stack.
 
 The browser never receives model keys or database credentials.
 
@@ -42,6 +48,12 @@ conversation
     → LangGraph state orchestration
     → Mastra Agent generation when the graph permits it
     → final UI message only after Guardrail authorization
+
+public support loop
+  PublicSupportChat (/support)
+    → public UUID-scoped xiaofei procedure
+    → shared XiaofeiWorkspace + XiaofeiConversation
+    ↔ SupportInbox (/inbox, authenticated support role)
 ```
 
 ## Local use
@@ -59,8 +71,9 @@ pnpm --filter @repo/database generate
 pnpm --filter saas dev
 ```
 
-The app listens on `http://localhost:3000`. Create a password user, complete
-onboarding, configure `/agent-settings`, then validate `/chatbot`.
+The app listens on `http://localhost:3000`. Use `/support` without logging in.
+Create a password user, complete onboarding, then use `/inbox` and
+`/agent-settings` as the support role.
 
 ## Tests
 

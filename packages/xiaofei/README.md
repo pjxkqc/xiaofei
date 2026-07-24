@@ -9,15 +9,15 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 
 ## File map
 
-| File              | Responsibility                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------------- |
-| `contracts.ts`    | Zod schemas and TypeScript types for Agent, KU, policy, tools, state, handoff, trace, and workspace snapshots |
-| `conversation.ts` | Conversation creation, owner transitions, lease validation, and slot updates                                  |
-| `knowledge.ts`    | Deterministic Markdown parsing, KU validation, and knowledge selection                                        |
-| `runtime.ts`      | P0 turn preparation, risk decisions, candidate finalization, Guardrail, handoff, and trace creation           |
-| `eval.ts`         | Four deterministic P0 release assertions                                                                      |
-| `defaults.ts`     | Default workspace plus deterministic KU capability plans, review transitions, and release gates               |
-| `ports.ts`        | Product-owned channel adapter interface                                                                       |
+| File              | Responsibility                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts.ts`    | Zod schemas and TypeScript types for Agent, KU, policy, tools, state, handoff, trace, support messages, and workspace snapshots |
+| `conversation.ts` | Conversation creation, owner transitions, lease validation, and slot updates                                                    |
+| `knowledge.ts`    | Deterministic Markdown parsing, KU validation, and knowledge selection                                                          |
+| `runtime.ts`      | P0 turn preparation, risk decisions, candidate finalization, Guardrail, handoff, and trace creation                             |
+| `eval.ts`         | Four deterministic P0 release assertions                                                                                        |
+| `defaults.ts`     | Default workspace plus deterministic KU capability plans, review transitions, and release gates                                 |
+| `ports.ts`        | Product-owned channel adapter interface                                                                                         |
 
 `index.ts` is the public package boundary. Consumers should import from
 `@repo/xiaofei`, not from internal files.
@@ -36,6 +36,8 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 6. High-risk business actions may be described in the tool registry but remain
    blocked until an explicit policy and audited adapter authorize them.
 7. Trace events describe business decisions without storing credentials.
+8. Public customer messages and human replies share the same conversation
+   owner state; the customer surface cannot change ownership.
 
 ## Turn lifecycle
 

@@ -1,7 +1,7 @@
-import { protectedProcedure } from "../../../orpc/procedures";
+import { supportProcedure } from "../../../orpc/procedures";
 import { getOrCreateXiaofeiWorkspace } from "../service";
 
-export const getXiaofeiConfig = protectedProcedure
+export const getXiaofeiConfig = supportProcedure
 	.route({
 		method: "GET",
 		path: "/xiaofei/config",

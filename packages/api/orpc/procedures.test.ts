@@ -11,7 +11,12 @@ vi.mock("@repo/auth", () => ({
 
 import { auth } from "@repo/auth";
 
-import { adminProcedure, protectedProcedure, publicProcedure } from "./procedures";
+import {
+	adminProcedure,
+	protectedProcedure,
+	publicProcedure,
+	supportProcedure,
+} from "./procedures";
 
 describe("publicProcedure", () => {
 	it("is defined", () => {
@@ -105,5 +110,35 @@ describe("adminProcedure", () => {
 		});
 
 		expect(result).toEqual({ success: true });
+	});
+});
+
+describe("supportProcedure", () => {
+	it.each(["user", "support", "admin"])("allows the %s role", async (role) => {
+		vi.mocked(auth.api.getSession).mockResolvedValue({
+			user: { id: `${role}-1`, role, name: "Support Agent" },
+			session: { id: "session-1" },
+		} as never);
+
+		const testProcedure = supportProcedure.handler(async () => ({ success: true }));
+		await expect(
+			call(testProcedure, undefined, {
+				context: { headers: new Headers() },
+			}),
+		).resolves.toEqual({ success: true });
+	});
+
+	it("rejects authenticated roles outside the support workspace", async () => {
+		vi.mocked(auth.api.getSession).mockResolvedValue({
+			user: { id: "viewer-1", role: "viewer", name: "Viewer" },
+			session: { id: "session-1" },
+		} as never);
+
+		const testProcedure = supportProcedure.handler(async () => ({ success: true }));
+		await expect(
+			call(testProcedure, undefined, {
+				context: { headers: new Headers() },
+			}),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
 	});
 });
