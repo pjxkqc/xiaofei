@@ -16,7 +16,8 @@ The product surface is deliberately kept to five small pages:
 - `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
   Unit, release-gate, and Eval configuration.
 - `/knowledge/documents` manages tenant-scoped Markdown, TXT, and DOCX source
-  documents through authenticated oRPC procedures.
+  documents through authenticated oRPC procedures, with bounded metadata pages
+  and full document bodies loaded only when a document is opened.
 
 The pages can:
 
