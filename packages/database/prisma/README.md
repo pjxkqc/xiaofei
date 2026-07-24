@@ -37,7 +37,7 @@ are not retained; `bodyText` is the durable extracted content.
 
 - workspace lookup and upsert by tenant key;
 - conversation lookup and upsert by workspace/external ID;
-- scoped conversation reset.
+- scoped conversation reset;
 - document create, list, get, update, and delete by workspace.
 
 Document reads and mutations require `workspaceId`. The compound
@@ -45,6 +45,26 @@ Document reads and mutations require `workspaceId`. The compound
 indistinguishable from a missing document at the query boundary. Callers must
 resolve the authenticated tenant to a Xiaofei workspace before using these
 queries.
+
+Document lists return metadata only; `bodyText` is available only from the
+workspace-scoped get query. Lists use a stable `(createdAt, id)` order and
+return `{ items, nextCursor }`. The default page size is 25 and callers may
+request 1–50 records. A cursor is resolved through the compound
+`workspaceId_id` key so another workspace's document ID cannot become a list
+cursor.
+
+The query boundary also enforces fixed per-workspace ceilings:
+
+- at most 100 knowledge documents;
+- at most 20 MiB of UTF-8 encoded `bodyText` across those documents.
+
+Create, body-changing update, and delete acquire the same PostgreSQL
+transaction-scoped advisory lock derived from `workspaceId`. Quota usage and
+the write therefore execute atomically for one workspace even when requests
+arrive concurrently. A rejected create/update throws
+`XiaofeiKnowledgeDocumentQuotaError` with `quota` set to `document_count` or
+`stored_body_bytes` and a numeric `limit`; callers should map that typed error
+to their transport contract without exposing database errors.
 
 The document contract exports these Prisma enums through `@repo/database`:
 
