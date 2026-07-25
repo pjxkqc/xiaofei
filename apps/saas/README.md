@@ -6,7 +6,7 @@ organization features inherited from supastarter.
 
 ## Xiaofei surface
 
-The product surface is deliberately kept to five small pages:
+The product surface is deliberately kept to six small pages:
 
 - `/support` is a public, no-login customer conversation page;
 - `/inbox` is the authenticated support-agent inbox for online state, ownership,
@@ -14,9 +14,12 @@ The product surface is deliberately kept to five small pages:
 - `/chatbot` renders `XiaofeiChatConsole.tsx` for conversation and trace
   validation;
 - `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
-  Unit, release-gate, and Eval configuration.
+  Unit, release-gate, and Eval configuration;
 - `/api-demo` is an authenticated comparison of the public OpenAPI status route
-  and the typed browser oRPC client.
+  and the typed browser oRPC client;
+- `/knowledge/documents` manages tenant-scoped Markdown, TXT, and DOCX source
+  documents through authenticated oRPC procedures, with bounded metadata pages
+  and full document bodies loaded only when a document is opened.
 
 The pages can:
 
@@ -31,6 +34,9 @@ The pages can:
 - reset the server-side demonstration conversation.
 - persist public customer/human messages and poll the shared channel without
   introducing a second realtime stack.
+- upload, inspect, edit, change lifecycle status, and delete source documents.
+- page through bounded metadata-only document lists while loading body text
+  only for the selected document.
 
 The browser never receives model keys or database credentials.
 
@@ -80,7 +86,9 @@ pnpm --filter saas dev
 
 The app listens on `http://localhost:3000`. Use `/support` without logging in.
 Create a password user, complete onboarding, then use `/inbox` and
-`/agent-settings` as the support role.
+`/agent-settings` as the support role. Use `/knowledge/documents` to upload a
+UTF-8 `.md` or `.txt` file, or a `.docx` containing ordinary paragraphs; DOCX
+images, OCR, and complex tables are intentionally not supported.
 
 ## Tests
 

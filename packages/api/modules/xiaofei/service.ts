@@ -44,7 +44,7 @@ export async function getOrCreatePublicXiaofeiWorkspace() {
 	return await getOrCreateXiaofeiWorkspaceByTenantKey(PUBLIC_SUPPORT_TENANT_KEY);
 }
 
-async function getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey: string) {
+export async function getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey: string) {
 	const existing = await getXiaofeiWorkspace(tenantKey);
 	if (existing) {
 		const parsed = XiaofeiWorkspaceSnapshotSchema.parse(existing.snapshot);

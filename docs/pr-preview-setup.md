@@ -18,9 +18,11 @@ merged. Cloud credentials are never committed to the repository.
    restores the pooled runtime URL, and builds the application.
 6. The Preview must pass the manual smoke checks below. A new push cancels stale
    GitHub work and replaces the branch alias with the latest deployment.
-7. Merge only after GitHub quality, Vercel deployment, signup, database
-   isolation, and the real streaming Chatbot have all passed.
-8. GitHub deletes the merged short-lived branch. The
+7. Reviewers pin UI feedback with Vercel Toolbar comments. Every unresolved
+   comment keeps the `Vercel Preview Comments` check from passing.
+8. Merge only after GitHub quality, Vercel deployment, Preview comments, signup,
+   database isolation, and the real streaming Chatbot have all passed.
+9. GitHub deletes the merged short-lived branch. The
    `cleanup-preview-database` workflow immediately hard-deletes the matching
    disposable Neon database branch. Vercel retains immutable deployments
    according to project retention instead of deleting them synchronously.
@@ -64,6 +66,30 @@ gateway key.
 Repository setting `delete_branch_on_merge` must remain enabled. This keeps the
 repository tidy and is the event that allows branch-scoped cloud resources to
 become obsolete.
+
+## Preview UI feedback
+
+Vercel Toolbar is the visual review surface; GitHub remains the delivery and
+automation surface. The shortest feedback loop is:
+
+1. Open the current PR Preview and use the Toolbar to pin a comment to the exact
+   button or element. Include the expected appearance or behavior.
+2. Leave the comment unresolved. Vercel updates the PR's
+   `Vercel Preview Comments` check, so the open feedback is visible to the merge
+   gate. A comment does not edit code or start GitHub Actions by itself.
+3. If the feedback needs issue tracking, convert the comment to a GitHub issue
+   through the Vercel Comments GitHub integration. The issue preserves the
+   deployment and visual context and can then be assigned to an implementation
+   agent.
+4. The implementer pushes a fix to the same PR. GitHub quality and Vercel deploy
+   the new commit normally.
+5. Reopen the newest Preview, verify the pinned location, and resolve the
+   comment. Only then should the Preview Comments check pass.
+
+CI validates committed code; it does not autonomously interpret or repair a
+Toolbar comment. Automated repair would require a separate GitHub
+issue-to-agent bridge. Do not add that bridge until the manual
+comment-to-issue flow is stable and its permissions are intentionally scoped.
 
 `.github/workflows/cleanup-preview-database.yml` runs only for a same-repository
 PR `closed` event. It looks up the exact `preview/<head-ref>` branch and calls

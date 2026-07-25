@@ -1,5 +1,12 @@
 import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
+import {
+	createKnowledgeDocumentProcedure,
+	deleteKnowledgeDocumentProcedure,
+	getKnowledgeDocumentProcedure,
+	listKnowledgeDocumentsProcedure,
+	updateKnowledgeDocumentProcedure,
+} from "./procedures/knowledge-documents";
 import { resetXiaofeiConversation } from "./procedures/reset-conversation";
 import { reviewXiaofeiCapability } from "./procedures/review-capability";
 import { runXiaofeiEval } from "./procedures/run-eval";
@@ -28,4 +35,9 @@ export const xiaofeiRouter = {
 	getAgentConversation,
 	setAgentConversationOwner,
 	sendAgentMessage,
+	createKnowledgeDocument: createKnowledgeDocumentProcedure,
+	listKnowledgeDocuments: listKnowledgeDocumentsProcedure,
+	getKnowledgeDocument: getKnowledgeDocumentProcedure,
+	updateKnowledgeDocument: updateKnowledgeDocumentProcedure,
+	deleteKnowledgeDocument: deleteKnowledgeDocumentProcedure,
 };

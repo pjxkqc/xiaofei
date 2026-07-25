@@ -28,6 +28,7 @@ import {
 import { NotificationCenter } from "@shared/components/NotificationCenter";
 import { UserMenu } from "@shared/components/UserMenu";
 import {
+	BookOpenTextIcon,
 	BotMessageSquareIcon,
 	BracesIcon,
 	ChevronRightIcon,
@@ -335,6 +336,12 @@ export function NavBar() {
 				href: "/api-demo",
 				icon: BracesIcon,
 				isActive: pathname.startsWith("/api-demo"),
+			},
+			{
+				label: t("app.menu.knowledgeDocuments"),
+				href: "/knowledge/documents",
+				icon: BookOpenTextIcon,
+				isActive: pathname.startsWith("/knowledge/documents"),
 			},
 			...(organizationSubItems
 				? [
