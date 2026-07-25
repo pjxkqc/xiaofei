@@ -2,10 +2,16 @@ import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
 import {
 	createKnowledgeDocumentProcedure,
+	createKnowledgeWebProcedure,
+	createManualKnowledgeEntriesProcedure,
 	deleteKnowledgeDocumentProcedure,
+	deleteKnowledgeEntryProcedure,
 	getKnowledgeDocumentProcedure,
+	getKnowledgeEntryProcedure,
 	listKnowledgeDocumentsProcedure,
+	listKnowledgeEntriesProcedure,
 	updateKnowledgeDocumentProcedure,
+	updateKnowledgeEntryProcedure,
 } from "./procedures/knowledge-documents";
 import { resetXiaofeiConversation } from "./procedures/reset-conversation";
 import { reviewXiaofeiCapability } from "./procedures/review-capability";
@@ -36,8 +42,14 @@ export const xiaofeiRouter = {
 	setAgentConversationOwner,
 	sendAgentMessage,
 	createKnowledgeDocument: createKnowledgeDocumentProcedure,
+	createKnowledgeWeb: createKnowledgeWebProcedure,
+	createManualKnowledgeEntries: createManualKnowledgeEntriesProcedure,
 	listKnowledgeDocuments: listKnowledgeDocumentsProcedure,
 	getKnowledgeDocument: getKnowledgeDocumentProcedure,
 	updateKnowledgeDocument: updateKnowledgeDocumentProcedure,
 	deleteKnowledgeDocument: deleteKnowledgeDocumentProcedure,
+	listKnowledgeEntries: listKnowledgeEntriesProcedure,
+	getKnowledgeEntry: getKnowledgeEntryProcedure,
+	updateKnowledgeEntry: updateKnowledgeEntryProcedure,
+	deleteKnowledgeEntry: deleteKnowledgeEntryProcedure,
 };

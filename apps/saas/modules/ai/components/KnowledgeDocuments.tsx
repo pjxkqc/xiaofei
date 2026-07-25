@@ -132,6 +132,7 @@ export function KnowledgeDocuments() {
 				id: selected.id,
 				...draft,
 			});
+			if (!updated) throw new Error("The document could not be saved.");
 			setSelected(updated);
 			setDraft(toDraft(updated));
 			await refreshDocuments(pageCursor);

@@ -339,9 +339,9 @@ export function NavBar() {
 			},
 			{
 				label: t("app.menu.knowledgeDocuments"),
-				href: "/knowledge/documents",
+				href: "/knowledge/entries",
 				icon: BookOpenTextIcon,
-				isActive: pathname.startsWith("/knowledge/documents"),
+				isActive: pathname.startsWith("/knowledge/"),
 			},
 			...(organizationSubItems
 				? [

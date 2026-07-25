@@ -15,3 +15,7 @@ export const knowledgeDocumentListInputSchema = z.object({
 		.max(MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE)
 		.default(DEFAULT_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE),
 });
+
+export const knowledgeEntryIdSchema = z.string().cuid();
+
+export const knowledgeEntryListInputSchema = knowledgeDocumentListInputSchema;

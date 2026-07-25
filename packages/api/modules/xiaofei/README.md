@@ -25,6 +25,9 @@ persistence.
 | `getKnowledgeDocument`      | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                               |
 | `updateKnowledgeDocument`   | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status          |
 | `deleteKnowledgeDocument`   | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                             |
+| `createKnowledgeWeb`        | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry |
+| `createManualKnowledgeEntries` | `POST /xiaofei/knowledge/manual`                 | Create up to 20 manual Q&A entries without a provider               |
+| `list/get/update/deleteKnowledgeEntry` | `/xiaofei/knowledge/entries`              | Manage tenant-scoped normalized entries and eligibility              |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
 because it is the existing AI SDK transport. That procedure now loads the
