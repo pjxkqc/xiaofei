@@ -20,14 +20,14 @@ import {
 import { strFromU8, unzipSync } from "fflate";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
-import type { XiaofeiAuthContext } from "./service";
-import { getOrCreateXiaofeiWorkspaceByTenantKey } from "./service";
 import {
 	createKnowledgeContentParser,
 	KnowledgeContentParserConfigurationError,
 	KnowledgeContentParserError,
 	validatePublicHttpUrl,
 } from "./knowledge-content-parser";
+import type { XiaofeiAuthContext } from "./service";
+import { getOrCreateXiaofeiWorkspaceByTenantKey } from "./service";
 
 export const MAX_KNOWLEDGE_FILE_BYTES = 4 * 1024 * 1024;
 export const MAX_KNOWLEDGE_BODY_CHARACTERS = 500_000;
@@ -70,14 +70,21 @@ interface UpdateKnowledgeDocumentInput {
 	status?: "draft" | "active" | "archived";
 }
 
-interface CreateKnowledgeWebInput { url: string; category: "PRESALES" | "POSTSALES" }
+interface CreateKnowledgeWebInput {
+	url: string;
+	category: "PRESALES" | "POSTSALES";
+}
 interface CreateKnowledgeManualInput {
 	category: "PRESALES" | "POSTSALES";
 	pairs: Array<{ question: string; answer: string; similarQueries?: string[]; tags?: string[] }>;
 }
 interface UpdateKnowledgeEntryInput {
-	question?: string; answer?: string; similarQueries?: string[]; category?: string | null;
-	tags?: string[]; status?: string;
+	question?: string;
+	answer?: string;
+	similarQueries?: string[];
+	category?: string | null;
+	tags?: string[];
+	status?: string;
 }
 
 export async function getKnowledgeTenantKey(context: XiaofeiAuthContext): Promise<string> {
@@ -114,56 +121,107 @@ export async function createKnowledgeDocument(
 	}
 }
 
-export async function createKnowledgeFile(context: XiaofeiAuthContext, input: CreateKnowledgeDocumentInput) {
+export async function createKnowledgeFile(
+	context: XiaofeiAuthContext,
+	input: CreateKnowledgeDocumentInput,
+) {
 	const file = validateFile(input);
 	const { workspace } = await getKnowledgeWorkspace(context);
-	const parsed = file.isLocal ? { markdown: decodeLocalFile(file), provider: undefined, parserVersion: undefined } : await parseFile(file, input);
+	const parsed = file.isLocal
+		? { markdown: decodeLocalFile(file), provider: undefined, parserVersion: undefined }
+		: await parseFile(file, input);
 	try {
 		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id, sourceType: XiaofeiKnowledgeDocumentSourceType.FILE,
-			originalFileName: input.originalFileName, mimeType: input.mimeType, fileType: file.fileType,
-			fileSizeBytes: file.bytes.byteLength, provider: parsed.provider, parserVersion: parsed.parserVersion,
-			category: XiaofeiKnowledgeDocumentCategory[input.category], bodyText: parsed.markdown,
+			workspaceId: workspace.id,
+			sourceType: XiaofeiKnowledgeDocumentSourceType.FILE,
+			originalFileName: input.originalFileName,
+			mimeType: input.mimeType,
+			fileType: file.fileType,
+			fileSizeBytes: file.bytes.byteLength,
+			provider: parsed.provider,
+			parserVersion: parsed.parserVersion,
+			category: XiaofeiKnowledgeDocumentCategory[input.category],
+			bodyText: parsed.markdown,
 			fetchedAt: parsed.provider ? new Date() : undefined,
 		});
-		await createEntryForSource(workspace.id, source.id, input.originalFileName, parsed.markdown, input.category);
+		await createEntryForSource(
+			workspace.id,
+			source.id,
+			input.originalFileName,
+			parsed.markdown,
+			input.category,
+		);
 		return source;
-	} catch (error) { throwKnowledgeWriteError(error); }
+	} catch (error) {
+		throwKnowledgeWriteError(error);
+	}
 }
 
-export async function createKnowledgeWeb(context: XiaofeiAuthContext, input: CreateKnowledgeWebInput) {
+export async function createKnowledgeWeb(
+	context: XiaofeiAuthContext,
+	input: CreateKnowledgeWebInput,
+) {
 	validatePublicHttpUrl(input.url);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	let parsed;
-	try { parsed = await createKnowledgeContentParser().scrapeUrl({ url: input.url }); }
-	catch (error) { throwKnowledgeParseError(error); }
+	try {
+		parsed = await createKnowledgeContentParser().scrapeUrl({ url: input.url });
+	} catch (error) {
+		throwKnowledgeParseError(error);
+	}
 	try {
 		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id, sourceType: XiaofeiKnowledgeDocumentSourceType.WEB, sourceUrl: input.url,
-			provider: parsed.provider, parserVersion: parsed.parserVersion, fetchedAt: new Date(),
-			category: XiaofeiKnowledgeDocumentCategory[input.category], bodyText: parsed.markdown,
+			workspaceId: workspace.id,
+			sourceType: XiaofeiKnowledgeDocumentSourceType.WEB,
+			sourceUrl: input.url,
+			provider: parsed.provider,
+			parserVersion: parsed.parserVersion,
+			fetchedAt: new Date(),
+			category: XiaofeiKnowledgeDocumentCategory[input.category],
+			bodyText: parsed.markdown,
 		});
 		await createEntryForSource(workspace.id, source.id, input.url, parsed.markdown, input.category);
 		return source;
-	} catch (error) { throwKnowledgeWriteError(error); }
+	} catch (error) {
+		throwKnowledgeWriteError(error);
+	}
 }
 
-export async function createManualKnowledgeEntries(context: XiaofeiAuthContext, input: CreateKnowledgeManualInput) {
+export async function createManualKnowledgeEntries(
+	context: XiaofeiAuthContext,
+	input: CreateKnowledgeManualInput,
+) {
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const bodyText = input.pairs.map((pair) => `Q: ${pair.question}\nA: ${pair.answer}`).join("\n\n");
 	try {
 		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id, sourceType: XiaofeiKnowledgeDocumentSourceType.MANUAL,
-			category: XiaofeiKnowledgeDocumentCategory[input.category], bodyText,
+			workspaceId: workspace.id,
+			sourceType: XiaofeiKnowledgeDocumentSourceType.MANUAL,
+			category: XiaofeiKnowledgeDocumentCategory[input.category],
+			bodyText,
 		});
-		return await Promise.all(input.pairs.map((pair) => createXiaofeiKnowledgeEntry({
-			workspaceId: workspace.id, sourceId: source.id, question: pair.question, answer: pair.answer,
-			similarQueries: pair.similarQueries ?? [], tags: pair.tags ?? [], category: input.category,
-		})));
-	} catch (error) { throwKnowledgeWriteError(error); }
+		return await Promise.all(
+			input.pairs.map((pair) =>
+				createXiaofeiKnowledgeEntry({
+					workspaceId: workspace.id,
+					sourceId: source.id,
+					question: pair.question,
+					answer: pair.answer,
+					similarQueries: pair.similarQueries ?? [],
+					tags: pair.tags ?? [],
+					category: input.category,
+				}),
+			),
+		);
+	} catch (error) {
+		throwKnowledgeWriteError(error);
+	}
 }
 
-export async function listKnowledgeEntries(context: XiaofeiAuthContext, options: { cursor?: string; limit?: number }) {
+export async function listKnowledgeEntries(
+	context: XiaofeiAuthContext,
+	options: { cursor?: string; limit?: number },
+) {
 	const { workspace } = await getKnowledgeWorkspace(context);
 	return await listXiaofeiKnowledgeEntries(workspace.id, options);
 }
@@ -173,15 +231,24 @@ export async function getKnowledgeEntry(context: XiaofeiAuthContext, id: string)
 	if (!entry) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
 	return entry;
 }
-export async function updateKnowledgeEntryForTenant(context: XiaofeiAuthContext, id: string, input: UpdateKnowledgeEntryInput) {
+export async function updateKnowledgeEntryForTenant(
+	context: XiaofeiAuthContext,
+	id: string,
+	input: UpdateKnowledgeEntryInput,
+) {
 	const { workspace } = await getKnowledgeWorkspace(context);
-	if (!(await getXiaofeiKnowledgeEntry(workspace.id, id))) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
-	try { return await updateXiaofeiKnowledgeEntry(workspace.id, id, input); }
-	catch (error) { throwKnowledgeWriteError(error); }
+	if (!(await getXiaofeiKnowledgeEntry(workspace.id, id)))
+		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	try {
+		return await updateXiaofeiKnowledgeEntry(workspace.id, id, input);
+	} catch (error) {
+		throwKnowledgeWriteError(error);
+	}
 }
 export async function deleteKnowledgeEntryForTenant(context: XiaofeiAuthContext, id: string) {
 	const { workspace } = await getKnowledgeWorkspace(context);
-	if ((await deleteXiaofeiKnowledgeEntry(workspace.id, id)).count === 0) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	if ((await deleteXiaofeiKnowledgeEntry(workspace.id, id)).count === 0)
+		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
 	return { deleted: true };
 }
 
@@ -256,7 +323,8 @@ function validateFile(input: CreateKnowledgeDocumentInput): {
 	const rule = FILE_RULES[extension as keyof typeof FILE_RULES];
 	if (!rule || !rule.mimeTypes.includes(input.mimeType as never)) {
 		throw new ORPCError("BAD_REQUEST", {
-			message: "Upload a .md, .txt, or .docx file with a matching content type; PDF and XLSX are also supported.",
+			message:
+				"Upload a .md, .txt, or .docx file with a matching content type; PDF and XLSX are also supported.",
 		});
 	}
 
@@ -270,11 +338,16 @@ function validateFile(input: CreateKnowledgeDocumentInput): {
 	return {
 		fileType: rule.fileType,
 		bytes,
-		isLocal: rule.fileType === XiaofeiKnowledgeDocumentFileType.MARKDOWN || rule.fileType === XiaofeiKnowledgeDocumentFileType.TEXT,
+		isLocal:
+			rule.fileType === XiaofeiKnowledgeDocumentFileType.MARKDOWN ||
+			rule.fileType === XiaofeiKnowledgeDocumentFileType.TEXT,
 	};
 }
 
-function decodeLocalFile(file: { fileType: XiaofeiKnowledgeDocumentFileType; bytes: Uint8Array }): string {
+function decodeLocalFile(file: {
+	fileType: XiaofeiKnowledgeDocumentFileType;
+	bytes: Uint8Array;
+}): string {
 	const bodyText = decodeUtf8(file.bytes);
 	const normalizedBody = bodyText.replaceAll("\u0000", "").trim();
 	if (!normalizedBody) {
@@ -295,22 +368,43 @@ async function parseFile(
 ) {
 	try {
 		return await createKnowledgeContentParser().parseFile({
-			bytes: file.bytes, fileName: input.originalFileName, mimeType: input.mimeType,
+			bytes: file.bytes,
+			fileName: input.originalFileName,
+			mimeType: input.mimeType,
 		});
-	} catch (error) { throwKnowledgeParseError(error); }
+	} catch (error) {
+		throwKnowledgeParseError(error);
+	}
 }
 
-async function createEntryForSource(workspaceId: string, sourceId: string, title: string, answer: string, category: "PRESALES" | "POSTSALES") {
+async function createEntryForSource(
+	workspaceId: string,
+	sourceId: string,
+	title: string,
+	answer: string,
+	category: "PRESALES" | "POSTSALES",
+) {
 	return await createXiaofeiKnowledgeEntry({
-		workspaceId, sourceId, question: title, answer, category, similarQueries: [], tags: [],
+		workspaceId,
+		sourceId,
+		question: title,
+		answer,
+		category,
+		similarQueries: [],
+		tags: [],
 	});
 }
 
 function throwKnowledgeParseError(error: unknown): never {
-	if (error instanceof KnowledgeContentParserConfigurationError || error instanceof KnowledgeContentParserError) {
+	if (
+		error instanceof KnowledgeContentParserConfigurationError ||
+		error instanceof KnowledgeContentParserError
+	) {
 		throw new ORPCError("BAD_REQUEST", { message: error.message });
 	}
-	throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "The knowledge source could not be processed." });
+	throw new ORPCError("INTERNAL_SERVER_ERROR", {
+		message: "The knowledge source could not be processed.",
+	});
 }
 
 function decodeBase64(value: string): Uint8Array {
@@ -421,9 +515,10 @@ function throwKnowledgeWriteError(error: unknown): never {
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge document not found." });
 	}
 	if (error instanceof XiaofeiKnowledgeEntryQuotaError) {
-		const message = error.quota === "entry_count"
-			? `This workspace can store up to ${error.limit} knowledge entries. Delete one before adding another.`
-			: `This workspace has reached its ${formatMegabytes(error.limit)} MB knowledge entry storage limit.`;
+		const message =
+			error.quota === "entry_count"
+				? `This workspace can store up to ${error.limit} knowledge entries. Delete one before adding another.`
+				: `This workspace has reached its ${formatMegabytes(error.limit)} MB knowledge entry storage limit.`;
 		throw new ORPCError("BAD_REQUEST", { message });
 	}
 	throw new ORPCError("INTERNAL_SERVER_ERROR", {

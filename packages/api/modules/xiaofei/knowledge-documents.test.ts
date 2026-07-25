@@ -64,6 +64,7 @@ import {
 } from "@repo/database";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
+import { createKnowledgeContentParser, validatePublicHttpUrl } from "./knowledge-content-parser";
 import { knowledgeDocumentListInputSchema } from "./knowledge-document-input";
 import {
 	createKnowledgeDocument,
@@ -76,7 +77,6 @@ import {
 	listKnowledgeDocuments,
 	updateKnowledgeDocumentForTenant,
 } from "./knowledge-documents";
-import { createKnowledgeContentParser, validatePublicHttpUrl } from "./knowledge-content-parser";
 import { getOrCreateXiaofeiWorkspaceByTenantKey } from "./service";
 
 const USER_CONTEXT = {
@@ -186,34 +186,63 @@ describe("knowledge document application boundary", () => {
 
 	it("uses the provider only for remote files and persists a normalized entry", async () => {
 		vi.mocked(createKnowledgeContentParser).mockReturnValue({
-			parseFile: vi.fn().mockResolvedValue({ markdown: "# Parsed PDF", provider: "firecrawl", parserVersion: "firecrawl-v2" }),
+			parseFile: vi.fn().mockResolvedValue({
+				markdown: "# Parsed PDF",
+				provider: "firecrawl",
+				parserVersion: "firecrawl-v2",
+			}),
 		} as never);
 
 		await createKnowledgeFile(USER_CONTEXT, {
-			originalFileName: "guide.pdf", mimeType: "application/pdf", category: "PRESALES",
+			originalFileName: "guide.pdf",
+			mimeType: "application/pdf",
+			category: "PRESALES",
 			contentBase64: Buffer.from("pdf content").toString("base64"),
 		});
 
 		expect(createKnowledgeContentParser).toHaveBeenCalled();
-		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(expect.objectContaining({
-			sourceType: "FILE", fileType: "PDF", provider: "firecrawl", bodyText: "# Parsed PDF",
-		}));
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(expect.objectContaining({ sourceId: "document-1", answer: "# Parsed PDF" }));
+		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceType: "FILE",
+				fileType: "PDF",
+				provider: "firecrawl",
+				bodyText: "# Parsed PDF",
+			}),
+		);
+		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
+			expect.objectContaining({ sourceId: "document-1", answer: "# Parsed PDF" }),
+		);
 	});
 
 	it("creates manual entries without invoking Firecrawl and records web lineage through the provider", async () => {
 		await createManualKnowledgeEntries(USER_CONTEXT, {
-			category: "POSTSALES", pairs: [{ question: "How do I reset?", answer: "Use the reset link.", tags: ["account"] }],
+			category: "POSTSALES",
+			pairs: [{ question: "How do I reset?", answer: "Use the reset link.", tags: ["account"] }],
 		});
 		expect(createKnowledgeContentParser).not.toHaveBeenCalled();
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(expect.objectContaining({ question: "How do I reset?", sourceId: "document-1" }));
+		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
+			expect.objectContaining({ question: "How do I reset?", sourceId: "document-1" }),
+		);
 
 		vi.mocked(createKnowledgeContentParser).mockReturnValue({
-			scrapeUrl: vi.fn().mockResolvedValue({ markdown: "# Web help", provider: "firecrawl", parserVersion: "firecrawl-v2" }),
+			scrapeUrl: vi.fn().mockResolvedValue({
+				markdown: "# Web help",
+				provider: "firecrawl",
+				parserVersion: "firecrawl-v2",
+			}),
 		} as never);
-		await createKnowledgeWeb(USER_CONTEXT, { url: "https://example.com/help", category: "PRESALES" });
+		await createKnowledgeWeb(USER_CONTEXT, {
+			url: "https://example.com/help",
+			category: "PRESALES",
+		});
 		expect(validatePublicHttpUrl).toHaveBeenCalledWith("https://example.com/help");
-		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(expect.objectContaining({ sourceType: "WEB", sourceUrl: "https://example.com/help", provider: "firecrawl" }));
+		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceType: "WEB",
+				sourceUrl: "https://example.com/help",
+				provider: "firecrawl",
+			}),
+		);
 	});
 
 	it("rejects MIME/extension mismatches and malformed DOCX without raw errors", async () => {
