@@ -74,6 +74,14 @@ import {
 describe("Xiaofei knowledge document queries", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		queryMocks.createDocument.mockResolvedValue({
+			id: "document-1",
+			sourceType: "FILE",
+			originalFileName: "guide.md",
+			mimeType: "text/markdown",
+			fileType: "MARKDOWN",
+			sourceUrl: null,
+		});
 		queryMocks.queryRaw.mockResolvedValue([
 			{
 				documentCount: BigInt(0),
@@ -82,6 +90,14 @@ describe("Xiaofei knowledge document queries", () => {
 		]);
 		queryMocks.findDocumentInTransaction.mockResolvedValue({
 			bodyText: "Existing body",
+		});
+		queryMocks.updateDocumentInTransaction.mockResolvedValue({
+			id: "document-1",
+			sourceType: "FILE",
+			originalFileName: "guide.md",
+			mimeType: "text/markdown",
+			fileType: "MARKDOWN",
+			sourceUrl: null,
 		});
 	});
 
@@ -160,7 +176,32 @@ describe("Xiaofei knowledge document queries", () => {
 	});
 
 	it("returns a bounded metadata-only page with a workspace-scoped cursor", async () => {
-		const records = [{ id: "document-3" }, { id: "document-2" }, { id: "document-1" }];
+		const records = [
+			{
+				id: "document-3",
+				sourceType: "FILE",
+				originalFileName: "guide.md",
+				mimeType: "text/markdown",
+				fileType: "MARKDOWN",
+				sourceUrl: null,
+			},
+			{
+				id: "document-2",
+				sourceType: "MANUAL",
+				originalFileName: null,
+				mimeType: null,
+				fileType: null,
+				sourceUrl: null,
+			},
+			{
+				id: "document-1",
+				sourceType: "WEB",
+				originalFileName: null,
+				mimeType: null,
+				fileType: null,
+				sourceUrl: "https://example.com/guide",
+			},
+		];
 		queryMocks.listDocuments.mockResolvedValueOnce(records);
 
 		const page = await listXiaofeiKnowledgeDocuments("workspace-a", {
@@ -184,7 +225,16 @@ describe("Xiaofei knowledge document queries", () => {
 			}),
 		);
 		expect(page).toEqual({
-			items: records.slice(0, 2),
+			items: [
+				{ ...records[0], sourceFileType: "MARKDOWN" },
+				{
+					...records[1],
+					sourceFileType: null,
+					originalFileName: "manual-source-document-2",
+					mimeType: "text/plain",
+					fileType: "TEXT",
+				},
+			],
 			nextCursor: "document-2",
 		});
 	});
@@ -206,6 +256,27 @@ describe("Xiaofei knowledge document queries", () => {
 					id: "document-1",
 				},
 			},
+		});
+	});
+
+	it("projects nullable web and manual metadata into deterministic legacy fields", async () => {
+		queryMocks.findDocument.mockResolvedValueOnce({
+			id: "document-web",
+			sourceType: "WEB",
+			originalFileName: null,
+			mimeType: null,
+			fileType: "PDF",
+			sourceUrl: "https://example.com/help",
+		});
+
+		await expect(getXiaofeiKnowledgeDocument("workspace-a", "document-web")).resolves.toEqual({
+			id: "document-web",
+			sourceType: "WEB",
+			sourceFileType: "PDF",
+			originalFileName: "https://example.com/help",
+			mimeType: "text/html",
+			fileType: "TEXT",
+			sourceUrl: "https://example.com/help",
 		});
 	});
 

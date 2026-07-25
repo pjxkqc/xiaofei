@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 
 import { db } from "../client";
-import type {
-	Prisma,
-	XiaofeiKnowledgeDocumentCategory,
+import {
 	XiaofeiKnowledgeDocumentFileType,
 	XiaofeiKnowledgeDocumentSourceType,
 } from "../generated/client";
+import type { Prisma, XiaofeiKnowledgeDocumentCategory } from "../generated/client";
 
 export interface CreateXiaofeiKnowledgeDocumentInput {
 	workspaceId: string;
@@ -136,6 +135,17 @@ const ENTRY_WITH_SOURCE_INCLUDE = {
 	source: { select: { id: true, contentHash: true, sourceVersion: true } },
 } as const;
 
+type LegacyKnowledgeDocumentFileType = "MARKDOWN" | "TEXT" | "DOCX";
+
+interface KnowledgeDocumentSourceMetadata {
+	id: string;
+	sourceType: XiaofeiKnowledgeDocumentSourceType;
+	originalFileName: string | null;
+	mimeType: string | null;
+	fileType: XiaofeiKnowledgeDocumentFileType | null;
+	sourceUrl: string | null;
+}
+
 export function getXiaofeiWorkspace(tenantKey: string) {
 	return db.xiaofeiWorkspace.findUnique({ where: { tenantKey } });
 }
@@ -222,9 +232,10 @@ export function createXiaofeiKnowledgeDocument(input: CreateXiaofeiKnowledgeDocu
 			Number(usage.count) + 1,
 			Number(usage.bodyBytes) + Buffer.byteLength(input.bodyText, "utf8"),
 		);
-		return transaction.xiaofeiKnowledgeDocument.create({
+		const document = await transaction.xiaofeiKnowledgeDocument.create({
 			data: { ...input, contentHash: hashContent(input.bodyText) },
 		});
+		return withLegacyKnowledgeDocumentMetadata(document);
 	});
 }
 
@@ -242,11 +253,15 @@ export async function listXiaofeiKnowledgeDocuments(
 			? { cursor: { workspaceId_id: { workspaceId, id: options.cursor } }, skip: 1 }
 			: {}),
 	});
-	return page(records, limit);
+	const result = page(records, limit);
+	return { ...result, items: result.items.map(withLegacyKnowledgeDocumentMetadata) };
 }
 
-export function getXiaofeiKnowledgeDocument(workspaceId: string, id: string) {
-	return db.xiaofeiKnowledgeDocument.findUnique({ where: { workspaceId_id: { workspaceId, id } } });
+export async function getXiaofeiKnowledgeDocument(workspaceId: string, id: string) {
+	const document = await db.xiaofeiKnowledgeDocument.findUnique({
+		where: { workspaceId_id: { workspaceId, id } },
+	});
+	return document ? withLegacyKnowledgeDocumentMetadata(document) : null;
 }
 
 export function updateXiaofeiKnowledgeDocument(
@@ -271,7 +286,7 @@ export function updateXiaofeiKnowledgeDocument(
 				);
 			}
 		}
-		return transaction.xiaofeiKnowledgeDocument.update({
+		const document = await transaction.xiaofeiKnowledgeDocument.update({
 			where: { workspaceId_id: { workspaceId, id } },
 			data: {
 				...data,
@@ -279,6 +294,7 @@ export function updateXiaofeiKnowledgeDocument(
 				sourceVersion: { increment: 1 },
 			},
 		});
+		return withLegacyKnowledgeDocumentMetadata(document);
 	});
 }
 
@@ -411,6 +427,41 @@ function withEligibility<
 			source.contentHash === entry.sourceContentHash &&
 			source.sourceVersion === entry.sourceVersion,
 	};
+}
+function withLegacyKnowledgeDocumentMetadata<T extends KnowledgeDocumentSourceMetadata>(
+	document: T,
+) {
+	return {
+		...document,
+		sourceFileType: document.fileType,
+		originalFileName:
+			document.originalFileName ??
+			legacySourceDisplayName(document.sourceType, document.sourceUrl, document.id),
+		mimeType: document.mimeType ?? legacySourceMimeType(document.sourceType),
+		fileType: legacyFileType(document.fileType),
+	};
+}
+function legacySourceDisplayName(
+	sourceType: XiaofeiKnowledgeDocumentSourceType,
+	sourceUrl: string | null,
+	id: string,
+) {
+	if (sourceType === XiaofeiKnowledgeDocumentSourceType.WEB) return sourceUrl || `web-source-${id}`;
+	if (sourceType === XiaofeiKnowledgeDocumentSourceType.MANUAL) return `manual-source-${id}`;
+	return `file-source-${id}`;
+}
+function legacySourceMimeType(sourceType: XiaofeiKnowledgeDocumentSourceType) {
+	return sourceType === XiaofeiKnowledgeDocumentSourceType.WEB ? "text/html" : "text/plain";
+}
+function legacyFileType(
+	fileType: XiaofeiKnowledgeDocumentFileType | null,
+): LegacyKnowledgeDocumentFileType {
+	if (
+		fileType === XiaofeiKnowledgeDocumentFileType.MARKDOWN ||
+		fileType === XiaofeiKnowledgeDocumentFileType.DOCX
+	)
+		return fileType;
+	return XiaofeiKnowledgeDocumentFileType.TEXT;
 }
 function page<T>(records: T[], limit: number) {
 	const items = records.length > limit ? records.slice(0, limit) : records;

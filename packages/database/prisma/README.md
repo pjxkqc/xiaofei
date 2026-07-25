@@ -56,6 +56,13 @@ order and return `{ items, nextCursor }`. The default page size is 25 and caller
 may request 1–50 records. A cursor is resolved through the compound
 `workspaceId_id` key so another workspace's ID cannot become a list cursor.
 
+For FLY-59 compatibility, source list/get queries always return non-null legacy
+display fields: `originalFileName`, `mimeType`, and `fileType` (`MARKDOWN`,
+`TEXT`, or `DOCX`). Web and manual sources receive deterministic display names
+and MIME fallbacks; PDF/XLSX and no-file sources project to legacy `TEXT` while
+the raw nullable value remains available as `sourceFileType`. This keeps older
+API/UI consumers stable without erasing the source type or durable metadata.
+
 `createXiaofeiKnowledgeEntry` snapshots the selected source's content hash and
 version. Entry list/get results add `eligible`: it is true only while the source
 still exists and has exactly that hash and version. Every source update increments
