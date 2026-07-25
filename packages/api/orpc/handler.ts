@@ -24,8 +24,10 @@ export const openApiHandler = new OpenAPIHandler(router, {
 		}),
 		new OpenAPIReferencePlugin({
 			schemaConverters: [new ZodToJsonSchemaConverter()],
-			specGenerateOptions: async () => {
-				const authSchema = await auth.api.generateOpenAPISchema();
+			specGenerateOptions: async ({ context }) => {
+				const authSchema = await auth.api.generateOpenAPISchema({
+					headers: context.headers,
+				});
 
 				authSchema.paths = Object.fromEntries(
 					Object.entries(authSchema.paths).map(([path, pathItem]) => [`/auth${path}`, pathItem]),

@@ -1,4 +1,5 @@
 import { getXiaofeiConfig } from "./procedures/get-config";
+import { getXiaofeiStatus } from "./procedures/get-status";
 import { resetXiaofeiConversation } from "./procedures/reset-conversation";
 import { reviewXiaofeiCapability } from "./procedures/review-capability";
 import { runXiaofeiEval } from "./procedures/run-eval";
@@ -14,6 +15,7 @@ import {
 } from "./procedures/support-conversations";
 
 export const xiaofeiRouter = {
+	status: getXiaofeiStatus,
 	getConfig: getXiaofeiConfig,
 	saveConfig: saveXiaofeiConfig,
 	reviewCapability: reviewXiaofeiCapability,

@@ -8,6 +8,7 @@ persistence.
 
 | Procedure                   | Route                                               | Responsibility                                                       |
 | --------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| `status`                    | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract  |
 | `getConfig`                 | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                         |
 | `saveConfig`                | `PUT /xiaofei/config`                               | Rebuild Markdown KU, run Mastra governance, and persist the snapshot |
 | `reviewCapability`          | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs       |
@@ -61,6 +62,13 @@ last-seen/message timestamps, and message history are persisted on
 - Keep engine/provider code in `@repo/ai`.
 - Keep Prisma queries in `@repo/database`.
 - Do not return secrets, provider headers, or raw connection errors.
+
+## Status communication paths
+
+The `status` procedure is intentionally public and side-effect-free. The OpenAPI
+handler exposes it as `GET /api/xiaofei/status` and includes it in `/api/docs`.
+Authenticated browser pages can call the identical contract through
+`orpcClient.xiaofei.status()` on the same-origin `/api/rpc` transport.
 
 ## Tests
 

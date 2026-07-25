@@ -6,7 +6,7 @@ organization features inherited from supastarter.
 
 ## Xiaofei surface
 
-The product surface is deliberately kept to four small pages:
+The product surface is deliberately kept to five small pages:
 
 - `/support` is a public, no-login customer conversation page;
 - `/inbox` is the authenticated support-agent inbox for online state, ownership,
@@ -15,6 +15,8 @@ The product surface is deliberately kept to four small pages:
   validation;
 - `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
   Unit, release-gate, and Eval configuration.
+- `/api-demo` is an authenticated comparison of the public OpenAPI status route
+  and the typed browser oRPC client.
 
 The pages can:
 
@@ -54,6 +56,11 @@ public support loop
     → public UUID-scoped xiaofei procedure
     → shared XiaofeiWorkspace + XiaofeiConversation
     ↔ SupportInbox (/inbox, authenticated support role)
+
+status communication demo
+  ApiStatusDemo (/api-demo, authenticated page)
+    → GET /api/xiaofei/status (public OpenAPI HTTP route)
+    → orpcClient.xiaofei.status() (typed same-origin /api/rpc transport)
 ```
 
 ## Local use
