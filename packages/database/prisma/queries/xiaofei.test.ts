@@ -10,6 +10,12 @@ const queryMocks = vi.hoisted(() => {
 			findUnique: vi.fn(),
 			update: vi.fn(),
 		},
+		xiaofeiKnowledgeEntry: {
+			create: vi.fn(),
+			deleteMany: vi.fn(),
+			findUnique: vi.fn(),
+			update: vi.fn(),
+		},
 	};
 
 	return {
@@ -25,6 +31,12 @@ const queryMocks = vi.hoisted(() => {
 		}),
 		updateDocument: vi.fn(),
 		updateDocumentInTransaction: transactionClient.xiaofeiKnowledgeDocument.update,
+		createEntry: transactionClient.xiaofeiKnowledgeEntry.create,
+		deleteEntries: transactionClient.xiaofeiKnowledgeEntry.deleteMany,
+		findEntry: vi.fn(),
+		findEntryInTransaction: transactionClient.xiaofeiKnowledgeEntry.findUnique,
+		listEntries: vi.fn(),
+		updateEntry: transactionClient.xiaofeiKnowledgeEntry.update,
 	};
 });
 
@@ -36,17 +48,27 @@ vi.mock("../client", () => ({
 			findUnique: queryMocks.findDocument,
 			update: queryMocks.updateDocument,
 		},
+		xiaofeiKnowledgeEntry: {
+			findMany: queryMocks.listEntries,
+			findUnique: queryMocks.findEntry,
+		},
 	},
 }));
 
 import {
 	createXiaofeiKnowledgeDocument,
+	createXiaofeiKnowledgeEntry,
+	deleteXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
+	getXiaofeiKnowledgeEntry,
+	listXiaofeiKnowledgeEntries,
 	listXiaofeiKnowledgeDocuments,
 	MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_BODY_BYTES_PER_WORKSPACE,
 	MAX_XIAOFEI_KNOWLEDGE_DOCUMENTS_PER_WORKSPACE,
+	MAX_XIAOFEI_KNOWLEDGE_ENTRIES_PER_WORKSPACE,
 	updateXiaofeiKnowledgeDocument,
+	updateXiaofeiKnowledgeEntry,
 } from "./xiaofei";
 
 describe("Xiaofei knowledge document queries", () => {
@@ -79,7 +101,7 @@ describe("Xiaofei knowledge document queries", () => {
 		expect(queryMocks.executeRaw).toHaveBeenCalledOnce();
 		expect(queryMocks.queryRaw).toHaveBeenCalledOnce();
 		expect(queryMocks.createDocument).toHaveBeenCalledWith({
-			data: input,
+			data: expect.objectContaining(input),
 		});
 	});
 
@@ -209,20 +231,20 @@ describe("Xiaofei knowledge document queries", () => {
 		expect(queryMocks.updateDocumentInTransaction).not.toHaveBeenCalled();
 	});
 
-	it("updates metadata without loading or aggregating document bodies", async () => {
+	it("invalidates entries when source metadata changes", async () => {
 		await updateXiaofeiKnowledgeDocument("workspace-a", "document-1", {
 			status: "active",
 		});
 
-		expect(queryMocks.transaction).not.toHaveBeenCalled();
-		expect(queryMocks.updateDocument).toHaveBeenCalledWith({
+		expect(queryMocks.transaction).toHaveBeenCalledOnce();
+		expect(queryMocks.updateDocumentInTransaction).toHaveBeenCalledWith({
 			where: {
 				workspaceId_id: {
 					workspaceId: "workspace-a",
 					id: "document-1",
 				},
 			},
-			data: { status: "active" },
+			data: { status: "active", sourceVersion: { increment: 1 } },
 		});
 	});
 
@@ -235,6 +257,98 @@ describe("Xiaofei knowledge document queries", () => {
 				workspaceId: "workspace-a",
 				id: "document-1",
 			},
+		});
+	});
+
+	it("snapshots a workspace-scoped source when creating an entry", async () => {
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "source-hash",
+			sourceVersion: 3,
+		});
+		queryMocks.queryRaw.mockResolvedValueOnce([{ count: BigInt(0), bodyBytes: BigInt(0) }]);
+
+		await createXiaofeiKnowledgeEntry({
+			workspaceId: "workspace-a",
+			sourceId: "source-1",
+			question: "How does this work?",
+			answer: "Like this.",
+		});
+
+		expect(queryMocks.findDocumentInTransaction).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "source-1" } },
+			select: { contentHash: true, sourceVersion: true },
+		});
+		expect(queryMocks.createEntry).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				sourceContentHash: "source-hash",
+				sourceVersion: 3,
+			}),
+		});
+	});
+
+	it("makes an entry ineligible when its source version or hash changes", async () => {
+		queryMocks.findEntry.mockResolvedValueOnce({
+			id: "entry-1",
+			sourceContentHash: "old-hash",
+			sourceVersion: 2,
+			source: { id: "source-1", contentHash: "new-hash", sourceVersion: 3 },
+		});
+
+		await expect(getXiaofeiKnowledgeEntry("workspace-a", "entry-1")).resolves.toEqual(
+			expect.objectContaining({ id: "entry-1", eligible: false }),
+		);
+		expect(queryMocks.findEntry).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "entry-1" } },
+			include: expect.any(Object),
+		});
+	});
+
+	it("returns entry list eligibility and rejects cross-workspace entry deletes", async () => {
+		queryMocks.listEntries.mockResolvedValueOnce([
+			{
+				id: "entry-2",
+				sourceContentHash: "hash",
+				sourceVersion: 1,
+				source: { id: "source-2", contentHash: "hash", sourceVersion: 1 },
+			},
+		]);
+		const page = await listXiaofeiKnowledgeEntries("workspace-a");
+		expect(page.items).toEqual([expect.objectContaining({ id: "entry-2", eligible: true })]);
+
+		await deleteXiaofeiKnowledgeEntry("workspace-a", "entry-2");
+		expect(queryMocks.deleteEntries).toHaveBeenCalledWith({
+			where: { workspaceId: "workspace-a", id: "entry-2" },
+		});
+	});
+
+	it("rejects entry creates above the workspace count quota", async () => {
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "hash",
+			sourceVersion: 1,
+		});
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{ count: BigInt(MAX_XIAOFEI_KNOWLEDGE_ENTRIES_PER_WORKSPACE), bodyBytes: BigInt(0) },
+		]);
+		await expect(
+			createXiaofeiKnowledgeEntry({
+				workspaceId: "workspace-a",
+				sourceId: "source-1",
+				question: "q",
+				answer: "a",
+			}),
+		).rejects.toMatchObject({
+			name: "XiaofeiKnowledgeEntryQuotaError",
+			quota: "entry_count",
+		});
+		expect(queryMocks.createEntry).not.toHaveBeenCalled();
+	});
+
+	it("scopes entry updates to their workspace", async () => {
+		queryMocks.findEntryInTransaction.mockResolvedValueOnce(null);
+		await updateXiaofeiKnowledgeEntry("workspace-a", "entry-1", { status: "active" });
+		expect(queryMocks.updateEntry).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "entry-1" } },
+			data: { status: "active" },
 		});
 	});
 });

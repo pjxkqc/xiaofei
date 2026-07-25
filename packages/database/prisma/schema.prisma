@@ -251,6 +251,7 @@ model XiaofeiWorkspace {
 
   conversations      XiaofeiConversation[]
   knowledgeDocuments XiaofeiKnowledgeDocument[]
+  knowledgeEntries   XiaofeiKnowledgeEntry[]
 
   @@map("xiaofei_workspace")
 }
@@ -282,6 +283,14 @@ enum XiaofeiKnowledgeDocumentFileType {
   MARKDOWN
   TEXT
   DOCX
+  PDF
+  XLSX
+}
+
+enum XiaofeiKnowledgeDocumentSourceType {
+  FILE
+  WEB
+  MANUAL
 }
 
 enum XiaofeiKnowledgeDocumentCategory {
@@ -290,19 +299,54 @@ enum XiaofeiKnowledgeDocumentCategory {
 }
 
 model XiaofeiKnowledgeDocument {
-  id               String                           @id @default(cuid())
-  workspaceId      String
-  workspace        XiaofeiWorkspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  originalFileName String
-  mimeType         String
-  fileType         XiaofeiKnowledgeDocumentFileType
-  category         XiaofeiKnowledgeDocumentCategory
-  bodyText         String                           @db.Text
-  status           String                           @default("draft")
-  createdAt        DateTime                         @default(now())
-  updatedAt        DateTime                         @updatedAt
+  id                    String                           @id @default(cuid())
+  workspaceId           String
+  workspace             XiaofeiWorkspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sourceType            XiaofeiKnowledgeDocumentSourceType @default(FILE)
+  originalFileName      String?
+  mimeType              String?
+  fileType              XiaofeiKnowledgeDocumentFileType?
+  sourceUrl             String?                          @db.Text
+  fileSizeBytes         Int?
+  provider              String?
+  parserVersion         String?
+  category              XiaofeiKnowledgeDocumentCategory
+  bodyText              String                           @db.Text
+  contentHash           String?
+  sourceVersion         Int                              @default(1)
+  fetchedAt             DateTime?
+  parseStatus           String                           @default("parsed")
+  parseError            String?                          @db.Text
+  status                String                           @default("draft")
+  createdAt             DateTime                         @default(now())
+  updatedAt             DateTime                         @updatedAt
+
+  knowledgeEntries XiaofeiKnowledgeEntry[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, updatedAt])
   @@map("xiaofei_knowledge_document")
+}
+
+model XiaofeiKnowledgeEntry {
+  id                String                   @id @default(cuid())
+  workspaceId       String
+  workspace         XiaofeiWorkspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sourceId          String?
+  source            XiaofeiKnowledgeDocument? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  sourceContentHash String?
+  sourceVersion     Int?
+  question          String                   @db.Text
+  answer            String                   @db.Text
+  similarQueries    String[]                 @default([])
+  category          String?
+  tags              String[]                 @default([])
+  status            String                   @default("draft")
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, updatedAt])
+  @@index([sourceId])
+  @@map("xiaofei_knowledge_entry")
 }
