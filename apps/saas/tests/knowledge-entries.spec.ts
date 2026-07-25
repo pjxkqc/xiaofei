@@ -20,6 +20,12 @@ test("submits two manual knowledge pairs and caps the form at twenty", async ({ 
 	await page.getByRole("button", { name: "添加问答" }).last().click();
 	await expect(page.getByText("First question")).toBeVisible();
 	await expect(page.getByText("Second question")).toBeVisible();
+	await page.getByRole("button", { name: "First question" }).click();
+	await expect(page.getByLabel("问题")).toHaveValue("First question");
+	await expect(page.getByLabel("答案")).toHaveValue("First answer");
+	await page.getByRole("button", { name: "Second question" }).click();
+	await expect(page.getByLabel("问题")).toHaveValue("Second question");
+	await expect(page.getByLabel("答案")).toHaveValue("Second answer");
 	for (let index = 0; index < 19; index += 1)
 		await page.getByRole("button", { name: /添加问答\s*（\d+\/20）/u }).click();
 	await expect(page.getByRole("button", { name: /添加问答\s*（最多 20 组）/u })).toBeDisabled();

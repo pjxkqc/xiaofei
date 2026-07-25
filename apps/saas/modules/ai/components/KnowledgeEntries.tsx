@@ -302,7 +302,7 @@ export function KnowledgeEntries() {
 				</Card>
 				<Card>
 					{selected ? (
-						<form onSubmit={save}>
+						<form key={selected.id} onSubmit={save}>
 							<CardHeader>
 								<CardTitle>编辑条目</CardTitle>
 								<CardDescription>
