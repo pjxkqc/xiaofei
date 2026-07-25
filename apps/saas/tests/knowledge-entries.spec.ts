@@ -7,8 +7,11 @@ test("submits two manual knowledge pairs and caps the form at twenty", async ({ 
 	await page.getByRole("textbox", { name: "Email" }).fill(email);
 	await page.locator('input[autocomplete="new-password"]').fill("Knowledge-Test-2026!");
 	await page.getByRole("button", { name: "Create account" }).click();
+	await expect(page).toHaveURL(/\/onboarding(?:\?|$)/u);
 	await page.getByRole("button", { name: "Continue" }).click();
+	await expect(page).toHaveURL("/");
 	await page.goto("/knowledge/entries");
+	await expect(page.getByRole("heading", { name: "知识条目" })).toBeVisible();
 	await page.getByPlaceholder("问题").fill("First question");
 	await page.getByPlaceholder("答案").fill("First answer");
 	await page.getByRole("button", { name: /添加问答（1\/20）/u }).click();
