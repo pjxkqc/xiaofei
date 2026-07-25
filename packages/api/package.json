@@ -10,6 +10,7 @@
 		"type-check": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@mendable/firecrawl-js": "^4.30.1",
 		"@orpc/client": "catalog:",
 		"@orpc/json-schema": "catalog:",
 		"@orpc/openapi": "catalog:",
@@ -28,6 +29,7 @@
 		"@sindresorhus/slugify": "catalog:",
 		"fflate": "^0.8.3",
 		"hono": "catalog:",
+		"ipaddr.js": "^1.9.1",
 		"nanoid": "catalog:",
 		"zod": "catalog:"
 	},
