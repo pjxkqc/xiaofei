@@ -1,4 +1,5 @@
 import { getXiaofeiConfig } from "./procedures/get-config";
+import { getXiaofeiStatus } from "./procedures/get-status";
 import {
 	createKnowledgeDocumentProcedure,
 	deleteKnowledgeDocumentProcedure,
@@ -21,6 +22,7 @@ import {
 } from "./procedures/support-conversations";
 
 export const xiaofeiRouter = {
+	status: getXiaofeiStatus,
 	getConfig: getXiaofeiConfig,
 	saveConfig: saveXiaofeiConfig,
 	reviewCapability: reviewXiaofeiCapability,
