@@ -52,7 +52,8 @@ export function KnowledgeEntries() {
 	}, [refresh]);
 	async function submitFile(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const input = event.currentTarget.elements.namedItem("file");
+		const formElement = event.currentTarget;
+		const input = formElement.elements.namedItem("file");
 		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return;
 		const file = input.files[0];
 		if (file.size > MAX_FILE_BYTES) return toastError("上传失败", "文件不能超过 4 MB。");
@@ -64,7 +65,7 @@ export function KnowledgeEntries() {
 				category,
 				contentBase64: await fileToBase64(file),
 			});
-			event.currentTarget.reset();
+			formElement.reset();
 			await refresh();
 			toastSuccess("知识已添加", "已创建可编辑的标准化条目。");
 		} catch (error) {
@@ -75,11 +76,12 @@ export function KnowledgeEntries() {
 	}
 	async function submitWeb(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const form = new FormData(event.currentTarget);
+		const formElement = event.currentTarget;
+		const formData = new FormData(formElement);
 		setBusy(true);
 		try {
-			await orpcClient.xiaofei.createKnowledgeWeb({ url: formString(form, "url"), category });
-			event.currentTarget.reset();
+			await orpcClient.xiaofei.createKnowledgeWeb({ url: formString(formData, "url"), category });
+			formElement.reset();
 			await refresh();
 			toastSuccess("网页已添加");
 		} catch (error) {
@@ -90,6 +92,7 @@ export function KnowledgeEntries() {
 	}
 	async function submitManual(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
+		const formElement = event.currentTarget;
 		setBusy(true);
 		try {
 			await orpcClient.xiaofei.createManualKnowledgeEntries({
@@ -101,7 +104,7 @@ export function KnowledgeEntries() {
 					tags: split(tags),
 				})),
 			});
-			event.currentTarget.reset();
+			formElement.reset();
 			setManualPairs([emptyManualPair(1)]);
 			await refresh();
 			toastSuccess("问答已添加");
