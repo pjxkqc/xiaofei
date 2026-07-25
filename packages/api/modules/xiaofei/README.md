@@ -65,10 +65,11 @@ P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on
 `XiaofeiConversation` because the support inbox queries those lifecycle fields.
 
-Document uploads are limited to 2 MB and require matching `.md`, `.txt`, or
-`.docx` MIME and extension pairs. Markdown and TXT must be UTF-8. DOCX parsing
-extracts bounded ordinary paragraph text from `word/document.xml` while
-excluding tables; it does not support images, OCR, or complex tables.
+Knowledge ingestion limits and source handling are documented in the canonical
+[P0 framework guide](../../../docs/xiaofei-p0-framework.md#knowledge-entry-ingestion).
+The browser accepts files up to 4 MB with matching MIME and extension. MD/TXT
+are normalized locally in the API process; PDF, DOCX, XLSX, and one public
+webpage URL use the server-only Firecrawl parser.
 
 Office-document and webpage ingestion is prepared behind the server-only
 `KnowledgeContentParser` contract. Its Firecrawl adapter uses

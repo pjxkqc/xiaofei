@@ -27,13 +27,22 @@ interface Entry {
 	eligible?: boolean;
 	sourceId: string | null;
 }
+interface ManualPair {
+	id: number;
+	question: string;
+	answer: string;
+	similar: string;
+	tags: string;
+}
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_MANUAL_PAIRS = 20;
 
 export function KnowledgeEntries() {
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [selected, setSelected] = useState<Entry | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [category, setCategory] = useState<"PRESALES" | "POSTSALES">("PRESALES");
+	const [manualPairs, setManualPairs] = useState<ManualPair[]>([emptyManualPair(1)]);
 	const refresh = useCallback(
 		async () => setEntries((await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 })).items),
 		[],
@@ -81,21 +90,19 @@ export function KnowledgeEntries() {
 	}
 	async function submitManual(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const form = new FormData(event.currentTarget);
 		setBusy(true);
 		try {
 			await orpcClient.xiaofei.createManualKnowledgeEntries({
 				category,
-				pairs: [
-					{
-						question: formString(form, "question"),
-						answer: formString(form, "answer"),
-						similarQueries: split(formString(form, "similar")),
-						tags: split(formString(form, "tags")),
-					},
-				],
+				pairs: manualPairs.map(({ question, answer, similar, tags }) => ({
+					question,
+					answer,
+					similarQueries: split(similar),
+					tags: split(tags),
+				})),
 			});
 			event.currentTarget.reset();
+			setManualPairs([emptyManualPair(1)]);
 			await refresh();
 			toastSuccess("问答已添加");
 		} catch (error) {
@@ -103,6 +110,23 @@ export function KnowledgeEntries() {
 		} finally {
 			setBusy(false);
 		}
+	}
+	function addManualPair() {
+		setManualPairs((current) =>
+			current.length >= MAX_MANUAL_PAIRS
+				? current
+				: [...current, emptyManualPair(current.at(-1)!.id + 1)],
+		);
+	}
+	function updateManualPair(id: number, field: keyof Omit<ManualPair, "id">, value: string) {
+		setManualPairs((current) =>
+			current.map((pair) => (pair.id === id ? { ...pair, [field]: value } : pair)),
+		);
+	}
+	function removeManualPair(id: number) {
+		setManualPairs((current) =>
+			current.length === 1 ? current : current.filter((pair) => pair.id !== id),
+		);
 	}
 	async function openEntry(id: string) {
 		setBusy(true);
@@ -192,10 +216,59 @@ export function KnowledgeEntries() {
 					description="直接录入；可添加相似问法和标签。一次可提交最多 20 组。"
 				>
 					<form className="gap-3 flex flex-col" onSubmit={submitManual}>
-						<Input name="question" placeholder="问题" required disabled={busy} />
-						<Textarea name="answer" placeholder="答案" required disabled={busy} />
-						<Input name="similar" placeholder="相似问法（逗号分隔，可选）" disabled={busy} />
-						<Input name="tags" placeholder="标签（逗号分隔，可选）" disabled={busy} />
+						{manualPairs.map((pair, index) => (
+							<div key={pair.id} className="gap-2 p-3 flex flex-col rounded-md border">
+								<div className="text-sm font-medium flex items-center justify-between">
+									问答 {index + 1}
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										onClick={() => removeManualPair(pair.id)}
+										disabled={busy || manualPairs.length === 1}
+									>
+										删除
+									</Button>
+								</div>
+								<Input
+									value={pair.question}
+									onChange={(event) => updateManualPair(pair.id, "question", event.target.value)}
+									placeholder="问题"
+									required
+									disabled={busy}
+								/>
+								<Textarea
+									value={pair.answer}
+									onChange={(event) => updateManualPair(pair.id, "answer", event.target.value)}
+									placeholder="答案"
+									required
+									disabled={busy}
+								/>
+								<Input
+									value={pair.similar}
+									onChange={(event) => updateManualPair(pair.id, "similar", event.target.value)}
+									placeholder="相似问法（逗号分隔，可选）"
+									disabled={busy}
+								/>
+								<Input
+									value={pair.tags}
+									onChange={(event) => updateManualPair(pair.id, "tags", event.target.value)}
+									placeholder="标签（逗号分隔，可选）"
+									disabled={busy}
+								/>
+							</div>
+						))}
+						<Button
+							type="button"
+							variant="outline"
+							onClick={addManualPair}
+							disabled={busy || manualPairs.length >= MAX_MANUAL_PAIRS}
+						>
+							添加问答{" "}
+							{manualPairs.length >= MAX_MANUAL_PAIRS
+								? "（最多 20 组）"
+								: `（${manualPairs.length}/20）`}
+						</Button>
 						<Category value={category} onChange={setCategory} />
 						<Button disabled={busy}>添加问答</Button>
 					</form>
@@ -321,6 +394,9 @@ function split(value: string) {
 		.split(",")
 		.map((part) => part.trim())
 		.filter(Boolean);
+}
+function emptyManualPair(id: number): ManualPair {
+	return { id, question: "", answer: "", similar: "", tags: "" };
 }
 function formString(form: FormData, name: string) {
 	const value = form.get(name);

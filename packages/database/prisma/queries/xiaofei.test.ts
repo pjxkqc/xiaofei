@@ -374,6 +374,18 @@ describe("Xiaofei knowledge document queries", () => {
 		});
 	});
 
+	it("makes an entry ineligible when its source was deleted with SetNull", async () => {
+		queryMocks.findEntry.mockResolvedValueOnce({
+			id: "entry-deleted-source",
+			sourceContentHash: "old-hash",
+			sourceVersion: 1,
+			source: null,
+		});
+		await expect(getXiaofeiKnowledgeEntry("workspace-a", "entry-deleted-source")).resolves.toEqual(
+			expect.objectContaining({ id: "entry-deleted-source", eligible: false }),
+		);
+	});
+
 	it("keeps legacy null-hash entries eligible until a source update increments the version", async () => {
 		queryMocks.findEntry.mockResolvedValueOnce({
 			id: "entry-legacy",

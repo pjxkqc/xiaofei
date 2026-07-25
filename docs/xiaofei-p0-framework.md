@@ -77,6 +77,18 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 
 ## Tool and adapter boundary
 
+## Knowledge entry ingestion
+
+Authenticated operators use `/knowledge/entries` to add source-backed, editable
+knowledge entries. Files are limited to 4 MB and must have a matching MIME type
+and extension. UTF-8 MD and TXT are normalized directly in the API process;
+PDF, DOCX, XLSX, and exactly one public HTTP(S) webpage URL are parsed only by
+the server-side Firecrawl provider. Web ingestion is a single scrape, never a
+recursive crawl. Manual Q&A (up to 20 pairs per submission) bypasses Firecrawl.
+Provider configuration failures are safe errors, so manual Q&A and MD/TXT
+remain available without a provider key. See the [API module guide](../packages/api/modules/xiaofei/README.md)
+for the protected procedure boundary.
+
 The initial registry deliberately exposes only the boundary:
 
 - customer-message delivery is available only after final authorization;
