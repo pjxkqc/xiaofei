@@ -75,6 +75,11 @@ evidence remains credential-gated. The persistence extension needed to retain
 webpage lineage and PDF/XLSX source types is owned separately from this API
 increment.
 
+Literal IP URLs are classified with `ipaddr.js`, including IPv4-mapped IPv6
+forms, before Firecrawl is called. Hostname DNS resolution and rebinding remain
+a provider-egress boundary to resolve in FLY-69; this API does not directly
+connect to the submitted URL.
+
 List accepts a validated optional cursor and a 1–50 limit (25 by default), and
 never returns body text; `getKnowledgeDocument` is the only full-body read.
 Database document-count and UTF-8 storage quota exceptions are translated to

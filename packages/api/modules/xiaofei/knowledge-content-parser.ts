@@ -1,5 +1,6 @@
 import Firecrawl from "@mendable/firecrawl-js";
 import { ORPCError } from "@orpc/server";
+import * as ipaddr from "ipaddr.js";
 
 export const FIRECRAWL_PARSER_VERSION = "firecrawl-v2";
 
@@ -117,27 +118,18 @@ function invalidPublicUrlError(): ORPCError<"BAD_REQUEST", unknown> {
 
 function isPrivateIpAddress(hostname: string): boolean {
 	const normalizedHostname = hostname.replace(/^\[|\]$/g, "");
-	if (
-		normalizedHostname === "::1" ||
-		normalizedHostname === "0:0:0:0:0:0:0:1" ||
-		normalizedHostname.toLowerCase().startsWith("fc") ||
-		normalizedHostname.toLowerCase().startsWith("fd") ||
-		normalizedHostname.toLowerCase().startsWith("fe8") ||
-		normalizedHostname.toLowerCase().startsWith("fe9") ||
-		normalizedHostname.toLowerCase().startsWith("fea") ||
-		normalizedHostname.toLowerCase().startsWith("feb")
-	) {
-		return true;
-	}
-	if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalizedHostname)) return false;
-	const parts = normalizedHostname.split(".").map(Number);
-	if (parts.some((part) => part > 255)) return true;
-	return (
-		parts[0] === 0 ||
-		parts[0] === 10 ||
-		parts[0] === 127 ||
-		(parts[0] === 169 && parts[1] === 254) ||
-		(parts[0] === 172 && parts[1]! >= 16 && parts[1]! <= 31) ||
-		(parts[0] === 192 && parts[1] === 168)
-	);
+	if (!ipaddr.isValid(normalizedHostname)) return false;
+	return BLOCKED_IP_RANGES.has(ipaddr.process(normalizedHostname).range());
 }
+
+const BLOCKED_IP_RANGES = new Set([
+	"unspecified",
+	"broadcast",
+	"multicast",
+	"linkLocal",
+	"loopback",
+	"carrierGradeNat",
+	"private",
+	"uniqueLocal",
+	"reserved",
+]);

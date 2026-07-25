@@ -751,6 +751,9 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.12.27
+      ipaddr.js:
+        specifier: ^1.9.1
+        version: 1.9.1
       nanoid:
         specifier: 'catalog:'
         version: 5.1.16

@@ -6,34 +6,44 @@ import {
 	FirecrawlKnowledgeContentParser,
 	KnowledgeContentParserConfigurationError,
 	KnowledgeContentParserError,
-	validatePublicHttpUrl,
 } from "./knowledge-content-parser";
 
 vi.mock("@mendable/firecrawl-js", () => ({ default: vi.fn() }));
 
 describe("Firecrawl knowledge content parser", () => {
-	it("parses local office files with the official SDK and returns normalized Markdown", async () => {
-		const parse = vi.fn().mockResolvedValue({ markdown: "\n# Guide\n\n" });
-		vi.mocked(Firecrawl).mockImplementation(function () {
-			return { parse, scrape: vi.fn() } as never;
-		});
-		const parser = new FirecrawlKnowledgeContentParser("fc-test-key");
-		await expect(
-			parser.parseFile({
-				bytes: Buffer.from("document"),
-				fileName: "guide.docx",
-				mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			}),
-		).resolves.toEqual({
-			markdown: "# Guide",
-			provider: "firecrawl",
-			parserVersion: FIRECRAWL_PARSER_VERSION,
-		});
-		expect(parse).toHaveBeenCalledWith(
-			expect.objectContaining({ filename: "guide.docx" }),
-			expect.objectContaining({ formats: ["markdown"], onlyMainContent: true }),
-		);
-	});
+	it.each([
+		{
+			fileName: "guide.docx",
+			mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		},
+		{
+			fileName: "guide.xlsx",
+			mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		},
+	])(
+		"parses local $fileName files with the official SDK and returns normalized Markdown",
+		async (input) => {
+			const parse = vi.fn().mockResolvedValue({ markdown: "\n# Guide\n\n" });
+			vi.mocked(Firecrawl).mockImplementation(function () {
+				return { parse, scrape: vi.fn() } as never;
+			});
+			const parser = new FirecrawlKnowledgeContentParser("fc-test-key");
+			await expect(
+				parser.parseFile({
+					bytes: Buffer.from("document"),
+					...input,
+				}),
+			).resolves.toEqual({
+				markdown: "# Guide",
+				provider: "firecrawl",
+				parserVersion: FIRECRAWL_PARSER_VERSION,
+			});
+			expect(parse).toHaveBeenCalledWith(
+				expect.objectContaining({ filename: input.fileName, contentType: input.mimeType }),
+				expect.objectContaining({ formats: ["markdown"], onlyMainContent: true }),
+			);
+		},
+	);
 
 	it("scrapes one validated public URL without crawling", async () => {
 		const scrape = vi.fn().mockResolvedValue({ markdown: "Public content" });
@@ -81,7 +91,18 @@ describe("Firecrawl knowledge content parser", () => {
 		"https://[::1]/admin",
 		"https://[fc00::1]/admin",
 		"https://[fe80::1]/admin",
-	])("rejects unsafe webpage target %s", (url) => {
-		expect(() => validatePublicHttpUrl(url)).toThrow("public http or https URL");
+		"https://[::ffff:0:0]/admin",
+		"https://[::ffff:7f00:1]/admin",
+		"https://[::ffff:a00:1]/admin",
+	])("rejects unsafe webpage target %s before calling the provider", async (url) => {
+		const scrape = vi.fn();
+		vi.mocked(Firecrawl).mockImplementation(function () {
+			return { parse: vi.fn(), scrape } as never;
+		});
+		const parser = new FirecrawlKnowledgeContentParser("fc-test-key");
+		await expect(parser.scrapeUrl({ url })).rejects.toMatchObject({
+			message: expect.stringContaining("public http or https URL"),
+		});
+		expect(scrape).not.toHaveBeenCalled();
 	});
 });
