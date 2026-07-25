@@ -8,8 +8,9 @@ aggregates.
 
 `XiaofeiWorkspace` stores one validated snapshot per personal or organization
 tenant. `XiaofeiConversation` stores state and trace events for an external
-conversation ID within that workspace. `XiaofeiKnowledgeDocument` stores
-uploaded source metadata and extracted text in PostgreSQL.
+conversation ID within that workspace. `XiaofeiKnowledgeDocument` is the
+single durable knowledge-source record for files, webpages, and manual content;
+`XiaofeiKnowledgeEntry` stores editable normalized question-and-answer entries.
 
 ```text
 XiaofeiWorkspace
@@ -20,9 +21,13 @@ XiaofeiWorkspace
        state JSON
        traceEvents JSON
   └─ XiaofeiKnowledgeDocument
-       originalFileName + MIME type + file type
+       source type (file/web/manual), optional file or URL metadata
+       provider/parser metadata + parse status and redacted error state
        presales or postsales category
-       extracted body text + lifecycle status
+       normalized body + SHA-256 content hash + fetch time + lifecycle status
+       └─ XiaofeiKnowledgeEntry
+            question + answer + optional similar queries/category/tags
+            source hash/version snapshot + lifecycle status
 ```
 
 The JSON aggregate design for workspace and conversation state is deliberate
@@ -40,25 +45,40 @@ are not retained; `bodyText` is the durable extracted content.
 - scoped conversation reset;
 - document create, list, get, update, and delete by workspace.
 
-Document reads and mutations require `workspaceId`. The compound
-`workspaceId_id` selector makes a document from another workspace
-indistinguishable from a missing document at the query boundary. Callers must
-resolve the authenticated tenant to a Xiaofei workspace before using these
-queries.
+Source and entry reads and mutations require `workspaceId`. The compound
+`workspaceId_id` selector makes a record from another workspace indistinguishable
+from a missing record at the query boundary. Callers must resolve the
+authenticated tenant to a Xiaofei workspace before using these queries.
 
-Document lists return metadata only; `bodyText` is available only from the
-workspace-scoped get query. Lists use a stable `(createdAt, id)` order and
-return `{ items, nextCursor }`. The default page size is 25 and callers may
-request 1–50 records. A cursor is resolved through the compound
-`workspaceId_id` key so another workspace's document ID cannot become a list
-cursor.
+Source lists return metadata only; `bodyText` is available only from the
+workspace-scoped get query. Source and entry lists use a stable `(createdAt, id)`
+order and return `{ items, nextCursor }`. The default page size is 25 and callers
+may request 1–50 records. A cursor is resolved through the compound
+`workspaceId_id` key so another workspace's ID cannot become a list cursor.
+
+For FLY-59 compatibility, source list/get queries always return non-null legacy
+display fields: `originalFileName`, `mimeType`, and `fileType` (`MARKDOWN`,
+`TEXT`, or `DOCX`). Web and manual sources receive deterministic display names
+and MIME fallbacks; PDF/XLSX and no-file sources project to legacy `TEXT` while
+the raw nullable value remains available as `sourceFileType`. This keeps older
+API/UI consumers stable without erasing the source type or durable metadata.
+
+`createXiaofeiKnowledgeEntry` snapshots the selected source's content hash and
+version. Entry list/get results add `eligible`: it is true only while the source
+still exists and has exactly that hash and version. Every source update increments
+its version, and source deletion sets dependent entry source IDs to null. This
+makes dependent entries ineligible synchronously, without a worker or cascade
+delete. `updateXiaofeiKnowledgeEntry` refreshes that snapshot only when callers
+explicitly change `sourceId`.
 
 The query boundary also enforces fixed per-workspace ceilings:
 
 - at most 100 knowledge documents;
 - at most 20 MiB of UTF-8 encoded `bodyText` across those documents.
+- at most 500 knowledge entries;
+- at most 4 MiB of UTF-8 encoded question, answer, and similar-query content.
 
-Create, body-changing update, and delete acquire the same PostgreSQL
+Source and entry create, update, and delete acquire the same PostgreSQL
 transaction-scoped advisory lock derived from `workspaceId`. Quota usage and
 the write therefore execute atomically for one workspace even when requests
 arrive concurrently. A rejected create/update throws
@@ -72,10 +92,11 @@ The document contract exports these Prisma enums through `@repo/database`:
 - category: `PRESALES` or `POSTSALES`.
 
 Upload parsing and MIME/extension validation belong to the API boundary. The
-database contract accepts only the normalized type/category and the already
-extracted plain text. Status is a durable string defaulting to `draft`; the API
-contract owns any additional lifecycle validation rather than persistence
-inventing product policy.
+database contract accepts normalized plain text and calculates its SHA-256
+content hash; provider errors must already be redacted before `parseError` is
+persisted. Status and parse status are durable strings (`draft` and `parsed` by
+default); the API contract owns any additional lifecycle validation rather than
+persistence inventing product policy.
 
 API and UI code should import query functions through `@repo/database`, not
 instantiate another Prisma client.

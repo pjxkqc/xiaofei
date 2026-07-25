@@ -96,9 +96,15 @@ export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversat
 
 // File: XiaofeiKnowledgeDocumentScalarFieldEnum.schema.ts
 
-export const XiaofeiKnowledgeDocumentScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'originalFileName', 'mimeType', 'fileType', 'category', 'bodyText', 'status', 'createdAt', 'updatedAt'])
+export const XiaofeiKnowledgeDocumentScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'sourceType', 'originalFileName', 'mimeType', 'fileType', 'sourceUrl', 'fileSizeBytes', 'provider', 'parserVersion', 'category', 'bodyText', 'contentHash', 'sourceVersion', 'fetchedAt', 'parseStatus', 'parseError', 'status', 'createdAt', 'updatedAt'])
 
 export type XiaofeiKnowledgeDocumentScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeDocumentScalarFieldEnumSchema>;
+
+// File: XiaofeiKnowledgeEntryScalarFieldEnum.schema.ts
+
+export const XiaofeiKnowledgeEntryScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'sourceId', 'sourceContentHash', 'sourceVersion', 'question', 'answer', 'similarQueries', 'category', 'tags', 'status', 'createdAt', 'updatedAt'])
+
+export type XiaofeiKnowledgeEntryScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeEntryScalarFieldEnumSchema>;
 
 // File: SortOrder.schema.ts
 
@@ -148,9 +154,15 @@ export const NotificationTargetSchema = z.enum(['IN_APP', 'EMAIL'])
 
 export type NotificationTarget = z.infer<typeof NotificationTargetSchema>;
 
+// File: XiaofeiKnowledgeDocumentSourceType.schema.ts
+
+export const XiaofeiKnowledgeDocumentSourceTypeSchema = z.enum(['FILE', 'WEB', 'MANUAL'])
+
+export type XiaofeiKnowledgeDocumentSourceType = z.infer<typeof XiaofeiKnowledgeDocumentSourceTypeSchema>;
+
 // File: XiaofeiKnowledgeDocumentFileType.schema.ts
 
-export const XiaofeiKnowledgeDocumentFileTypeSchema = z.enum(['MARKDOWN', 'TEXT', 'DOCX'])
+export const XiaofeiKnowledgeDocumentFileTypeSchema = z.enum(['MARKDOWN', 'TEXT', 'DOCX', 'PDF', 'XLSX'])
 
 export type XiaofeiKnowledgeDocumentFileType = z.infer<typeof XiaofeiKnowledgeDocumentFileTypeSchema>;
 
@@ -393,19 +405,51 @@ export const XiaofeiConversationSchema = z.object({
 
 export type XiaofeiConversationType = z.infer<typeof XiaofeiConversationSchema>;
 
+
 // File: XiaofeiKnowledgeDocument.schema.ts
 
 export const XiaofeiKnowledgeDocumentSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
-  originalFileName: z.string(),
-  mimeType: z.string(),
-  fileType: XiaofeiKnowledgeDocumentFileTypeSchema,
+  sourceType: XiaofeiKnowledgeDocumentSourceTypeSchema.default("FILE"),
+  originalFileName: z.string().nullish(),
+  mimeType: z.string().nullish(),
+  fileType: XiaofeiKnowledgeDocumentFileTypeSchema.nullish(),
+  sourceUrl: z.string().nullish(),
+  fileSizeBytes: z.number().int().nullish(),
+  provider: z.string().nullish(),
+  parserVersion: z.string().nullish(),
   category: XiaofeiKnowledgeDocumentCategorySchema,
   bodyText: z.string(),
+  contentHash: z.string().nullish(),
+  sourceVersion: z.number().int().default(1),
+  fetchedAt: z.date().nullish(),
+  parseStatus: z.string().default("parsed"),
+  parseError: z.string().nullish(),
   status: z.string().default("draft"),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
 
 export type XiaofeiKnowledgeDocumentType = z.infer<typeof XiaofeiKnowledgeDocumentSchema>;
+
+
+// File: XiaofeiKnowledgeEntry.schema.ts
+
+export const XiaofeiKnowledgeEntrySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  sourceId: z.string().nullish(),
+  sourceContentHash: z.string().nullish(),
+  sourceVersion: z.number().int().nullish(),
+  question: z.string(),
+  answer: z.string(),
+  similarQueries: z.array(z.string()),
+  category: z.string().nullish(),
+  tags: z.array(z.string()),
+  status: z.string().default("draft"),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiKnowledgeEntryType = z.infer<typeof XiaofeiKnowledgeEntrySchema>;

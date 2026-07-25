@@ -5,6 +5,7 @@ export {
 	NotificationType,
 	XiaofeiKnowledgeDocumentCategory,
 	XiaofeiKnowledgeDocumentFileType,
+	XiaofeiKnowledgeDocumentSourceType,
 } from "./generated/client";
 export * from "./queries";
 export * from "./zod";
