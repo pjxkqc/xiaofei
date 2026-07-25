@@ -30,6 +30,7 @@ export function PublicSupportChat() {
 	const [input, setInput] = useState("");
 	const [loading, setLoading] = useState(true);
 	const [sending, setSending] = useState(false);
+	const [pendingMessage, setPendingMessage] = useState<SupportMessage | null>(null);
 	const messagesRef = useRef<HTMLDivElement>(null);
 	const conversationId = conversation?.id;
 
@@ -37,7 +38,15 @@ export function PublicSupportChat() {
 		const updated = await orpcClient.xiaofei.getPublicConversation({
 			conversationId,
 		});
-		setConversation(updated);
+		setConversation((current) => {
+			if (
+				current?.id === updated.id &&
+				Date.parse(current.updatedAt) > Date.parse(updated.updatedAt)
+			) {
+				return current;
+			}
+			return updated;
+		});
 	}, []);
 
 	useEffect(() => {
@@ -64,7 +73,7 @@ export function PublicSupportChat() {
 		if (messagesRef.current) {
 			messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
 		}
-	}, [conversation?.messages.length, sending]);
+	}, [conversation?.messages.length, pendingMessage, sending]);
 
 	const startConversation = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -86,7 +95,15 @@ export function PublicSupportChat() {
 		event.preventDefault();
 		if (!conversation || !input.trim()) return;
 		const text = input.trim();
+		const optimisticMessage: SupportMessage = {
+			id: `pending-${globalThis.crypto.randomUUID()}`,
+			role: "customer",
+			authorName: conversation.customerName,
+			text,
+			createdAt: new Date().toISOString(),
+		};
 		setInput("");
+		setPendingMessage(optimisticMessage);
 		setSending(true);
 		try {
 			const updated = await orpcClient.xiaofei.sendPublicMessage({
@@ -94,7 +111,9 @@ export function PublicSupportChat() {
 				text,
 			});
 			setConversation(updated);
+			setPendingMessage(null);
 		} catch {
+			setPendingMessage(null);
 			setInput(text);
 			toastError("消息发送失败，请稍后重试");
 		} finally {
@@ -168,6 +187,7 @@ export function PublicSupportChat() {
 								{conversation.messages.map((message) => (
 									<MessageBubble key={message.id} message={message} />
 								))}
+								{pendingMessage && <MessageBubble message={pendingMessage} pending />}
 								{sending && (
 									<div className="gap-2 text-sm flex items-center text-muted-foreground">
 										<LoaderCircleIcon className="size-4 animate-spin" />
@@ -265,18 +285,26 @@ function OwnerBadge({ conversation }: { conversation: SupportConversation }) {
 	);
 }
 
-function MessageBubble({ message }: { message: SupportMessage }) {
+function MessageBubble({
+	message,
+	pending = false,
+}: {
+	message: SupportMessage;
+	pending?: boolean;
+}) {
 	const isCustomer = message.role === "customer";
 	return (
 		<div className={cn("gap-1.5 flex flex-col", isCustomer ? "items-end" : "items-start")}>
 			<div className="gap-2 text-xs flex items-center text-muted-foreground">
 				<span>{message.authorName}</span>
 				<span>{formatTime(message.createdAt)}</span>
+				{pending && <span>发送中</span>}
 			</div>
 			<div
 				className={cn(
 					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl whitespace-pre-wrap",
 					isCustomer ? "bg-primary text-primary-foreground" : "border bg-muted",
+					pending && "opacity-80",
 				)}
 			>
 				{message.text}
