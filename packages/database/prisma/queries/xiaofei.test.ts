@@ -374,6 +374,34 @@ describe("Xiaofei knowledge document queries", () => {
 		});
 	});
 
+	it("keeps legacy null-hash entries eligible until a source update increments the version", async () => {
+		queryMocks.findEntry.mockResolvedValueOnce({
+			id: "entry-legacy",
+			sourceContentHash: null,
+			sourceVersion: 1,
+			source: { id: "source-legacy", contentHash: null, sourceVersion: 1 },
+		});
+		await expect(getXiaofeiKnowledgeEntry("workspace-a", "entry-legacy")).resolves.toEqual(
+			expect.objectContaining({ id: "entry-legacy", eligible: true }),
+		);
+
+		await updateXiaofeiKnowledgeDocument("workspace-a", "source-legacy", { status: "active" });
+		expect(queryMocks.updateDocumentInTransaction).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "source-legacy" } },
+			data: { status: "active", sourceVersion: { increment: 1 } },
+		});
+
+		queryMocks.findEntry.mockResolvedValueOnce({
+			id: "entry-legacy",
+			sourceContentHash: null,
+			sourceVersion: 1,
+			source: { id: "source-legacy", contentHash: null, sourceVersion: 2 },
+		});
+		await expect(getXiaofeiKnowledgeEntry("workspace-a", "entry-legacy")).resolves.toEqual(
+			expect.objectContaining({ id: "entry-legacy", eligible: false }),
+		);
+	});
+
 	it("returns entry list eligibility and rejects cross-workspace entry deletes", async () => {
 		queryMocks.listEntries.mockResolvedValueOnce([
 			{

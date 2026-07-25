@@ -423,7 +423,6 @@ function withEligibility<
 		...item,
 		eligible:
 			source !== null &&
-			source.contentHash !== null &&
 			source.contentHash === entry.sourceContentHash &&
 			source.sourceVersion === entry.sourceVersion,
 	};
