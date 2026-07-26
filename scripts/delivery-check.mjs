@@ -18,6 +18,7 @@ export const DELIVERY_ENV_DEFAULTS = {
 
 export const DELIVERY_COMMANDS = [
 	["node", ["scripts/verify-delivery-identity.mjs"]],
+	["pnpm", ["--filter", "@repo/database", "generate"]],
 	["pnpm", ["format:check"]],
 	["pnpm", ["lint"]],
 	["pnpm", ["type-check"]],

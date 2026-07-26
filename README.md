@@ -156,8 +156,9 @@ pnpm delivery:check
 
 After the final commit or amendment, run `pnpm delivery:head` and record the
 exact `git rev-parse HEAD` value. The full preflight runs formatting, lint,
-type-check, unit tests, and all builds with non-secret validation defaults.
-GitHub Actions adds an isolated PostgreSQL database and browser tests.
+Prisma generation, type-check, unit tests, and all builds with non-secret
+validation defaults. GitHub Actions adds an isolated PostgreSQL database and
+browser tests.
 
 Focused checks are also available:
 

@@ -34,6 +34,7 @@ void test("runs the complete delivery gate in fail-fast order", () => {
 		DELIVERY_COMMANDS,
 	);
 	assert.equal(calls[0].environment.TEST_ENV, "present");
+	assert.deepEqual(DELIVERY_COMMANDS[1], ["pnpm", ["--filter", "@repo/database", "generate"]]);
 });
 
 void test("stops at the first failing delivery command", () => {

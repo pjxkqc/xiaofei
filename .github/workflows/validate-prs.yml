@@ -61,6 +61,8 @@ jobs:
         run: corepack enable && corepack prepare pnpm@11.3.0 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate the Prisma client
+        run: pnpm --filter @repo/database generate
       - name: Check formatting
         run: pnpm format:check
       - name: Initialize the isolated CI database
