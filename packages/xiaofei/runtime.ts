@@ -489,7 +489,7 @@ function updateSlots(
 	const slots = { ...current };
 
 	for (const required of knowledge.requiredSlots) {
-		const value = inferSlotValue(required.key, message);
+		const value = inferSlotValue(required.key, required.label, message);
 		const unavailable =
 			/(没有|无法|不能|no\b|cannot|can't)/iu.test(message) &&
 			(message.includes(required.label) || message.includes(required.key));
@@ -521,12 +521,15 @@ function updateSlots(
 	return slots;
 }
 
-function inferSlotValue(key: string, message: string): string | undefined {
+function inferSlotValue(key: string, label: string, message: string): string | undefined {
 	if (key.includes("order")) {
 		return message.match(/\b[A-Z0-9-]{6,}\b/iu)?.[0];
 	}
 	if (key.includes("photo") || key.includes("image")) {
 		return /(照片|图片|photo|image|attached|附件)/iu.test(message) ? "已提供照片/图片" : undefined;
+	}
+	if (/(error|fault|code|故障码|错误码)/iu.test(`${key} ${label}`)) {
+		return message.match(/\b[A-Z]{1,4}-?\d{1,5}\b/iu)?.[0];
 	}
 	return undefined;
 }

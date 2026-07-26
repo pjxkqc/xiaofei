@@ -120,6 +120,50 @@ describe("P0 runtime kernel", () => {
 		expect(result.reply).not.toMatch(/已退款|已补发/u);
 	});
 
+	it("collects a generated fault-code slot from the customer's message", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		snapshot.knowledgeUnits[1] = {
+			...snapshot.knowledgeUnits[1]!,
+			scenarioKeywords: ["E07"],
+			requiredSlots: [
+				{
+					key: "error_code",
+					label: "故障码",
+					askText: "请确认设备显示的故障码。",
+					required: true,
+				},
+			],
+		};
+		const prepared = prepareTurn({
+			message: "C-Air Pro 显示 E07，还能继续开机吗？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "C-Air Pro 显示 E07，还能继续开机吗？",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+
+		expect(result.state).toMatchObject({
+			ownerType: "human",
+			nextAction: "stop",
+			handoffReason: "required_information_collected",
+			missingSlots: [],
+			slots: {
+				error_code: {
+					label: "故障码",
+					status: "provided",
+					value: "E07",
+				},
+			},
+		});
+	});
+
 	it("replaces unsafe model output before handing the conversation to a human", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const prepared = prepareTurn({
