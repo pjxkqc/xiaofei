@@ -123,6 +123,7 @@ export function KnowledgeDocuments({
 				contentBase64: await fileToBase64(file),
 			});
 			form.reset();
+			setPreviewFileId("");
 			setPageCursor(undefined);
 			setPreviousCursors([]);
 			await refreshDocuments(undefined);
@@ -137,9 +138,13 @@ export function KnowledgeDocuments({
 
 	async function preparePreviewFile(id: string) {
 		setPreviewFileId(id);
-		if (!id) return;
 		const fileInput = fileFormRef.current?.elements.namedItem("knowledge-file");
-		if (!getPreviewKnowledgeFileFixture(id) || !(fileInput instanceof HTMLInputElement)) return;
+		if (!(fileInput instanceof HTMLInputElement)) return;
+		if (!id) {
+			fileInput.value = "";
+			return;
+		}
+		if (!getPreviewKnowledgeFileFixture(id)) return;
 		try {
 			const files = new DataTransfer();
 			files.items.add(await loadPreviewKnowledgeFixtureFile(id));
@@ -260,6 +265,7 @@ export function KnowledgeDocuments({
 								type="file"
 								accept=".md,.txt,.pdf,.docx,.xlsx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 								required
+								onChange={() => setPreviewFileId("")}
 								disabled={busy}
 							/>
 						</div>

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
 	getPreviewKnowledgeFileFixture,
+	getPreviewKnowledgeWebFixtureUrl,
 	isPreviewKnowledgeFixtureSelectorVisible,
 	loadPreviewKnowledgeFixtureFile,
 	previewKnowledgeFileFixtures,
@@ -24,6 +25,15 @@ describe("Preview knowledge fixtures", () => {
 	it("does not resolve arbitrary fixture paths", () => {
 		expect(getPreviewKnowledgeFileFixture("faq")?.fileName).toBe("qingfeng-faq.md");
 		expect(getPreviewKnowledgeFileFixture("../../not-a-fixture")).toBeUndefined();
+	});
+
+	it("prepares only the exact same-origin webpage fixture URL", () => {
+		const origin = "https://fly-71-git-branch.vercel.app";
+		expect(getPreviewKnowledgeWebFixtureUrl(previewKnowledgeWebFixture.path, origin)).toBe(
+			"https://fly-71-git-branch.vercel.app/knowledge-test/qingfeng-subscription.html",
+		);
+		expect(getPreviewKnowledgeWebFixtureUrl("https://example.com/untrusted", origin)).toBe("");
+		expect(getPreviewKnowledgeWebFixtureUrl("/knowledge-test/other.html", origin)).toBe("");
 	});
 
 	it("prepares a selected fixture from its fixed same-origin path without submitting it", async () => {

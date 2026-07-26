@@ -63,6 +63,10 @@ export function getPreviewKnowledgeFileFixture(id: string) {
 	return previewKnowledgeFileFixtures.find((fixture) => fixture.id === id);
 }
 
+export function getPreviewKnowledgeWebFixtureUrl(path: string, origin: string) {
+	return path === previewKnowledgeWebFixture.path ? new URL(path, origin).toString() : "";
+}
+
 export async function loadPreviewKnowledgeFixtureFile(id: string, request: typeof fetch = fetch) {
 	const fixture = getPreviewKnowledgeFileFixture(id);
 	if (!fixture) throw new Error("Unknown Preview knowledge fixture.");

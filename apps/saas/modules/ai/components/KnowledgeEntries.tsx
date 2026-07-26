@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
 	getPreviewKnowledgeFileFixture,
+	getPreviewKnowledgeWebFixtureUrl,
 	loadPreviewKnowledgeFixtureFile,
 	previewKnowledgeFileFixtures,
 	previewKnowledgeWebFixture,
@@ -80,6 +81,7 @@ export function KnowledgeEntries({
 				contentBase64: await fileToBase64(file),
 			});
 			formElement.reset();
+			setPreviewFileId("");
 			await refresh();
 			toastSuccess("知识已添加", "已创建可编辑的标准化条目。");
 		} catch (error) {
@@ -107,9 +109,13 @@ export function KnowledgeEntries({
 	}
 	async function preparePreviewFile(id: string) {
 		setPreviewFileId(id);
-		if (!id) return;
 		const fileInput = fileFormRef.current?.elements.namedItem("file");
-		if (!getPreviewKnowledgeFileFixture(id) || !(fileInput instanceof HTMLInputElement)) return;
+		if (!(fileInput instanceof HTMLInputElement)) return;
+		if (!id) {
+			fileInput.value = "";
+			return;
+		}
+		if (!getPreviewKnowledgeFileFixture(id)) return;
 		try {
 			const files = new DataTransfer();
 			files.items.add(await loadPreviewKnowledgeFixtureFile(id));
@@ -241,6 +247,7 @@ export function KnowledgeEntries({
 							name="file"
 							type="file"
 							accept=".md,.txt,.pdf,.docx,.xlsx"
+							onChange={() => setPreviewFileId("")}
 							required
 							disabled={busy}
 						/>
@@ -262,9 +269,10 @@ export function KnowledgeEntries({
 										className="h-10 px-3 mt-1 w-full rounded-md border bg-background"
 										onChange={(event) =>
 											setPreviewWebUrl(
-												event.target.value
-													? new URL(event.target.value, window.location.origin).toString()
-													: "",
+												getPreviewKnowledgeWebFixtureUrl(
+													event.target.value,
+													window.location.origin,
+												),
 											)
 										}
 										disabled={busy}
