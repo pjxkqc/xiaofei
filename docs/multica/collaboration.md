@@ -38,16 +38,50 @@ to the squad so the leader can route it.
 
 1. The owner restates outcome, paths, risk, and validation before editing.
 2. The owner checks `AGENTS.md`, this protocol, and the local boundary README.
-3. A cross-boundary dependency becomes a child issue or an explicit handoff;
+3. The owner runs `pnpm delivery:identity` before the first commit and fixes the
+   effective identity if it is not approved.
+4. A cross-boundary dependency becomes a child issue or an explicit handoff;
    Agents do not race in shared files.
-4. The owner implements the smallest acceptance-complete change and records
+5. The owner implements the smallest acceptance-complete change and records
    focused evidence.
-5. Required-risk categories go to `xiaofei-quality` for independent review.
-6. The owner addresses findings and opens or updates one PR.
-7. A human merges unless the project explicitly enables an automated merge
-   policy.
-8. Platform evidence confirms Preview creation/cleanup or production delivery
-   when the issue affects those lifecycles.
+6. The owner runs `pnpm delivery:check` before push or handoff.
+7. After the final commit, the owner runs `pnpm delivery:head` and records the
+   exact head SHA. New commits, amendments, rebases, and merges invalidate prior
+   head and quality evidence.
+8. Required-risk categories go to `xiaofei-quality` for independent review.
+9. The owner addresses findings and opens or updates one PR.
+10. A human merges unless the project explicitly enables an automated merge
+    policy.
+11. Platform evidence confirms Preview creation/cleanup or production delivery
+    when the issue affects those lifecycles.
+
+## Delivery preflight
+
+Repository commands are the source of truth; a prompt saying that checks were
+run is not evidence.
+
+```bash
+# Before the first commit
+pnpm delivery:identity
+
+# After focused checks and before push/handoff
+pnpm delivery:check
+
+# After the final commit or amended commit
+pnpm delivery:head
+git rev-parse HEAD
+```
+
+`delivery:check` supplies non-secret placeholder configuration only when a
+validation variable is absent. It does not start a database, mutate Preview or
+production data, or replace the real PostgreSQL and browser checks in GitHub
+Actions.
+
+The lead must not route work to Quality until the owner supplies the full gate
+result and exact head SHA. Quality must verify that same head with
+`pnpm delivery:head` and inspect current GitHub and Vercel checks; cached
+evidence from an older commit is invalid. If the identity gate fails, amend the
+bad commit before handoff instead of appending an empty repair commit.
 
 ## GitHub convention
 
@@ -75,6 +109,7 @@ Post this compact handoff on the issue before changing ownership:
 - Outcome:
 - Changed files/contracts:
 - Validation and result:
+- Exact head SHA:
 - Preview/manual evidence:
 - Risks or unresolved decisions:
 - Next owner and requested action:
@@ -100,6 +135,8 @@ An issue is done only when:
 
 - acceptance criteria are met;
 - focused checks and the repository quality gate pass;
+- the final PR head has an approved author and committer, and validation
+  evidence names that exact SHA;
 - required independent review is resolved;
 - canonical docs match the new behavior;
 - the PR links to the Multica issue;

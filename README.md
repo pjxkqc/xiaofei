@@ -147,15 +147,18 @@ with `NEXT_PUBLIC_`.
 
 ## Validation
 
-Run the same core checks used by the pull-request quality gate:
+Run the repository-owned delivery preflight before pushing or handing off:
 
 ```bash
-pnpm lint
-pnpm format:check
-pnpm type-check
-pnpm test
-pnpm build
+pnpm delivery:identity
+pnpm delivery:check
 ```
+
+After the final commit or amendment, run `pnpm delivery:head` and record the
+exact `git rev-parse HEAD` value. The full preflight runs formatting, lint,
+Prisma generation, type-check, unit tests, and all builds with non-secret
+validation defaults. GitHub Actions adds an isolated PostgreSQL database and
+browser tests.
 
 Focused checks are also available:
 

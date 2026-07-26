@@ -11,7 +11,10 @@
 		"clean": "turbo clean",
 		"test": "dotenv -c -- turbo test && node --test scripts/*.test.mjs",
 		"format": "oxfmt .",
-		"format:check": "oxfmt --check ."
+		"format:check": "oxfmt --check .",
+		"delivery:identity": "node scripts/verify-delivery-identity.mjs",
+		"delivery:head": "node scripts/verify-delivery-identity.mjs --head",
+		"delivery:check": "node scripts/delivery-check.mjs"
 	},
 	"devDependencies": {
 		"@repo/tsconfig": "workspace:*",
