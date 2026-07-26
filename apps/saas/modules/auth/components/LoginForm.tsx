@@ -31,6 +31,7 @@ import { z } from "zod";
 
 import { type OAuthProvider, oAuthProviders } from "../constants/oauth-providers";
 import { useSession } from "../hooks/use-session";
+import { requestPreviewOneClickLogin } from "../lib/preview-one-click-login-client";
 import { LoginModeSwitch } from "./LoginModeSwitch";
 import { SocialSigninButton } from "./SocialSigninButton";
 
@@ -138,10 +139,7 @@ export function LoginForm({
 
 	const signInWithPreviewOperator = async () => {
 		try {
-			const response = await fetch("/api/auth/preview-one-click-login", {
-				method: "POST",
-				credentials: "same-origin",
-			});
+			const response = await requestPreviewOneClickLogin();
 
 			if (!response.ok) {
 				throw new Error("Preview sign-in failed");
