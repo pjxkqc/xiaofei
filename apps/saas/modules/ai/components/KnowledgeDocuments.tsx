@@ -139,18 +139,26 @@ export function KnowledgeDocuments({
 	async function preparePreviewFile(id: string) {
 		setPreviewFileId(id);
 		const fileInput = fileFormRef.current?.elements.namedItem("knowledge-file");
-		if (!(fileInput instanceof HTMLInputElement)) return;
-		if (!id) {
-			fileInput.value = "";
+		if (!(fileInput instanceof HTMLInputElement)) {
+			setPreviewFileId("");
 			return;
 		}
-		if (!getPreviewKnowledgeFileFixture(id)) return;
+		fileInput.value = "";
+		if (!id) {
+			return;
+		}
+		if (!getPreviewKnowledgeFileFixture(id)) {
+			setPreviewFileId("");
+			return;
+		}
 		try {
 			const files = new DataTransfer();
 			files.items.add(await loadPreviewKnowledgeFixtureFile(id));
 			fileInput.files = files.files;
 			toastSuccess("已准备测试文件", "点击现有上传按钮后才会创建记录。");
 		} catch (error) {
+			setPreviewFileId("");
+			fileInput.value = "";
 			toastError("无法准备测试文件", getErrorMessage(error));
 		}
 	}

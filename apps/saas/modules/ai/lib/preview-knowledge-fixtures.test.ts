@@ -49,6 +49,19 @@ describe("Preview knowledge fixtures", () => {
 		expect(file.type).toBe("text/markdown");
 	});
 
+	it("rejects a fixture that cannot be prepared", async () => {
+		const unavailableRequest = vi.fn(
+			async (_input: RequestInfo | URL) => new Response(null, { status: 404 }),
+		);
+
+		await expect(
+			loadPreviewKnowledgeFixtureFile(
+				"campaign-notes",
+				unavailableRequest as unknown as typeof fetch,
+			),
+		).rejects.toThrow("Preview knowledge fixture is unavailable.");
+	});
+
 	it("shows fixture controls only for Vercel Preview", () => {
 		expect(isPreviewKnowledgeFixtureSelectorVisible({ VERCEL_ENV: "preview" })).toBe(true);
 		expect(isPreviewKnowledgeFixtureSelectorVisible({ VERCEL_ENV: "production" })).toBe(false);
