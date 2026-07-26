@@ -23,10 +23,26 @@ function setup() {
 describe("Xiaofei runtime adapters", () => {
 	it("accepts only JSON-array structured KU output and redacts malformed provider output", () => {
 		expect(parseGeneratedCandidates('[{"entryId":"entry-1"}]')).toEqual([{ entryId: "entry-1" }]);
+		expect(parseGeneratedCandidates('```json\n{"drafts":[{"entryId":"entry-1"}]}\n```')).toEqual([
+			{ entryId: "entry-1" },
+		]);
+		expect(parseGeneratedCandidates('Generated draft:\n{"entryId":"entry-1"}')).toEqual([
+			{ entryId: "entry-1" },
+		]);
+		expect(parseGeneratedCandidates('[{"entryId":"entry-1"}]\nDone.')).toEqual([
+			{ entryId: "entry-1" },
+		]);
 		expect(() => parseGeneratedCandidates("provider token: secret-value")).toThrow(
 			KnowledgeUnitGenerationError,
 		);
 	});
+
+	it("preserves balanced provider JSON extraction across surrounding formatting", () => {
+		expect(
+			parseGeneratedCandidates('Result:\n{"knowledgeUnits":[{"entryId":"entry-[1]"}]}\nComplete.'),
+		).toEqual([{ entryId: "entry-[1]" }]);
+	});
+
 	it("runs the Mastra governance workflow without an LLM call", async () => {
 		const { snapshot } = setup();
 		const governed = await runMastraGovernance(snapshot);
