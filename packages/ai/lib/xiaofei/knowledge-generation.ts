@@ -60,12 +60,55 @@ export async function generateKnowledgeUnitDrafts(input: {
 
 export function parseGeneratedCandidates(text: string): unknown[] {
 	try {
-		const normalized = text.trim().replace(/^```(?:json)?\s*|\s*```$/gu, "");
-		const parsed: unknown = JSON.parse(normalized);
-		if (!Array.isArray(parsed)) throw new KnowledgeUnitGenerationError();
-		return parsed;
+		const parsed = JSON.parse(extractJson(text)) as unknown;
+		if (Array.isArray(parsed)) return parsed;
+		if (isRecord(parsed) && Array.isArray(parsed.drafts)) return parsed.drafts;
+		if (isRecord(parsed) && Array.isArray(parsed.knowledgeUnits)) return parsed.knowledgeUnits;
+		if (isRecord(parsed) && typeof parsed.entryId === "string") return [parsed];
+		throw new KnowledgeUnitGenerationError();
 	} catch (error) {
 		if (error instanceof KnowledgeUnitGenerationError) throw error;
 		throw new KnowledgeUnitGenerationError();
 	}
+}
+
+function extractJson(text: string): string {
+	const trimmed = text.trim();
+	const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
+	if (fenced?.[1]) return fenced[1];
+
+	const start = trimmed.search(/[\[{]/u);
+	if (start === -1) throw new KnowledgeUnitGenerationError();
+	const end = findJsonEnd(trimmed, start);
+	if (end === -1) throw new KnowledgeUnitGenerationError();
+	return trimmed.slice(start, end + 1);
+}
+
+function findJsonEnd(value: string, start: number): number {
+	const stack: string[] = [];
+	let quoted = false;
+	let escaped = false;
+	for (let index = start; index < value.length; index += 1) {
+		const character = value[index]!;
+		if (quoted) {
+			if (escaped) escaped = false;
+			else if (character === "\\") escaped = true;
+			else if (character === '"') quoted = false;
+			continue;
+		}
+		if (character === '"') quoted = true;
+		else if (character === "{" || character === "[") stack.push(character);
+		else if (character === "}" || character === "]") {
+			const opening = stack.pop();
+			if ((character === "}" && opening !== "{") || (character === "]" && opening !== "[")) {
+				return -1;
+			}
+			if (stack.length === 0) return index;
+		}
+	}
+	return -1;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
 }

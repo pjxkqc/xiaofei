@@ -23,6 +23,15 @@ function setup() {
 describe("Xiaofei runtime adapters", () => {
 	it("accepts only JSON-array structured KU output and redacts malformed provider output", () => {
 		expect(parseGeneratedCandidates('[{"entryId":"entry-1"}]')).toEqual([{ entryId: "entry-1" }]);
+		expect(parseGeneratedCandidates('```json\n{"drafts":[{"entryId":"entry-1"}]}\n```')).toEqual([
+			{ entryId: "entry-1" },
+		]);
+		expect(parseGeneratedCandidates('Generated draft:\n{"entryId":"entry-1"}')).toEqual([
+			{ entryId: "entry-1" },
+		]);
+		expect(parseGeneratedCandidates('[{"entryId":"entry-1"}]\nDone.')).toEqual([
+			{ entryId: "entry-1" },
+		]);
 		expect(() => parseGeneratedCandidates("provider token: secret-value")).toThrow(
 			KnowledgeUnitGenerationError,
 		);
