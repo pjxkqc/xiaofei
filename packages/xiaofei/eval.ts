@@ -111,8 +111,9 @@ function deriveCurrentKnowledgeCases(snapshot: XiaofeiWorkspaceSnapshot) {
 			id: `current-knowledge:${unit.id}`,
 			title: `当前能力 KU 可安全执行：${unit.title}`,
 			message: unit.scenarioKeywords[0] ?? unit.title,
-			expectedAction:
-				unit.requiredSlots.length > 0 ? ("ask_followup" as const) : ("reply" as const),
+			expectedAction: unit.requiredSlots.some((slot) => slot.required)
+				? ("ask_followup" as const)
+				: ("reply" as const),
 			expectedOwner: "ai" as const,
 			expectedKnowledgeId: unit.id,
 		}));

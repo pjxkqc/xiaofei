@@ -310,8 +310,8 @@ export function KnowledgeEntries() {
 								</CardDescription>
 							</CardHeader>
 							<CardContent className="gap-4 flex flex-col">
-								<Field name="question" label="问题" value={selected.question} />
-								<Field name="answer" label="答案" value={selected.answer} area />
+								<Field name="question" label="问题" value={selected.question} required />
+								<Field name="answer" label="答案" value={selected.answer} area required />
 								<Field name="similar" label="相似问法" value={selected.similarQueries.join(", ")} />
 								<Field name="tags" label="标签" value={selected.tags.join(", ")} />
 								<Label>
@@ -380,14 +380,30 @@ function Category(props: { value: string; onChange: (value: "PRESALES" | "POSTSA
 		</Label>
 	);
 }
-function Field(props: { name: string; label: string; value: string; area?: boolean }) {
+function Field(props: {
+	name: string;
+	label: string;
+	value: string;
+	area?: boolean;
+	required?: boolean;
+}) {
 	return (
 		<Label>
 			{props.label}
 			{props.area ? (
-				<Textarea name={props.name} defaultValue={props.value} required className="mt-1 min-h-48" />
+				<Textarea
+					name={props.name}
+					defaultValue={props.value}
+					required={props.required}
+					className="mt-1 min-h-48"
+				/>
 			) : (
-				<Input name={props.name} defaultValue={props.value} required className="mt-1" />
+				<Input
+					name={props.name}
+					defaultValue={props.value}
+					required={props.required}
+					className="mt-1"
+				/>
 			)}
 		</Label>
 	);

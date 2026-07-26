@@ -23,6 +23,10 @@ test("submits two manual knowledge pairs and caps the form at twenty", async ({ 
 	await page.getByRole("button", { name: "First question" }).click();
 	await expect(page.getByLabel("问题")).toHaveValue("First question");
 	await expect(page.getByLabel("答案")).toHaveValue("First answer");
+	await expect(page.getByLabel("问题")).toHaveAttribute("required", "");
+	await expect(page.getByLabel("答案")).toHaveAttribute("required", "");
+	await expect(page.getByLabel("相似问法")).not.toHaveAttribute("required", "");
+	await expect(page.getByLabel("标签")).not.toHaveAttribute("required", "");
 	await page.getByRole("button", { name: "Second question" }).click();
 	await expect(page.getByLabel("问题")).toHaveValue("Second question");
 	await expect(page.getByLabel("答案")).toHaveValue("Second answer");

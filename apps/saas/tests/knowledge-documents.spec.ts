@@ -16,8 +16,15 @@ test.describe("knowledge document management", () => {
 
 		await page.goto("/knowledge/documents");
 		await expect(page.getByRole("heading", { name: "知识文档" })).toBeVisible();
+		await expect(
+			page.getByText(/PDF、DOCX、XLSX 通过服务端 Firecrawl 解析（最多 4 MB）/u),
+		).toBeVisible();
 
-		await page.getByLabel("文档文件").setInputFiles({
+		const fileInput = page.getByLabel("文档文件");
+		await expect(fileInput).toHaveAttribute("accept", /\.pdf/u);
+		await expect(fileInput).toHaveAttribute("accept", /\.xlsx/u);
+
+		await fileInput.setInputFiles({
 			name: "acceptance.md",
 			mimeType: "text/markdown",
 			buffer: Buffer.from("# Xiaofei\n\nInitial acceptance content.", "utf8"),

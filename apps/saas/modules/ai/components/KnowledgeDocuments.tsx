@@ -42,7 +42,7 @@ interface KnowledgeDocument extends KnowledgeDocumentSummary {
 }
 
 const DOCUMENT_PAGE_SIZE = 25;
-const MAX_UPLOAD_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_UPLOAD_FILE_BYTES = 4 * 1024 * 1024;
 
 interface DocumentDraft {
 	originalFileName: string;
@@ -98,7 +98,7 @@ export function KnowledgeDocuments() {
 
 		const file = fileInput.files[0];
 		if (file.size > MAX_UPLOAD_FILE_BYTES) {
-			toastError("文档上传失败", "文件不能超过 2 MB。");
+			toastError("文档上传失败", "文件不能超过 4 MB。");
 			return;
 		}
 
@@ -191,8 +191,8 @@ export function KnowledgeDocuments() {
 				<CardHeader>
 					<CardTitle>上传源文档</CardTitle>
 					<CardDescription>
-						支持 UTF-8 Markdown、TXT 和 DOCX（最多 2 MB）。DOCX 仅提取普通段落文本，不处理图片、OCR
-						或复杂表格。
+						MD、TXT 本地解析；PDF、DOCX、XLSX 通过服务端 Firecrawl 解析（最多 4 MB）。P0 不处理 OCR
+						或图片派生知识。
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -206,7 +206,7 @@ export function KnowledgeDocuments() {
 								id="knowledge-file"
 								name="knowledge-file"
 								type="file"
-								accept=".md,.txt,.docx,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+								accept=".md,.txt,.pdf,.docx,.xlsx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 								required
 								disabled={busy}
 							/>

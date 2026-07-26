@@ -175,6 +175,7 @@ function prepareTurnInternal(
 	const missingSlots = knowledge.requiredSlots
 		.filter((slot) => slot.required && slots[slot.key]?.status === "missing")
 		.map((slot) => slot.key);
+	const hasRequiredSlots = knowledge.requiredSlots.some((slot) => slot.required);
 	const blockedSlot = Object.entries(slots).find(([, slot]) =>
 		["denied", "unavailable", "conflict"].includes(slot.status),
 	);
@@ -244,7 +245,7 @@ function prepareTurnInternal(
 		};
 	}
 
-	if (knowledge.requiredSlots.length > 0) {
+	if (hasRequiredSlots) {
 		return {
 			state: withDecision(state, {
 				knowledge,
@@ -258,7 +259,7 @@ function prepareTurnInternal(
 			knowledge,
 			action: "handoff",
 			riskLevel: "low",
-			reply: "需要的资料已经记录完整。我会转交人工客服核实，后续由人工确认处理结果。",
+			reply: knowledge.fallbackReply,
 			handoffReason: "required_information_collected",
 			traces,
 		};
@@ -488,7 +489,7 @@ function updateSlots(
 	const slots = { ...current };
 
 	for (const required of knowledge.requiredSlots) {
-		const value = inferSlotValue(required.key, message);
+		const value = inferSlotValue(required.key, required.label, message);
 		const unavailable =
 			/(没有|无法|不能|no\b|cannot|can't)/iu.test(message) &&
 			(message.includes(required.label) || message.includes(required.key));
@@ -520,12 +521,18 @@ function updateSlots(
 	return slots;
 }
 
-function inferSlotValue(key: string, message: string): string | undefined {
+function inferSlotValue(key: string, label: string, message: string): string | undefined {
 	if (key.includes("order")) {
 		return message.match(/\b[A-Z0-9-]{6,}\b/iu)?.[0];
 	}
 	if (key.includes("photo") || key.includes("image")) {
 		return /(照片|图片|photo|image|attached|附件)/iu.test(message) ? "已提供照片/图片" : undefined;
+	}
+	if (/(device.*model|model|设备型号|机型|型号)/iu.test(`${key} ${label}`)) {
+		return message.match(/\b[A-Z][A-Za-z0-9]*(?:[- ][A-Za-z0-9]+){1,3}\b/u)?.[0];
+	}
+	if (/(error|fault|code|故障码|错误码)/iu.test(`${key} ${label}`)) {
+		return message.match(/\b[A-Z]{1,4}-?\d{1,5}\b/iu)?.[0];
 	}
 	return undefined;
 }

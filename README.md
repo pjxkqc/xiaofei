@@ -12,11 +12,16 @@ production-complete Agent Center.
 
 ## What works in P0
 
-- configure Agent instructions, follow-up limits, and a Markdown knowledge
-  source from a dedicated settings page;
-- parse each Markdown section into a governed `KnowledgeUnit`;
+- configure Agent instructions and follow-up limits from a dedicated settings
+  page;
+- add tenant-scoped knowledge from local MD/TXT parsing, Firecrawl-parsed
+  PDF/DOCX/XLSX or a public webpage, and manual Q&A;
+- manage normalized sources on `/knowledge/entries`, then generate, review, and
+  publish governed units on `/knowledge/units`;
 - derive a reviewable capability plan with callable KU IDs, scenario boundaries,
   required-field matrices, and Eval suggestions;
+- review, Eval, and admit capabilities on `/knowledge/capabilities`; only
+  reviewed, published, non-stale knowledge is eligible for runtime use;
 - run a LangGraph state graph as the canonical conversation orchestrator;
 - call a Mastra Agent only when the graph needs a model-generated candidate
   reply, and run a separate Mastra governance Workflow on configuration save;
@@ -139,6 +144,7 @@ Xiaofei setup is:
 | `OPENAI_API_KEY`                        | Yes for model replies | Server-only model credential                   |
 | `OPENAI_BASE_URL`                       | Optional              | OpenAI-compatible `/v1` endpoint               |
 | `OPENAI_MODEL`                          | Yes for model replies | Exact model identifier exposed by the endpoint |
+| `FIRECRAWL_API_KEY`                     | Provider formats only | Server-only PDF/DOCX/XLSX and webpage parsing  |
 
 GitHub and Google OAuth variables are optional for password-based local testing,
 but both client ID and client secret must be configured before using the
@@ -171,18 +177,21 @@ pnpm --filter saas test
 
 The manual P0 smoke path is:
 
-1. log in as a support user, open `/agent-settings`, import or edit Markdown,
-   save the configuration, and confirm the
-   Mastra governance Workflow produces released KUs and a pending capability
-   plan;
-2. review the KU-derived capability plan, then run P0 Eval and confirm `4/4`
-   KU, Action, and Owner assertions pass;
-3. open `/support` in a signed-out browser and start a customer conversation;
-4. open `/inbox` as the support user and confirm online and Xiaofei-owner status;
-5. send a low-risk question and confirm Xiaofei replies from reviewed KU;
+1. log in as a support user, configure Agent policy on `/agent-settings`, then
+   add MD/TXT, PDF/DOCX/XLSX, a public webpage, and manual Q&A on
+   `/knowledge/entries`;
+2. verify normalized content and lineage, then generate, review, and publish KUs
+   on `/knowledge/units`;
+3. review the derived plan on `/knowledge/capabilities`, run P0 Eval, and admit
+   the capability only after the required assertions pass;
+4. ask a low-risk question on `/chatbot` and confirm the answer cites eligible
+   knowledge; edit or delete its source and confirm the stale answer is no
+   longer callable;
+5. open `/support` in a signed-out browser, start a customer conversation, and
+   confirm its online and Xiaofei-owner state in `/inbox`;
 6. request a refund or complaint and confirm the conversation exits to human;
-7. take over in `/inbox`, send a human reply, and confirm it appears on
-   `/support`; then return the conversation to Xiaofei.
+7. take over in `/inbox`, reply, confirm the message on `/support`, and return
+   the conversation to Xiaofei.
 
 ## Delivery
 
@@ -207,9 +216,10 @@ configuration, required evidence, cleanup semantics, and troubleshooting.
 
 ## Deliberate P0 limits
 
-The current slice uses deterministic Markdown parsing, keyword/state matching,
-JSON aggregate snapshots, deterministic evaluation, a single public support
-channel, and short polling. Vector retrieval, rich document ingestion,
+The current slice uses local MD/TXT parsing, Firecrawl for PDF/DOCX/XLSX and one
+public webpage, manual Q&A, keyword/state matching, JSON aggregate snapshots,
+deterministic evaluation, a single public support channel, and short polling.
+OCR and image-derived knowledge, recursive site crawling, vector retrieval,
 normalized versioned releases, model judges, Flyranking/LoopDesk channel SDKs,
 realtime sockets, and high-risk business writes remain deferred until the
 framework is validated.

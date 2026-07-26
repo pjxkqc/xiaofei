@@ -120,6 +120,63 @@ describe("P0 runtime kernel", () => {
 		expect(result.reply).not.toMatch(/已退款|已补发/u);
 	});
 
+	it("collects a generated fault-code slot from the customer's message", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		snapshot.knowledgeUnits[1] = {
+			...snapshot.knowledgeUnits[1]!,
+			scenarioKeywords: ["E07"],
+			fallbackReply: "请立即停机断电，不要拆机或再次强制启动；我会转交人工客服处理。",
+			requiredSlots: [
+				{
+					key: "device_model",
+					label: "设备型号",
+					askText: "请确认设备型号。",
+					required: true,
+				},
+				{
+					key: "error_code",
+					label: "故障码",
+					askText: "请确认设备显示的故障码。",
+					required: true,
+				},
+			],
+		};
+		const prepared = prepareTurn({
+			message: "C-Air Pro 显示 E07，还能继续开机吗？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "C-Air Pro 显示 E07，还能继续开机吗？",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+
+		expect(result.state).toMatchObject({
+			ownerType: "human",
+			nextAction: "stop",
+			handoffReason: "required_information_collected",
+			missingSlots: [],
+			slots: {
+				device_model: {
+					label: "设备型号",
+					status: "provided",
+					value: "C-Air Pro",
+				},
+				error_code: {
+					label: "故障码",
+					status: "provided",
+					value: "E07",
+				},
+			},
+		});
+		expect(result.reply).toContain("立即停机断电");
+	});
+
 	it("replaces unsafe model output before handing the conversation to a human", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const prepared = prepareTurn({
@@ -174,6 +231,54 @@ describe("P0 runtime kernel", () => {
 		expect(suite.cases).not.toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ expectedKnowledgeId: "商品破损资料收集" }),
+			]),
+		);
+	});
+
+	it("allows optional-only KU slots to reply and keeps Eval expectations aligned", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const optionalOnly = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "optional-only-policy",
+			title: "净芯年包政策",
+			scenarioKeywords: ["净芯年包"],
+			requiredSlots: [
+				{
+					key: "packageType",
+					label: "年包档位",
+					askText: "请确认你咨询的是 Mini、S 还是 Pro 年包。",
+					required: false,
+				},
+			],
+		};
+		snapshot.knowledgeUnits = [optionalOnly];
+		snapshot.capabilityPlan.knowledgeUnitIds = [optionalOnly.id];
+		const prepared = prepareTurn({
+			message: "净芯年包",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const generate = vi.fn(async () => "净芯年包分为 Mini、S 和 Pro 三档。");
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "净芯年包",
+			replyGenerator: { generate },
+			now,
+		});
+		const suite = await runP0EvalSuite(snapshot, now);
+
+		expect(generate).toHaveBeenCalledOnce();
+		expect(result.state).toMatchObject({ ownerType: "ai", nextAction: "reply" });
+		expect(suite.cases).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					expectedKnowledgeId: optionalOnly.id,
+					expectedAction: "reply",
+					passed: true,
+				}),
 			]),
 		);
 	});
