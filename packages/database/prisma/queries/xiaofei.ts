@@ -83,6 +83,14 @@ export interface CreateXiaofeiKnowledgeUnitInput {
 	staleReason?: string | null;
 }
 
+export interface UpdateXiaofeiKnowledgeUnitInput {
+	title?: string;
+	content?: Prisma.InputJsonValue;
+	status?: string;
+	eligibility?: string;
+	staleReason?: string | null;
+}
+
 export const DEFAULT_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE = 25;
 export const MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE = 50;
 export const MAX_XIAOFEI_KNOWLEDGE_DOCUMENTS_PER_WORKSPACE = 100;
@@ -479,6 +487,21 @@ export function listXiaofeiKnowledgeUnits(workspaceId: string) {
 
 export function getXiaofeiKnowledgeUnit(workspaceId: string, id: string) {
 	return db.xiaofeiKnowledgeUnit.findUnique({ where: { workspaceId_id: { workspaceId, id } } });
+}
+
+export function updateXiaofeiKnowledgeUnit(
+	workspaceId: string,
+	id: string,
+	data: UpdateXiaofeiKnowledgeUnitInput,
+) {
+	return db.xiaofeiKnowledgeUnit.update({
+		where: { workspaceId_id: { workspaceId, id } },
+		data,
+	});
+}
+
+export function deleteXiaofeiKnowledgeUnit(workspaceId: string, id: string) {
+	return db.xiaofeiKnowledgeUnit.deleteMany({ where: { workspaceId, id } });
 }
 
 async function invalidateKnowledgeUnits(

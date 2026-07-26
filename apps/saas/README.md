@@ -21,6 +21,8 @@ The product surface is deliberately kept to six small pages:
   file, one public webpage, or manual Q&A. `/knowledge/documents` remains the
   source-document view with bounded metadata pages and full bodies loaded only
   when a document is opened.
+- `/knowledge/units` generates Draft KUs from current normalized entries and
+  provides the minimal human review, edit, publish/revoke, and delete surface.
 
 The pages can:
 

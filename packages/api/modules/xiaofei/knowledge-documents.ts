@@ -1,22 +1,33 @@
 import { ORPCError } from "@orpc/server";
+import { generateKnowledgeUnitDrafts } from "@repo/ai";
 import {
+	createXiaofeiKnowledgeUnit,
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeDocument,
 	deleteXiaofeiKnowledgeEntry,
+	deleteXiaofeiKnowledgeUnit,
 	getXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeEntry,
+	getXiaofeiKnowledgeUnit,
 	listXiaofeiKnowledgeDocuments,
 	listXiaofeiKnowledgeEntries,
+	listXiaofeiKnowledgeUnits,
 	type ListXiaofeiKnowledgeDocumentsOptions,
 	updateXiaofeiKnowledgeDocument,
 	updateXiaofeiKnowledgeEntry,
+	updateXiaofeiKnowledgeUnit,
 	XiaofeiKnowledgeDocumentCategory,
 	XiaofeiKnowledgeDocumentFileType,
 	XiaofeiKnowledgeDocumentSourceType,
 	XiaofeiKnowledgeEntryQuotaError,
 	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
+import {
+	KnowledgeUnitDraftCandidateSchema,
+	KnowledgeUnitSchema,
+	NormalizedKnowledgeEntrySchema,
+} from "@repo/xiaofei";
 import { strFromU8, unzipSync } from "fflate";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
@@ -85,6 +96,11 @@ interface UpdateKnowledgeEntryInput {
 	category?: string | null;
 	tags?: string[];
 	status?: string;
+}
+interface UpdateKnowledgeUnitInput {
+	title?: string;
+	standardReplyPolicy?: string;
+	fallbackReply?: string;
 }
 
 export async function getKnowledgeTenantKey(context: XiaofeiAuthContext): Promise<string> {
@@ -250,6 +266,120 @@ export async function deleteKnowledgeEntryForTenant(context: XiaofeiAuthContext,
 	if ((await deleteXiaofeiKnowledgeEntry(workspace.id, id)).count === 0)
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
 	return { deleted: true };
+}
+
+export async function generateKnowledgeUnitsForTenant(
+	context: XiaofeiAuthContext,
+	entryIds: string[],
+) {
+	const { workspace } = await getKnowledgeWorkspace(context);
+	const entries = await Promise.all(
+		entryIds.map((id) => getXiaofeiKnowledgeEntry(workspace.id, id)),
+	);
+	if (
+		entries.some(
+			(entry) => !entry || !entry.eligible || !entry.sourceId || entry.status !== "active",
+		)
+	) {
+		throw new ORPCError("BAD_REQUEST", { message: "Select current, active knowledge entries." });
+	}
+	try {
+		const drafts = await generateKnowledgeUnitDrafts({
+			workspaceId: workspace.id,
+			entries: entries.map((entry) =>
+				NormalizedKnowledgeEntrySchema.parse({
+					id: entry!.id,
+					workspaceId: entry!.workspaceId,
+					sourceId: entry!.sourceId,
+					sourceContentHash: entry!.sourceContentHash,
+					sourceVersion: entry!.sourceVersion,
+					version: entry!.entryVersion,
+					question: entry!.question,
+					answer: entry!.answer,
+					similarQueries: entry!.similarQueries,
+					category: entry!.category,
+					tags: entry!.tags,
+					status: entry!.status,
+				}),
+			),
+		});
+		return await Promise.all(
+			drafts.map((draft) =>
+				createXiaofeiKnowledgeUnit({
+					workspaceId: workspace.id,
+					entryId: draft.lineage.entryId,
+					title: draft.title,
+					content: draft,
+					status: "draft",
+					eligibility: "ineligible",
+				}),
+			),
+		);
+	} catch (error) {
+		if (error instanceof ORPCError) throw error;
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Knowledge-unit generation is unavailable. Try again.",
+		});
+	}
+}
+
+export async function listKnowledgeUnitsForTenant(context: XiaofeiAuthContext) {
+	const { workspace } = await getKnowledgeWorkspace(context);
+	return await listXiaofeiKnowledgeUnits(workspace.id);
+}
+
+export async function updateKnowledgeUnitForTenant(
+	context: XiaofeiAuthContext,
+	id: string,
+	input: UpdateKnowledgeUnitInput,
+) {
+	const { workspace } = await getKnowledgeWorkspace(context);
+	const unit = await requireKnowledgeUnit(workspace.id, id);
+	const content = KnowledgeUnitSchema.parse(unit.content);
+	const candidate = KnowledgeUnitDraftCandidateSchema.parse({ ...content, ...input });
+	return await updateXiaofeiKnowledgeUnit(workspace.id, id, {
+		title: candidate.title,
+		content: { ...content, ...candidate, id: unit.id, title: candidate.title },
+	});
+}
+
+export async function transitionKnowledgeUnitForTenant(
+	context: XiaofeiAuthContext,
+	id: string,
+	action: "review" | "revokeReview" | "publish" | "revokePublish",
+) {
+	const { workspace } = await getKnowledgeWorkspace(context);
+	const unit = await requireKnowledgeUnit(workspace.id, id);
+	if (unit.eligibility === "stale")
+		throw new ORPCError("BAD_REQUEST", {
+			message: "This knowledge unit is stale and must be regenerated.",
+		});
+	const next =
+		action === "review"
+			? { status: "review_ready", eligibility: "ineligible" }
+			: action === "revokeReview"
+				? { status: "draft", eligibility: "ineligible" }
+				: action === "publish"
+					? { status: "released", eligibility: "eligible" }
+					: { status: "draft", eligibility: "ineligible" };
+	if (action === "publish" && unit.status !== "review_ready")
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Review the knowledge unit before publishing it.",
+		});
+	return await updateXiaofeiKnowledgeUnit(workspace.id, id, next);
+}
+
+export async function deleteKnowledgeUnitForTenant(context: XiaofeiAuthContext, id: string) {
+	const { workspace } = await getKnowledgeWorkspace(context);
+	if ((await deleteXiaofeiKnowledgeUnit(workspace.id, id)).count === 0)
+		throw new ORPCError("NOT_FOUND", { message: "Knowledge unit not found." });
+	return { deleted: true };
+}
+
+async function requireKnowledgeUnit(workspaceId: string, id: string) {
+	const unit = await getXiaofeiKnowledgeUnit(workspaceId, id);
+	if (!unit) throw new ORPCError("NOT_FOUND", { message: "Knowledge unit not found." });
+	return unit;
 }
 
 export async function listKnowledgeDocuments(

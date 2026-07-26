@@ -15,12 +15,17 @@ import {
 	createManualKnowledgeEntries,
 	deleteKnowledgeDocumentForTenant,
 	deleteKnowledgeEntryForTenant,
+	deleteKnowledgeUnitForTenant,
+	generateKnowledgeUnitsForTenant,
 	getKnowledgeDocument,
 	getKnowledgeEntry,
 	listKnowledgeDocuments,
 	listKnowledgeEntries,
+	listKnowledgeUnitsForTenant,
+	transitionKnowledgeUnitForTenant,
 	updateKnowledgeDocumentForTenant,
 	updateKnowledgeEntryForTenant,
+	updateKnowledgeUnitForTenant,
 } from "../knowledge-documents";
 
 const fileNameSchema = z.string().trim().min(1).max(255);
@@ -177,3 +182,76 @@ export const deleteKnowledgeEntryProcedure = supportProcedure
 	})
 	.input(z.object({ id: knowledgeEntryIdSchema }))
 	.handler(async ({ context, input }) => await deleteKnowledgeEntryForTenant(context, input.id));
+
+const knowledgeUnitIdSchema = z.string().cuid();
+const knowledgeUnitEditSchema = z.object({
+	title: z.string().trim().min(1).max(500).optional(),
+	standardReplyPolicy: z.string().trim().min(1).max(20_000).optional(),
+	fallbackReply: z.string().trim().min(1).max(20_000).optional(),
+});
+
+export const generateKnowledgeUnitsProcedure = supportProcedure
+	.route({
+		method: "POST",
+		path: "/xiaofei/knowledge/units/generate",
+		tags: ["Xiaofei Knowledge"],
+		summary: "Generate draft knowledge units from current normalized entries",
+	})
+	.input(z.object({ entryIds: z.array(knowledgeEntryIdSchema).min(1).max(20) }))
+	.handler(
+		async ({ context, input }) => await generateKnowledgeUnitsForTenant(context, input.entryIds),
+	);
+export const listKnowledgeUnitsProcedure = supportProcedure
+	.route({
+		method: "GET",
+		path: "/xiaofei/knowledge/units",
+		tags: ["Xiaofei Knowledge"],
+		summary: "List tenant knowledge units",
+	})
+	.handler(async ({ context }) => await listKnowledgeUnitsForTenant(context));
+export const updateKnowledgeUnitProcedure = supportProcedure
+	.route({
+		method: "PUT",
+		path: "/xiaofei/knowledge/units/{id}",
+		tags: ["Xiaofei Knowledge"],
+		summary: "Edit a draft knowledge unit",
+	})
+	.input(
+		z
+			.object({ id: knowledgeUnitIdSchema })
+			.merge(knowledgeUnitEditSchema)
+			.refine(
+				({ id: _id, ...changes }) => Object.values(changes).some((value) => value !== undefined),
+				{ message: "Provide at least one knowledge-unit change." },
+			),
+	)
+	.handler(
+		async ({ context, input: { id, ...changes } }) =>
+			await updateKnowledgeUnitForTenant(context, id, changes),
+	);
+export const transitionKnowledgeUnitProcedure = supportProcedure
+	.route({
+		method: "POST",
+		path: "/xiaofei/knowledge/units/{id}/transition",
+		tags: ["Xiaofei Knowledge"],
+		summary: "Review, publish, or revoke a knowledge unit",
+	})
+	.input(
+		z.object({
+			id: knowledgeUnitIdSchema,
+			action: z.enum(["review", "revokeReview", "publish", "revokePublish"]),
+		}),
+	)
+	.handler(
+		async ({ context, input }) =>
+			await transitionKnowledgeUnitForTenant(context, input.id, input.action),
+	);
+export const deleteKnowledgeUnitProcedure = supportProcedure
+	.route({
+		method: "DELETE",
+		path: "/xiaofei/knowledge/units/{id}",
+		tags: ["Xiaofei Knowledge"],
+		summary: "Delete a tenant knowledge unit",
+	})
+	.input(z.object({ id: knowledgeUnitIdSchema }))
+	.handler(async ({ context, input }) => await deleteKnowledgeUnitForTenant(context, input.id));

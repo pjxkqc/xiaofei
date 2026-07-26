@@ -6,12 +6,17 @@ import {
 	createManualKnowledgeEntriesProcedure,
 	deleteKnowledgeDocumentProcedure,
 	deleteKnowledgeEntryProcedure,
+	deleteKnowledgeUnitProcedure,
+	generateKnowledgeUnitsProcedure,
 	getKnowledgeDocumentProcedure,
 	getKnowledgeEntryProcedure,
 	listKnowledgeDocumentsProcedure,
 	listKnowledgeEntriesProcedure,
+	listKnowledgeUnitsProcedure,
+	transitionKnowledgeUnitProcedure,
 	updateKnowledgeDocumentProcedure,
 	updateKnowledgeEntryProcedure,
+	updateKnowledgeUnitProcedure,
 } from "./procedures/knowledge-documents";
 import { resetXiaofeiConversation } from "./procedures/reset-conversation";
 import { reviewXiaofeiCapability } from "./procedures/review-capability";
@@ -52,4 +57,9 @@ export const xiaofeiRouter = {
 	getKnowledgeEntry: getKnowledgeEntryProcedure,
 	updateKnowledgeEntry: updateKnowledgeEntryProcedure,
 	deleteKnowledgeEntry: deleteKnowledgeEntryProcedure,
+	generateKnowledgeUnits: generateKnowledgeUnitsProcedure,
+	listKnowledgeUnits: listKnowledgeUnitsProcedure,
+	updateKnowledgeUnit: updateKnowledgeUnitProcedure,
+	transitionKnowledgeUnit: transitionKnowledgeUnitProcedure,
+	deleteKnowledgeUnit: deleteKnowledgeUnitProcedure,
 };

@@ -339,7 +339,7 @@ export function NavBar() {
 			},
 			{
 				label: t("app.menu.knowledgeDocuments"),
-				href: "/knowledge/entries",
+				href: "/knowledge/units",
 				icon: BookOpenTextIcon,
 				isActive: pathname.startsWith("/knowledge/"),
 			},
