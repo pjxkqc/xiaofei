@@ -14,7 +14,14 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import { orpcClient } from "@shared/lib/orpc-client";
 import { LoaderCircleIcon, SaveIcon, Trash2Icon, UploadIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import {
+	getPreviewKnowledgeFileFixture,
+	loadPreviewKnowledgeFixtureFile,
+	previewKnowledgeFileFixtures,
+	previewKnowledgeWebFixture,
+} from "../lib/preview-knowledge-fixtures";
 
 interface Entry {
 	id: string;
@@ -37,12 +44,19 @@ interface ManualPair {
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANUAL_PAIRS = 20;
 
-export function KnowledgeEntries() {
+export function KnowledgeEntries({
+	previewFixtureSelectorVisible = false,
+}: {
+	previewFixtureSelectorVisible?: boolean;
+}) {
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [selected, setSelected] = useState<Entry | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [category, setCategory] = useState<"PRESALES" | "POSTSALES">("PRESALES");
 	const [manualPairs, setManualPairs] = useState<ManualPair[]>([emptyManualPair(1)]);
+	const [previewFileId, setPreviewFileId] = useState("");
+	const [previewWebUrl, setPreviewWebUrl] = useState("");
+	const fileFormRef = useRef<HTMLFormElement>(null);
 	const refresh = useCallback(
 		async () => setEntries((await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 })).items),
 		[],
@@ -82,12 +96,27 @@ export function KnowledgeEntries() {
 		try {
 			await orpcClient.xiaofei.createKnowledgeWeb({ url: formString(formData, "url"), category });
 			formElement.reset();
+			setPreviewWebUrl("");
 			await refresh();
 			toastSuccess("网页已添加");
 		} catch (error) {
 			toastError("网页导入失败", message(error));
 		} finally {
 			setBusy(false);
+		}
+	}
+	async function preparePreviewFile(id: string) {
+		setPreviewFileId(id);
+		if (!id) return;
+		const fileInput = fileFormRef.current?.elements.namedItem("file");
+		if (!getPreviewKnowledgeFileFixture(id) || !(fileInput instanceof HTMLInputElement)) return;
+		try {
+			const files = new DataTransfer();
+			files.items.add(await loadPreviewKnowledgeFixtureFile(id));
+			fileInput.files = files.files;
+			toastSuccess("已准备测试文件", "点击现有上传按钮后才会创建记录。");
+		} catch (error) {
+			toastError("无法准备测试文件", message(error));
 		}
 	}
 	async function submitManual(event: React.FormEvent<HTMLFormElement>) {
@@ -186,7 +215,28 @@ export function KnowledgeEntries() {
 					title="文件上传"
 					description="MD、TXT 本地处理；PDF、DOCX、XLSX 安全地经服务端解析。最多 4 MB。"
 				>
-					<form className="gap-3 flex flex-col" onSubmit={submitFile}>
+					<form ref={fileFormRef} className="gap-3 flex flex-col" onSubmit={submitFile}>
+						{previewFixtureSelectorVisible && (
+							<PreviewFixtureExplanation>
+								<Label>
+									Preview 测试文件
+									<select
+										aria-label="Preview 测试文件"
+										className="h-10 px-3 mt-1 w-full rounded-md border bg-background"
+										value={previewFileId}
+										onChange={(event) => void preparePreviewFile(event.target.value)}
+										disabled={busy}
+									>
+										<option value="">选择一份虚构资料</option>
+										{previewKnowledgeFileFixtures.map((fixture) => (
+											<option key={fixture.id} value={fixture.id}>
+												{fixture.label}
+											</option>
+										))}
+									</select>
+								</Label>
+							</PreviewFixtureExplanation>
+						)}
 						<Input
 							name="file"
 							type="file"
@@ -203,10 +253,36 @@ export function KnowledgeEntries() {
 				</EntryCard>
 				<EntryCard title="网页链接" description="只抓取单个公开 HTTP(S) 页面，不会递归抓取。">
 					<form className="gap-3 flex flex-col" onSubmit={submitWeb}>
+						{previewFixtureSelectorVisible && (
+							<PreviewFixtureExplanation>
+								<Label>
+									Preview 测试网页
+									<select
+										aria-label="Preview 测试网页"
+										className="h-10 px-3 mt-1 w-full rounded-md border bg-background"
+										onChange={(event) =>
+											setPreviewWebUrl(
+												event.target.value
+													? new URL(event.target.value, window.location.origin).toString()
+													: "",
+											)
+										}
+										disabled={busy}
+									>
+										<option value="">选择同源虚构网页</option>
+										<option value={previewKnowledgeWebFixture.path}>
+											{previewKnowledgeWebFixture.label}
+										</option>
+									</select>
+								</Label>
+							</PreviewFixtureExplanation>
+						)}
 						<Input
 							name="url"
 							type="url"
 							placeholder="https://example.com/help"
+							value={previewWebUrl}
+							onChange={(event) => setPreviewWebUrl(event.target.value)}
 							required
 							disabled={busy}
 						/>
@@ -363,6 +439,16 @@ function EntryCard(props: { title: string; description: string; children: React.
 			</CardHeader>
 			<CardContent>{props.children}</CardContent>
 		</Card>
+	);
+}
+function PreviewFixtureExplanation(props: { children: React.ReactNode }) {
+	return (
+		<div className="p-3 gap-2 flex flex-col rounded-md border border-dashed bg-muted/30">
+			<p className="text-xs text-muted-foreground">
+				Preview 专用：这些是可重复使用的虚构测试资料；选择仅准备输入，不会创建记录。
+			</p>
+			{props.children}
+		</div>
 	);
 }
 function Category(props: { value: string; onChange: (value: "PRESALES" | "POSTSALES") => void }) {
