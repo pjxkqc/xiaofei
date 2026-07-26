@@ -509,4 +509,27 @@ describe("knowledge document application boundary", () => {
 			}),
 		);
 	});
+
+	it("refuses stale KU edits and keeps review and publish blocked until regeneration", async () => {
+		const staleUnit = { ...knowledgeUnit("draft", "stale"), staleReason: "source_deleted" };
+		vi.mocked(getXiaofeiKnowledgeUnit)
+			.mockResolvedValueOnce(staleUnit as never)
+			.mockResolvedValueOnce(staleUnit as never)
+			.mockResolvedValueOnce(staleUnit as never);
+
+		await expect(
+			updateKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", {
+				standardReplyPolicy: "Attempted stale edit.",
+			}),
+		).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("stale") });
+		expect(updateXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
+
+		await expect(
+			transitionKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", "review"),
+		).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("stale") });
+		await expect(
+			transitionKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", "publish"),
+		).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("stale") });
+		expect(updateXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
+	});
 });

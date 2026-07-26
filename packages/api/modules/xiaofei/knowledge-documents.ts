@@ -335,6 +335,10 @@ export async function updateKnowledgeUnitForTenant(
 ) {
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const unit = await requireKnowledgeUnit(workspace.id, id);
+	if (unit.eligibility === "stale")
+		throw new ORPCError("BAD_REQUEST", {
+			message: "This knowledge unit is stale and must be regenerated.",
+		});
 	const content = KnowledgeUnitSchema.parse(unit.content);
 	const candidate = KnowledgeUnitDraftCandidateSchema.parse({ ...content, ...input });
 	return await updateXiaofeiKnowledgeUnit(workspace.id, id, {
