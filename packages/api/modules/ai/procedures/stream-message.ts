@@ -7,6 +7,7 @@ import { protectedProcedure } from "../../../orpc/procedures";
 import {
 	getOrCreateConversation,
 	getOrCreateXiaofeiWorkspace,
+	createKnowledgeWorkspaceBinding,
 	saveConversation,
 } from "../../xiaofei/service";
 
@@ -42,6 +43,12 @@ export const streamMessage = protectedProcedure
 			message,
 			state: conversation.state,
 			snapshot,
+			knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
+				workspace,
+				snapshot,
+				conversationId: conversation.state.id,
+				channelId: "authenticated:chatbot",
+			}),
 		});
 		const traces = [...conversation.traces, ...result.metadata.traces].slice(-80);
 		await saveConversation({

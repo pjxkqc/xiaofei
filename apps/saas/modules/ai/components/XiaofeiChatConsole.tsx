@@ -2,7 +2,7 @@
 
 import { Button } from "@repo/ui/components/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { toastSuccess } from "@repo/ui/components/toast";
+import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import { orpcClient } from "@shared/lib/orpc-client";
 import {
 	DatabaseIcon,
@@ -13,12 +13,51 @@ import {
 	SparklesIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { AiChat } from "./AiChat";
+import { AiChat, type KnowledgeProvenance } from "./AiChat";
+import { isAdmitted } from "./KnowledgeCapabilities";
 
 export function XiaofeiChatConsole() {
 	const [conversationId, setConversationId] = useState(() => globalThis.crypto.randomUUID());
+	const [admitted, setAdmitted] = useState(false);
+	const [provenanceByTitle, setProvenanceByTitle] = useState<Record<string, KnowledgeProvenance>>(
+		{},
+	);
+
+	useEffect(() => {
+		void Promise.all([
+			orpcClient.xiaofei.getConfig(),
+			orpcClient.xiaofei.listKnowledgeUnits(),
+			orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 }),
+			orpcClient.xiaofei.listKnowledgeDocuments({ limit: 50 }),
+		])
+			.then(([snapshot, units, entries, documents]) => {
+				setAdmitted(isAdmitted(snapshot));
+				const entriesById = new Map(entries.items.map((entry) => [entry.id, entry]));
+				const documentsById = new Map(documents.items.map((document) => [document.id, document]));
+				setProvenanceByTitle(
+					Object.fromEntries(
+						units.flatMap((unit) => {
+							const entry = entriesById.get(unit.entryId);
+							const source = entry?.sourceId ? documentsById.get(entry.sourceId) : undefined;
+							if (!entry || !source) return [];
+							return [
+								[
+									unit.title,
+									{
+										entryId: entry.id,
+										kuId: unit.id,
+										sourceLabel: source.sourceUrl ?? source.originalFileName ?? source.sourceType,
+									},
+								],
+							];
+						}),
+					),
+				);
+			})
+			.catch(() => toastError("无法读取 Chatbot 准入状态"));
+	}, []);
 
 	const resetChat = async () => {
 		try {
@@ -59,8 +98,17 @@ export function XiaofeiChatConsole() {
 					<Capability icon={DatabaseIcon} label="Neon State" />
 					<Capability icon={ShieldCheckIcon} label="Guardrail" />
 				</div>
+				{!admitted && (
+					<p className="text-sm text-amber-700 dark:text-amber-400">
+						当前能力方案未完成审核与 Eval；Chatbot 将保持安全转人工。
+					</p>
+				)}
 			</CardHeader>
-			<AiChat key={conversationId} conversationId={conversationId} />
+			<AiChat
+				key={conversationId}
+				conversationId={conversationId}
+				provenanceByTitle={provenanceByTitle}
+			/>
 		</Card>
 	);
 }

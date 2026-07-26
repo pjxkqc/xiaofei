@@ -38,7 +38,11 @@ import {
 	validatePublicHttpUrl,
 } from "./knowledge-content-parser";
 import type { XiaofeiAuthContext } from "./service";
-import { getOrCreateXiaofeiWorkspaceByTenantKey } from "./service";
+import {
+	getOrCreateXiaofeiWorkspaceByTenantKey,
+	clearKnowledgeWorkspaceAdmission,
+	synchronizeKnowledgeWorkspaceSnapshot,
+} from "./service";
 
 export const MAX_KNOWLEDGE_FILE_BYTES = 4 * 1024 * 1024;
 export const MAX_KNOWLEDGE_BODY_CHARACTERS = 500_000;
@@ -256,7 +260,9 @@ export async function updateKnowledgeEntryForTenant(
 	if (!(await getXiaofeiKnowledgeEntry(workspace.id, id)))
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
 	try {
+		await clearKnowledgeAdmission(context);
 		await updateXiaofeiKnowledgeEntry(workspace.id, id, input);
+		await synchronizeKnowledgeSnapshot(context, workspace.id);
 		const entry = await getXiaofeiKnowledgeEntry(workspace.id, id);
 		if (!entry) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
 		return entry;
@@ -267,8 +273,10 @@ export async function updateKnowledgeEntryForTenant(
 }
 export async function deleteKnowledgeEntryForTenant(context: XiaofeiAuthContext, id: string) {
 	const { workspace } = await getKnowledgeWorkspace(context);
+	await clearKnowledgeAdmission(context);
 	if ((await deleteXiaofeiKnowledgeEntry(workspace.id, id)).count === 0)
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	await synchronizeKnowledgeSnapshot(context, workspace.id);
 	return { deleted: true };
 }
 
@@ -339,19 +347,22 @@ export async function updateKnowledgeUnitForTenant(
 ) {
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const unit = await requireKnowledgeUnit(workspace.id, id);
+	await clearKnowledgeAdmission(context);
 	if (unit.eligibility === "stale")
 		throw new ORPCError("BAD_REQUEST", {
 			message: "This knowledge unit is stale and must be regenerated.",
 		});
 	const content = KnowledgeUnitSchema.parse(unit.content);
 	const candidate = KnowledgeUnitDraftCandidateSchema.parse({ ...content, ...input });
-	return await updateXiaofeiKnowledgeUnit(workspace.id, id, {
+	const updated = await updateXiaofeiKnowledgeUnit(workspace.id, id, {
 		title: candidate.title,
 		content: { ...content, ...candidate, id: unit.id, title: candidate.title },
 		status: "draft",
 		eligibility: "ineligible",
 		staleReason: null,
 	});
+	await synchronizeKnowledgeSnapshot(context, workspace.id);
+	return updated;
 }
 
 export async function transitionKnowledgeUnitForTenant(
@@ -361,6 +372,7 @@ export async function transitionKnowledgeUnitForTenant(
 ) {
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const unit = await requireKnowledgeUnit(workspace.id, id);
+	await clearKnowledgeAdmission(context);
 	if (unit.eligibility === "stale")
 		throw new ORPCError("BAD_REQUEST", {
 			message: "This knowledge unit is stale and must be regenerated.",
@@ -370,13 +382,17 @@ export async function transitionKnowledgeUnitForTenant(
 		throw new ORPCError("BAD_REQUEST", {
 			message: `Cannot ${action} a knowledge unit in ${unit.status}.`,
 		});
-	return await updateXiaofeiKnowledgeUnit(workspace.id, id, transition.to);
+	const updated = await updateXiaofeiKnowledgeUnit(workspace.id, id, transition.to);
+	await synchronizeKnowledgeSnapshot(context, workspace.id);
+	return updated;
 }
 
 export async function deleteKnowledgeUnitForTenant(context: XiaofeiAuthContext, id: string) {
 	const { workspace } = await getKnowledgeWorkspace(context);
+	await clearKnowledgeAdmission(context);
 	if ((await deleteXiaofeiKnowledgeUnit(workspace.id, id)).count === 0)
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge unit not found." });
+	await synchronizeKnowledgeSnapshot(context, workspace.id);
 	return { deleted: true };
 }
 
@@ -422,10 +438,13 @@ export async function updateKnowledgeDocumentForTenant(
 	}
 
 	try {
-		return await updateXiaofeiKnowledgeDocument(workspace.id, id, {
+		await clearKnowledgeAdmission(context);
+		const updated = await updateXiaofeiKnowledgeDocument(workspace.id, id, {
 			...input,
 			category: input.category ? XiaofeiKnowledgeDocumentCategory[input.category] : undefined,
 		});
+		await synchronizeKnowledgeSnapshot(context, workspace.id);
+		return updated;
 	} catch (error) {
 		throwKnowledgeDocumentWriteError(error);
 	}
@@ -433,15 +452,28 @@ export async function updateKnowledgeDocumentForTenant(
 
 export async function deleteKnowledgeDocumentForTenant(context: XiaofeiAuthContext, id: string) {
 	const { workspace } = await getKnowledgeWorkspace(context);
+	await clearKnowledgeAdmission(context);
 	const result = await deleteXiaofeiKnowledgeDocument(workspace.id, id);
 	if (result.count === 0) {
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge document not found." });
 	}
+	await synchronizeKnowledgeSnapshot(context, workspace.id);
 	return { deleted: true };
 }
 
 async function getKnowledgeWorkspace(context: XiaofeiAuthContext) {
 	return await getOrCreateXiaofeiWorkspaceByTenantKey(await getKnowledgeTenantKey(context));
+}
+
+async function synchronizeKnowledgeSnapshot(context: XiaofeiAuthContext, workspaceId: string) {
+	await synchronizeKnowledgeWorkspaceSnapshot({
+		tenantKey: await getKnowledgeTenantKey(context),
+		units: await listXiaofeiKnowledgeUnits(workspaceId),
+	});
+}
+
+async function clearKnowledgeAdmission(context: XiaofeiAuthContext) {
+	await clearKnowledgeWorkspaceAdmission(await getKnowledgeTenantKey(context));
 }
 
 function validateAndExtractFile(input: CreateKnowledgeDocumentInput): {

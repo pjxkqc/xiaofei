@@ -12,9 +12,10 @@ import {
 const NOW = "2026-07-24T00:00:00.000Z";
 const now = () => NOW;
 
-function setup() {
+async function setup() {
 	const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
 	snapshot.capabilityPlan.reviewed = true;
+	snapshot.evalSuite = await runP0EvalSuite(snapshot, now);
 	const state = createConversationState({
 		id: "conversation-1",
 		tenantId: "tenant-1",
@@ -22,7 +23,7 @@ function setup() {
 		maxFollowUps: snapshot.agent.maxFollowUps,
 		now,
 	});
-	return { snapshot, state };
+	return { snapshot, state, knowledgeWorkspaceBinding: binding(snapshot, state.id) };
 }
 
 describe("P0 runtime kernel", () => {
@@ -39,6 +40,7 @@ describe("P0 runtime kernel", () => {
 			message: "你们能处理哪些售后问题？",
 			state,
 			snapshot,
+			knowledgeWorkspaceBinding: binding(snapshot, state.id),
 			now,
 		});
 		const result = await finalizeTurn({
@@ -51,17 +53,18 @@ describe("P0 runtime kernel", () => {
 
 		expect(result.state).toMatchObject({
 			ownerType: "human",
-			handoffReason: "capability_not_reviewed",
+			handoffReason: "capability_evidence_stale",
 		});
-		expect(result.reply).toContain("能力方案尚未完成审核");
+		expect(result.reply).toContain("知识能力尚未满足安全准入条件");
 	});
 
 	it("collects only the next missing slot and keeps AI ownership", async () => {
-		const { snapshot, state } = setup();
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const prepared = prepareTurn({
 			message: "我收到的杯子碎了",
 			state,
 			snapshot,
+			knowledgeWorkspaceBinding,
 			now,
 		});
 		const generate = vi.fn();
@@ -84,17 +87,19 @@ describe("P0 runtime kernel", () => {
 	});
 
 	it("hands off after all required information is collected", async () => {
-		const { snapshot, state } = setup();
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const first = prepareTurn({
 			message: "商品碎了，订单号是 ABC12345",
 			state,
 			snapshot,
+			knowledgeWorkspaceBinding,
 			now,
 		});
 		const second = prepareTurn({
 			message: "照片已经作为附件发给你",
 			state: first.state,
 			snapshot,
+			knowledgeWorkspaceBinding: binding(snapshot, first.state.id),
 			now,
 		});
 		const result = await finalizeTurn({
@@ -116,11 +121,12 @@ describe("P0 runtime kernel", () => {
 	});
 
 	it("replaces unsafe model output before handing the conversation to a human", async () => {
-		const { snapshot, state } = setup();
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const prepared = prepareTurn({
 			message: "你们能处理哪些售后问题？",
 			state,
 			snapshot,
+			knowledgeWorkspaceBinding,
 			now,
 		});
 		const result = await finalizeTurn({
@@ -139,7 +145,7 @@ describe("P0 runtime kernel", () => {
 	});
 
 	it("passes the deterministic release assertions without calling a model", async () => {
-		const { snapshot } = setup();
+		const { snapshot } = await setup();
 		const suite = await runP0EvalSuite(snapshot, now);
 
 		expect(suite.status).toBe("passed");
@@ -147,4 +153,83 @@ describe("P0 runtime kernel", () => {
 		expect(suite.passed).toBe(4);
 		expect(suite.cases.every((testCase) => testCase.knowledgeMatched)).toBe(true);
 	});
+
+	it("derives positive Eval evidence from a custom admitted KU and excludes stale KUs", async () => {
+		const { snapshot } = await setup();
+		const custom = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "custom-policy",
+			title: "自定义政策",
+			scenarioKeywords: ["自定义保修"],
+		};
+		snapshot.knowledgeUnits = [custom, { ...snapshot.knowledgeUnits[0]!, eligibility: "stale" }];
+		snapshot.capabilityPlan.knowledgeUnitIds = [custom.id];
+		const suite = await runP0EvalSuite(snapshot, now);
+
+		expect(suite.cases).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ expectedKnowledgeId: "custom-policy", passed: true }),
+			]),
+		);
+		expect(suite.cases).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ expectedKnowledgeId: "商品破损资料收集" }),
+			]),
+		);
+	});
+
+	it("fails closed when the channel conversation binding does not resolve this tenant workspace", async () => {
+		const { snapshot, state } = await setup();
+		const prepared = prepareTurn({
+			message: "你们能处理哪些售后问题？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding: {
+				...binding(snapshot, state.id),
+				knowledgeWorkspaceId: "another-workspace",
+			},
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			action: "handoff",
+			handoffReason: "knowledge_workspace_unresolved",
+		});
+	});
+
+	it("does not select a previously admitted KU after a failed mutation leaves admission cleared", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const clearedSnapshot = {
+			...snapshot,
+			knowledgeUnits: [],
+			capabilityPlan: { ...snapshot.capabilityPlan, reviewed: false, knowledgeUnitIds: [] },
+			evalSuite: { ...snapshot.evalSuite, status: "warning" as const, capabilityPlanVersion: null },
+		};
+
+		const prepared = prepareTurn({
+			message: "你们能处理哪些售后问题？",
+			state,
+			snapshot: clearedSnapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			action: "handoff",
+			knowledge: null,
+			handoffReason: "capability_evidence_stale",
+		});
+	});
 });
+
+function binding(
+	snapshot: ReturnType<typeof createDefaultWorkspaceSnapshot>,
+	conversationId: string,
+) {
+	return {
+		tenantId: snapshot.agent.tenantId,
+		conversationId,
+		channelId: "test",
+		knowledgeWorkspaceId: snapshot.knowledgeWorkspaceId,
+	};
+}

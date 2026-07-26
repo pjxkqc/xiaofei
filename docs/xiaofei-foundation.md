@@ -38,6 +38,16 @@ may send a reply only when its lease still matches the conversation. Human
 takeover or conversation closure therefore invalidates stale model output
 without depending on a prompt.
 
+Knowledge admission is equally fail-closed: the authenticated outer layer must
+resolve a channel and conversation to a tenant `KnowledgeWorkspaceBinding`; the
+kernel verifies that binding against the conversation tenant and workspace
+snapshot before selecting a KU. Automatic handling additionally requires one
+reviewed capability plan whose admitted IDs exactly match the current released,
+eligible KUs and a passing Eval suite recorded for that exact plan version.
+Changing a source or normalized entry deterministically revokes KU eligibility,
+capability review, and Eval evidence. This does not replace the final Guardrail
+or `ownerEpoch` lease check; those remain the customer-visible send authority.
+
 This maps to the source requirements for session state, admission and handling
 rights, human handoff, response blocking, and execution records.
 

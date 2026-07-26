@@ -168,6 +168,18 @@ export const CapabilityPlanSchema = z.object({
 	evalSuggestions: z.array(z.string().min(1)).default([]),
 });
 
+/**
+ * The authenticated outer layer resolves a channel/conversation to this record
+ * before invoking the runtime. The kernel verifies it but never resolves
+ * tenant routing from framework or persistence state itself.
+ */
+export const KnowledgeWorkspaceBindingSchema = z.object({
+	tenantId: z.string().min(1),
+	conversationId: z.string().min(1),
+	channelId: z.string().min(1),
+	knowledgeWorkspaceId: z.string().min(1),
+});
+
 export const EvalCaseResultSchema = z.object({
 	id: z.string().min(1),
 	title: z.string().min(1),
@@ -188,6 +200,7 @@ export const EvalSuiteSchema = z.object({
 	failed: z.number().int().nonnegative(),
 	cases: z.array(EvalCaseResultSchema).default([]),
 	updatedAt: z.string().min(1),
+	capabilityPlanVersion: z.string().min(1).nullable().default(null),
 });
 
 export const ReleaseGateSchema = z.object({
@@ -198,6 +211,7 @@ export const ReleaseGateSchema = z.object({
 });
 
 export const XiaofeiWorkspaceSnapshotSchema = z.object({
+	knowledgeWorkspaceId: z.string().min(1).default("unbound"),
 	agent: AgentProfileSchema,
 	knowledgeMarkdown: z.string().min(1),
 	knowledgeUnits: z.array(KnowledgeUnitSchema),
@@ -346,6 +360,7 @@ export type KnowledgeUnitDraft = z.infer<typeof KnowledgeUnitDraftSchema>;
 export type GuardrailPolicy = z.infer<typeof GuardrailPolicySchema>;
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 export type CapabilityPlan = z.infer<typeof CapabilityPlanSchema>;
+export type KnowledgeWorkspaceBinding = z.infer<typeof KnowledgeWorkspaceBindingSchema>;
 export type EvalCaseResult = z.infer<typeof EvalCaseResultSchema>;
 export type EvalSuite = z.infer<typeof EvalSuiteSchema>;
 export type ReleaseGate = z.infer<typeof ReleaseGateSchema>;

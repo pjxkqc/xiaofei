@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import {
 	deleteXiaofeiConversation,
 	getXiaofeiConversation,
@@ -12,13 +13,17 @@ import {
 	XiaofeiWorkspaceSnapshotSchema,
 	createConversationState,
 	createDefaultWorkspaceSnapshot,
+	type KnowledgeWorkspaceBinding,
+	type XiaofeiWorkspaceSnapshot,
 	deriveCapabilityPlan,
 	deriveReleaseGates,
+	KnowledgeUnitSchema,
 	type ConversationState,
 	type TraceEvent,
-	type XiaofeiWorkspaceSnapshot,
 } from "@repo/xiaofei";
 import { z } from "zod";
+
+import { verifyOrganizationMembership } from "../organizations/lib/membership";
 
 export interface XiaofeiAuthContext {
 	session: {
@@ -31,8 +36,17 @@ export interface XiaofeiAuthContext {
 
 export const PUBLIC_SUPPORT_TENANT_KEY = "channel:public-support";
 
-export async function getXiaofeiTenantKey(_context: XiaofeiAuthContext): Promise<string> {
-	return PUBLIC_SUPPORT_TENANT_KEY;
+export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<string> {
+	const organizationId = context.session.activeOrganizationId;
+	if (!organizationId) return `user:${context.user.id}`;
+
+	const membership = await verifyOrganizationMembership(organizationId, context.user.id);
+	if (!membership) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "You do not have access to the active organization.",
+		});
+	}
+	return `organization:${organizationId}`;
 }
 
 export async function getOrCreateXiaofeiWorkspace(context: XiaofeiAuthContext) {
@@ -42,6 +56,25 @@ export async function getOrCreateXiaofeiWorkspace(context: XiaofeiAuthContext) {
 
 export async function getOrCreatePublicXiaofeiWorkspace() {
 	return await getOrCreateXiaofeiWorkspaceByTenantKey(PUBLIC_SUPPORT_TENANT_KEY);
+}
+
+/**
+ * Derive the runtime binding only from the persisted workspace tenant mapping
+ * and the loaded workspace snapshot. The runtime remains the authority that
+ * turns an absent or inconsistent binding into a guarded human handoff.
+ */
+export function createKnowledgeWorkspaceBinding(input: {
+	workspace: { tenantKey: string };
+	snapshot: XiaofeiWorkspaceSnapshot;
+	conversationId: string;
+	channelId: string;
+}): KnowledgeWorkspaceBinding {
+	return {
+		tenantId: input.workspace.tenantKey,
+		conversationId: input.conversationId,
+		channelId: input.channelId,
+		knowledgeWorkspaceId: input.snapshot.knowledgeWorkspaceId,
+	};
 }
 
 export async function getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey: string) {
@@ -80,6 +113,69 @@ export async function saveXiaofeiSnapshot(
 	const parsed = XiaofeiWorkspaceSnapshotSchema.parse(snapshot);
 	await upsertXiaofeiWorkspace(tenantKey, toJson(parsed));
 	return parsed;
+}
+
+/** Rebuild runtime admission from persisted KU truth after every KU/source lineage mutation. */
+export async function synchronizeKnowledgeWorkspaceSnapshot(input: {
+	tenantKey: string;
+	units: Array<{
+		content: unknown;
+		status: string;
+		eligibility: string;
+		staleReason: string | null;
+	}>;
+}) {
+	const current = await getOrCreateXiaofeiWorkspaceByTenantKey(input.tenantKey);
+	const knowledgeUnits = input.units.map((unit) =>
+		KnowledgeUnitSchema.parse({
+			...KnowledgeUnitSchema.parse(unit.content),
+			status: unit.status,
+			eligibility: unit.eligibility,
+			staleReason: unit.staleReason ?? undefined,
+		}),
+	);
+	const updatedAt = new Date().toISOString();
+	const capabilityPlan = deriveCapabilityPlan(knowledgeUnits, updatedAt);
+	const snapshot = XiaofeiWorkspaceSnapshotSchema.parse({
+		...current.snapshot,
+		knowledgeUnits,
+		capabilityPlan,
+		evalSuite: {
+			status: "warning",
+			passed: 0,
+			failed: 0,
+			cases: [],
+			updatedAt,
+			capabilityPlanVersion: null,
+		},
+		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, "warning", current.snapshot.tools),
+		updatedAt,
+	});
+	await upsertXiaofeiWorkspace(input.tenantKey, toJson(snapshot));
+	return snapshot;
+}
+
+/** Persist the fail-closed state before a separate knowledge-store mutation starts. */
+export async function clearKnowledgeWorkspaceAdmission(tenantKey: string) {
+	const current = await getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey);
+	const updatedAt = new Date().toISOString();
+	const capabilityPlan = deriveCapabilityPlan([], updatedAt);
+	const snapshot = XiaofeiWorkspaceSnapshotSchema.parse({
+		...current.snapshot,
+		knowledgeUnits: [],
+		capabilityPlan,
+		evalSuite: {
+			status: "warning",
+			passed: 0,
+			failed: 0,
+			cases: [],
+			updatedAt,
+			capabilityPlanVersion: null,
+		},
+		gates: deriveReleaseGates([], capabilityPlan, "warning", current.snapshot.tools),
+		updatedAt,
+	});
+	await upsertXiaofeiWorkspace(tenantKey, toJson(snapshot));
 }
 
 export async function getOrCreateConversation(input: {

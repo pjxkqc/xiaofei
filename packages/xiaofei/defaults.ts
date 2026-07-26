@@ -5,7 +5,11 @@ import {
 	type ReleaseGate,
 	type XiaofeiWorkspaceSnapshot,
 } from "./contracts";
-import { isKnowledgeUnitEligible, parseKnowledgeMarkdown } from "./knowledge";
+import {
+	invalidateKnowledgeUnitsForLineage,
+	isKnowledgeUnitEligible,
+	parseKnowledgeMarkdown,
+} from "./knowledge";
 
 export const DEFAULT_KNOWLEDGE_MARKDOWN = `# 小飞 P0 客服知识
 
@@ -42,6 +46,7 @@ export function createDefaultWorkspaceSnapshot(
 		failed: 0,
 		cases: [],
 		updatedAt,
+		capabilityPlanVersion: null,
 	};
 	const tools = [
 		{
@@ -87,6 +92,7 @@ export function createDefaultWorkspaceSnapshot(
 	const capabilityPlan = deriveCapabilityPlan(knowledgeUnits, updatedAt);
 
 	return XiaofeiWorkspaceSnapshotSchema.parse({
+		knowledgeWorkspaceId: `${tenantId}:knowledge`,
 		agent,
 		knowledgeMarkdown: DEFAULT_KNOWLEDGE_MARKDOWN,
 		knowledgeUnits,
@@ -133,6 +139,7 @@ export function rebuildWorkspaceSnapshot(input: {
 			failed: 0,
 			cases: [],
 			updatedAt,
+			capabilityPlanVersion: null,
 		},
 		capabilityPlan,
 		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, "warning", input.previous.tools),
@@ -196,6 +203,7 @@ export function setCapabilityPlanReview(
 		failed: 0,
 		cases: [],
 		updatedAt,
+		capabilityPlanVersion: null,
 	};
 
 	return XiaofeiWorkspaceSnapshotSchema.parse({
@@ -208,6 +216,42 @@ export function setCapabilityPlanReview(
 			evalSuite.status,
 			snapshot.tools,
 		),
+		updatedAt,
+	});
+}
+
+/**
+ * Source/entry changes revoke the complete admission evidence deterministically.
+ * A caller persists this returned snapshot atomically with its source mutation.
+ */
+export function invalidateWorkspaceKnowledgeForLineage(
+	snapshot: XiaofeiWorkspaceSnapshot,
+	input: { entryId?: string; sourceId?: string; reason: string; now?: () => string },
+): XiaofeiWorkspaceSnapshot {
+	const now = input.now ?? (() => new Date().toISOString());
+	const updatedAt = now();
+	const knowledgeUnits = invalidateKnowledgeUnitsForLineage(snapshot.knowledgeUnits, {
+		workspaceId: snapshot.knowledgeWorkspaceId,
+		entryId: input.entryId,
+		sourceId: input.sourceId,
+		reason: input.reason,
+	});
+	const capabilityPlan = deriveCapabilityPlan(knowledgeUnits, updatedAt);
+	const evalSuite = {
+		status: "warning" as const,
+		passed: 0,
+		failed: 0,
+		cases: [],
+		updatedAt,
+		capabilityPlanVersion: null,
+	};
+
+	return XiaofeiWorkspaceSnapshotSchema.parse({
+		...snapshot,
+		knowledgeUnits,
+		capabilityPlan,
+		evalSuite,
+		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, evalSuite.status, snapshot.tools),
 		updatedAt,
 	});
 }
