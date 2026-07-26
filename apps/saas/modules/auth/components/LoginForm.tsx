@@ -31,7 +31,7 @@ import { z } from "zod";
 
 import { type OAuthProvider, oAuthProviders } from "../constants/oauth-providers";
 import { useSession } from "../hooks/use-session";
-import { requestPreviewOneClickLogin } from "../lib/preview-one-click-login-client";
+import { completePreviewOneClickLogin } from "../lib/preview-one-click-login-client";
 import { LoginModeSwitch } from "./LoginModeSwitch";
 import { SocialSigninButton } from "./SocialSigninButton";
 
@@ -139,14 +139,7 @@ export function LoginForm({
 
 	const signInWithPreviewOperator = async () => {
 		try {
-			const response = await requestPreviewOneClickLogin();
-
-			if (!response.ok) {
-				throw new Error("Preview sign-in failed");
-			}
-
-			await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
-			router.replace(redirectPath);
+			await completePreviewOneClickLogin({ redirectPath });
 		} catch {
 			form.setError("root", {
 				message: "Preview sign-in is unavailable.",

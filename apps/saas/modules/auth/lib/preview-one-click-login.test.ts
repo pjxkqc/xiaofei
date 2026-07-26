@@ -9,7 +9,10 @@ import {
 } from "@repo/auth/lib/preview-one-click-login";
 import { describe, expect, it, vi } from "vitest";
 
-import { requestPreviewOneClickLogin } from "./preview-one-click-login-client";
+import {
+	completePreviewOneClickLogin,
+	requestPreviewOneClickLogin,
+} from "./preview-one-click-login-client";
 
 describe("Preview one-click login", () => {
 	it("shows the login affordance only for an explicitly enabled Preview", () => {
@@ -81,6 +84,18 @@ describe("Preview one-click login", () => {
 			headers: { "Content-Type": "application/json" },
 			body: "{}",
 		});
+	});
+
+	it("uses a full-page navigation away from /login after a successful Preview sign-in", async () => {
+		const navigate = vi.fn();
+
+		await completePreviewOneClickLogin({
+			redirectPath: "/knowledge/units",
+			request: vi.fn().mockResolvedValue(new Response()),
+			navigate,
+		});
+
+		expect(navigate).toHaveBeenCalledWith("/knowledge/units");
 	});
 
 	it("logs Better Auth failures with a strict non-sensitive allowlist", () => {
