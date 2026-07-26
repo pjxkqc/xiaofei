@@ -178,6 +178,54 @@ describe("P0 runtime kernel", () => {
 		);
 	});
 
+	it("allows optional-only KU slots to reply and keeps Eval expectations aligned", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const optionalOnly = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "optional-only-policy",
+			title: "净芯年包政策",
+			scenarioKeywords: ["净芯年包"],
+			requiredSlots: [
+				{
+					key: "packageType",
+					label: "年包档位",
+					askText: "请确认你咨询的是 Mini、S 还是 Pro 年包。",
+					required: false,
+				},
+			],
+		};
+		snapshot.knowledgeUnits = [optionalOnly];
+		snapshot.capabilityPlan.knowledgeUnitIds = [optionalOnly.id];
+		const prepared = prepareTurn({
+			message: "净芯年包",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const generate = vi.fn(async () => "净芯年包分为 Mini、S 和 Pro 三档。");
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "净芯年包",
+			replyGenerator: { generate },
+			now,
+		});
+		const suite = await runP0EvalSuite(snapshot, now);
+
+		expect(generate).toHaveBeenCalledOnce();
+		expect(result.state).toMatchObject({ ownerType: "ai", nextAction: "reply" });
+		expect(suite.cases).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					expectedKnowledgeId: optionalOnly.id,
+					expectedAction: "reply",
+					passed: true,
+				}),
+			]),
+		);
+	});
+
 	it("fails closed when the channel conversation binding does not resolve this tenant workspace", async () => {
 		const { snapshot, state } = await setup();
 		const prepared = prepareTurn({

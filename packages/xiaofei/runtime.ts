@@ -175,6 +175,7 @@ function prepareTurnInternal(
 	const missingSlots = knowledge.requiredSlots
 		.filter((slot) => slot.required && slots[slot.key]?.status === "missing")
 		.map((slot) => slot.key);
+	const hasRequiredSlots = knowledge.requiredSlots.some((slot) => slot.required);
 	const blockedSlot = Object.entries(slots).find(([, slot]) =>
 		["denied", "unavailable", "conflict"].includes(slot.status),
 	);
@@ -244,7 +245,7 @@ function prepareTurnInternal(
 		};
 	}
 
-	if (knowledge.requiredSlots.length > 0) {
+	if (hasRequiredSlots) {
 		return {
 			state: withDecision(state, {
 				knowledge,
