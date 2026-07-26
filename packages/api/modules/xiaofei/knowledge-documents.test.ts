@@ -63,9 +63,11 @@ import {
 	createXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
+	getXiaofeiKnowledgeEntry,
 	getXiaofeiKnowledgeUnit,
 	listXiaofeiKnowledgeDocuments,
 	updateXiaofeiKnowledgeDocument,
+	updateXiaofeiKnowledgeEntry,
 	updateXiaofeiKnowledgeUnit,
 	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
@@ -83,6 +85,7 @@ import {
 	getKnowledgeTenantKey,
 	listKnowledgeDocuments,
 	updateKnowledgeDocumentForTenant,
+	updateKnowledgeEntryForTenant,
 	transitionKnowledgeUnitForTenant,
 	updateKnowledgeUnitForTenant,
 } from "./knowledge-documents";
@@ -441,6 +444,22 @@ describe("knowledge document application boundary", () => {
 			),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
 		expect(updateXiaofeiKnowledgeDocument).not.toHaveBeenCalled();
+	});
+
+	it("returns the refreshed entry with computed eligibility after an update", async () => {
+		const refreshed = { id: "entry-1", status: "active", eligible: true };
+		vi.mocked(getXiaofeiKnowledgeEntry)
+			.mockResolvedValueOnce({ id: "entry-1" } as never)
+			.mockResolvedValueOnce(refreshed as never);
+		vi.mocked(updateXiaofeiKnowledgeEntry).mockResolvedValueOnce({ id: "entry-1" } as never);
+
+		await expect(
+			updateKnowledgeEntryForTenant(USER_CONTEXT, "entry-1", { status: "active" }),
+		).resolves.toEqual(refreshed);
+		expect(updateXiaofeiKnowledgeEntry).toHaveBeenCalledWith("workspace-user", "entry-1", {
+			status: "active",
+		});
+		expect(getXiaofeiKnowledgeEntry).toHaveBeenLastCalledWith("workspace-user", "entry-1");
 	});
 
 	it("hides cross-tenant knowledge-unit IDs before a transition", async () => {

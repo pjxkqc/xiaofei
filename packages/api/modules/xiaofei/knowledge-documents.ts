@@ -256,8 +256,12 @@ export async function updateKnowledgeEntryForTenant(
 	if (!(await getXiaofeiKnowledgeEntry(workspace.id, id)))
 		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
 	try {
-		return await updateXiaofeiKnowledgeEntry(workspace.id, id, input);
+		await updateXiaofeiKnowledgeEntry(workspace.id, id, input);
+		const entry = await getXiaofeiKnowledgeEntry(workspace.id, id);
+		if (!entry) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+		return entry;
 	} catch (error) {
+		if (error instanceof ORPCError) throw error;
 		throwKnowledgeWriteError(error);
 	}
 }
