@@ -26,9 +26,33 @@ export async function completePreviewOneClickLogin({
 
 	// A document navigation makes the Better Auth Set-Cookie observable to the
 	// authenticated server layout before it renders the destination.
-	navigate(toSameOriginPath(redirectPath));
+	navigate(sanitizePreviewRedirectPath(redirectPath));
 }
 
-function toSameOriginPath(path: string) {
-	return path.startsWith("/") && !path.startsWith("//") ? path : "/";
+const previewNavigationOrigin = "https://preview-navigation.invalid";
+
+export function sanitizePreviewRedirectPath(path: string) {
+	if (!path.startsWith("/") || path.startsWith("//") || hasUnsafeNavigationCharacter(path)) {
+		return "/";
+	}
+
+	try {
+		const url = new URL(path, previewNavigationOrigin);
+
+		return url.origin === previewNavigationOrigin ? `${url.pathname}${url.search}${url.hash}` : "/";
+	} catch {
+		return "/";
+	}
+}
+
+function hasUnsafeNavigationCharacter(path: string) {
+	for (const character of path) {
+		const code = character.charCodeAt(0);
+
+		if (character === "\\" || code <= 0x1f || code === 0x7f) {
+			return true;
+		}
+	}
+
+	return false;
 }
