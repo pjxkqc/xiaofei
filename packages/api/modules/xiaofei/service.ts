@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import {
 	deleteXiaofeiConversation,
 	getXiaofeiConversation,
@@ -12,13 +13,16 @@ import {
 	XiaofeiWorkspaceSnapshotSchema,
 	createConversationState,
 	createDefaultWorkspaceSnapshot,
+	type KnowledgeWorkspaceBinding,
+	type XiaofeiWorkspaceSnapshot,
 	deriveCapabilityPlan,
 	deriveReleaseGates,
 	type ConversationState,
 	type TraceEvent,
-	type XiaofeiWorkspaceSnapshot,
 } from "@repo/xiaofei";
 import { z } from "zod";
+
+import { verifyOrganizationMembership } from "../organizations/lib/membership";
 
 export interface XiaofeiAuthContext {
 	session: {
@@ -31,8 +35,17 @@ export interface XiaofeiAuthContext {
 
 export const PUBLIC_SUPPORT_TENANT_KEY = "channel:public-support";
 
-export async function getXiaofeiTenantKey(_context: XiaofeiAuthContext): Promise<string> {
-	return PUBLIC_SUPPORT_TENANT_KEY;
+export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<string> {
+	const organizationId = context.session.activeOrganizationId;
+	if (!organizationId) return `user:${context.user.id}`;
+
+	const membership = await verifyOrganizationMembership(organizationId, context.user.id);
+	if (!membership) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "You do not have access to the active organization.",
+		});
+	}
+	return `organization:${organizationId}`;
 }
 
 export async function getOrCreateXiaofeiWorkspace(context: XiaofeiAuthContext) {
@@ -42,6 +55,25 @@ export async function getOrCreateXiaofeiWorkspace(context: XiaofeiAuthContext) {
 
 export async function getOrCreatePublicXiaofeiWorkspace() {
 	return await getOrCreateXiaofeiWorkspaceByTenantKey(PUBLIC_SUPPORT_TENANT_KEY);
+}
+
+/**
+ * Derive the runtime binding only from the persisted workspace tenant mapping
+ * and the loaded workspace snapshot. The runtime remains the authority that
+ * turns an absent or inconsistent binding into a guarded human handoff.
+ */
+export function createKnowledgeWorkspaceBinding(input: {
+	workspace: { tenantKey: string };
+	snapshot: XiaofeiWorkspaceSnapshot;
+	conversationId: string;
+	channelId: string;
+}): KnowledgeWorkspaceBinding {
+	return {
+		tenantId: input.workspace.tenantKey,
+		conversationId: input.conversationId,
+		channelId: input.channelId,
+		knowledgeWorkspaceId: input.snapshot.knowledgeWorkspaceId,
+	};
 }
 
 export async function getOrCreateXiaofeiWorkspaceByTenantKey(tenantKey: string) {

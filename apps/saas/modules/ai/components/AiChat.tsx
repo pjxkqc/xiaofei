@@ -23,6 +23,8 @@ import "streamdown/styles.css";
 import { useEffect, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 
+import { createAiStreamRequest } from "../lib/chat-request";
+
 type XiaofeiDataParts = Record<string, RuntimeMetadata> & {
 	"xiaofei-runtime": RuntimeMetadata;
 };
@@ -56,10 +58,10 @@ export function AiChat({ conversationId }: { conversationId: string }) {
 			async sendMessages(options) {
 				return eventIteratorToStream(
 					await orpcClient.ai.stream(
-						{
+						createAiStreamRequest({
 							conversationId,
 							messages: options.messages,
-						},
+						}),
 						{ signal: options.abortSignal },
 					),
 				);

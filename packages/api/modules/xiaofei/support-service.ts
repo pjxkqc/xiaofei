@@ -21,7 +21,7 @@ import {
 } from "@repo/xiaofei";
 import { z } from "zod";
 
-import { getOrCreatePublicXiaofeiWorkspace } from "./service";
+import { createKnowledgeWorkspaceBinding, getOrCreatePublicXiaofeiWorkspace } from "./service";
 
 const ONLINE_WINDOW_MS = 30_000;
 const MAX_MESSAGES = 160;
@@ -93,6 +93,12 @@ export async function sendPublicSupportMessage(externalId: string, text: string)
 			message: text,
 			state,
 			snapshot,
+			knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
+				workspace,
+				snapshot,
+				conversationId: state.id,
+				channelId: "public:support",
+			}),
 		});
 		nextState = result.state;
 		traces = [...traces, ...result.metadata.traces].slice(-80);
