@@ -125,6 +125,7 @@ describe("P0 runtime kernel", () => {
 		snapshot.knowledgeUnits[1] = {
 			...snapshot.knowledgeUnits[1]!,
 			scenarioKeywords: ["E07"],
+			fallbackReply: "请立即停机断电，不要拆机或再次强制启动；我会转交人工客服处理。",
 			requiredSlots: [
 				{
 					key: "device_model",
@@ -173,6 +174,7 @@ describe("P0 runtime kernel", () => {
 				},
 			},
 		});
+		expect(result.reply).toContain("立即停机断电");
 	});
 
 	it("replaces unsafe model output before handing the conversation to a human", async () => {

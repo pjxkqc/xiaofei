@@ -259,7 +259,7 @@ function prepareTurnInternal(
 			knowledge,
 			action: "handoff",
 			riskLevel: "low",
-			reply: "需要的资料已经记录完整。我会转交人工客服核实，后续由人工确认处理结果。",
+			reply: knowledge.fallbackReply,
 			handoffReason: "required_information_collected",
 			traces,
 		};
