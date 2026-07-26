@@ -5,7 +5,7 @@ import {
 	type ReleaseGate,
 	type XiaofeiWorkspaceSnapshot,
 } from "./contracts";
-import { parseKnowledgeMarkdown } from "./knowledge";
+import { isKnowledgeUnitEligible, parseKnowledgeMarkdown } from "./knowledge";
 
 export const DEFAULT_KNOWLEDGE_MARKDOWN = `# 小飞 P0 客服知识
 
@@ -144,7 +144,7 @@ export function deriveCapabilityPlan(
 	knowledgeUnits: KnowledgeUnit[],
 	generatedAt: string = new Date().toISOString(),
 ): CapabilityPlan {
-	const releasedUnits = knowledgeUnits.filter((unit) => unit.status === "released");
+	const releasedUnits = knowledgeUnits.filter(isKnowledgeUnitEligible);
 
 	return {
 		status: releasedUnits.length > 0 ? "review_ready" : "blocked",
@@ -218,9 +218,12 @@ export function deriveReleaseGates(
 	evalStatus: XiaofeiWorkspaceSnapshot["evalSuite"]["status"],
 	tools: XiaofeiWorkspaceSnapshot["tools"],
 ): ReleaseGate[] {
-	const releasedCount = knowledgeUnits.filter((unit) => unit.status === "released").length;
+	const releasedCount = knowledgeUnits.filter(isKnowledgeUnitEligible).length;
 	const knowledgeReady =
-		releasedCount > 0 && knowledgeUnits.every((unit) => unit.quality.status !== "blocked");
+		releasedCount > 0 &&
+		knowledgeUnits.every(
+			(unit) => unit.quality.status !== "blocked" && unit.eligibility !== "stale",
+		);
 	const guardrailReady = knowledgeUnits.every(
 		(unit) => unit.forbiddenOutputs.length > 0 && unit.handoffRules.length > 0,
 	);

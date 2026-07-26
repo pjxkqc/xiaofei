@@ -20,8 +20,10 @@ import { admin, magicLink, openAPI, organization, twoFactor } from "better-auth/
 import { parse as parseCookies } from "cookie";
 
 import { config } from "./config";
+import { getBetterAuthErrorLogFields } from "./lib/better-auth-error-log";
 import { updateSeatsInOrganizationSubscription } from "./lib/organization";
 import { invitationOnlyPlugin } from "./plugins/invitation-only";
+import { previewOneClickLoginPlugin } from "./plugins/preview-one-click-login";
 
 const getLocaleFromRequest = (request?: Request) => {
 	const cookies = parseCookies(request?.headers.get("cookie") ?? "");
@@ -219,6 +221,7 @@ export const auth = betterAuth({
 		},
 	},
 	plugins: [
+		previewOneClickLoginPlugin(),
 		admin(),
 		passkey(),
 		magicLink({
@@ -266,8 +269,8 @@ export const auth = betterAuth({
 		twoFactor(),
 	],
 	onAPIError: {
-		onError(error, ctx) {
-			logger.error(error, { ctx });
+		onError(error) {
+			logger.error("Better Auth request failed", getBetterAuthErrorLogFields(error));
 		},
 	},
 });

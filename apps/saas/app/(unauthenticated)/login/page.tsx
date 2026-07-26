@@ -1,4 +1,5 @@
 import { LoginForm } from "@auth/components/LoginForm";
+import { isPreviewOneClickLoginEnabled } from "@repo/auth";
 import { getTranslations } from "next-intl/server";
 
 export const dynamic = "force-dynamic";
@@ -13,5 +14,5 @@ export async function generateMetadata() {
 }
 
 export default function LoginPage() {
-	return <LoginForm />;
+	return <LoginForm previewOneClickLoginEnabled={isPreviewOneClickLoginEnabled()} />;
 }

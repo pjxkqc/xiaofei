@@ -6,28 +6,29 @@ persistence.
 
 ## Procedures
 
-| Procedure                              | Route                                               | Responsibility                                                       |
-| -------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- |
-| `status`                               | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract  |
-| `getConfig`                            | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                         |
-| `saveConfig`                           | `PUT /xiaofei/config`                               | Rebuild Markdown KU, run Mastra governance, and persist the snapshot |
-| `reviewCapability`                     | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs       |
-| `runEval`                              | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates             |
-| `resetConversation`                    | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                       |
-| `startSupportConversation`             | `POST /xiaofei/public/conversations`                | Start a token-scoped public customer conversation                    |
-| `getPublicConversation`                | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat             |
-| `sendPublicMessage`                    | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner       |
-| `listAgentConversations`               | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role          |
-| `setAgentConversationOwner`            | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                 |
-| `sendAgentMessage`                     | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                        |
-| `createKnowledgeDocument`              | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a tenant source document              |
-| `listKnowledgeDocuments`               | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only source document summaries                 |
-| `getKnowledgeDocument`                 | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                               |
-| `updateKnowledgeDocument`              | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status          |
-| `deleteKnowledgeDocument`              | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                             |
-| `createKnowledgeWeb`                   | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry |
-| `createManualKnowledgeEntries`         | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                |
-| `list/get/update/deleteKnowledgeEntry` | `/xiaofei/knowledge/entries`                        | Manage tenant-scoped normalized entries and eligibility              |
+| Procedure                                  | Route                                               | Responsibility                                                        |
+| ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
+| `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract   |
+| `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                          |
+| `saveConfig`                               | `PUT /xiaofei/config`                               | Rebuild Markdown KU, run Mastra governance, and persist the snapshot  |
+| `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs        |
+| `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates              |
+| `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                        |
+| `startSupportConversation`                 | `POST /xiaofei/public/conversations`                | Start a token-scoped public customer conversation                     |
+| `getPublicConversation`                    | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat              |
+| `sendPublicMessage`                        | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner        |
+| `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role           |
+| `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                  |
+| `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                         |
+| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a tenant source document               |
+| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only source document summaries                  |
+| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                                |
+| `updateKnowledgeDocument`                  | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status           |
+| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                              |
+| `createKnowledgeWeb`                       | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry  |
+| `createManualKnowledgeEntries`             | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                 |
+| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage tenant-scoped normalized entries and eligibility               |
+| `generate/list/update/deleteKnowledgeUnit` | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
 because it is the existing AI SDK transport. That procedure now loads the

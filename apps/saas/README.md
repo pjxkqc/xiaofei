@@ -21,6 +21,8 @@ The product surface is deliberately kept to six small pages:
   file, one public webpage, or manual Q&A. `/knowledge/documents` remains the
   source-document view with bounded metadata pages and full bodies loaded only
   when a document is opened.
+- `/knowledge/units` generates Draft KUs from current normalized entries and
+  provides the minimal human review, edit, publish/revoke, and delete surface.
 
 The pages can:
 
@@ -41,6 +43,27 @@ The pages can:
   only for the selected document.
 
 The browser never receives model keys or database credentials.
+
+## Preview one-click login
+
+The `/login` page can show a Preview-only `Continue as Preview operator` button
+for an authorized deployment smoke test. It is disabled by default and the
+server endpoint fails closed unless **both** deployment variables are set:
+
+```text
+VERCEL_ENV=preview
+PREVIEW_ONE_CLICK_LOGIN_ENABLED=true
+```
+
+Set `PREVIEW_ONE_CLICK_LOGIN_ENABLED=true` only in Vercel's Preview environment,
+then redeploy the intended Preview. The button calls same-origin
+`POST /api/auth/preview-one-click-login`; it creates or reuses the isolated
+Preview operator and uses Better Auth to set the normal session cookie. It does
+not expose a password, API key, or session token to the browser.
+
+To roll back immediately, remove the Preview variable or set it to any value
+other than `true`, then redeploy. Production and development deployments stay
+disabled even if the flag is present.
 
 ## Request paths
 

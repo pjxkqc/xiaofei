@@ -252,6 +252,7 @@ model XiaofeiWorkspace {
   conversations      XiaofeiConversation[]
   knowledgeDocuments XiaofeiKnowledgeDocument[]
   knowledgeEntries   XiaofeiKnowledgeEntry[]
+  knowledgeUnits     XiaofeiKnowledgeUnit[]
 
   @@map("xiaofei_workspace")
 }
@@ -342,6 +343,7 @@ model XiaofeiKnowledgeEntry {
   category          String?
   tags              String[]                 @default([])
   status            String                   @default("draft")
+  entryVersion      Int                      @default(1)
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
@@ -349,4 +351,28 @@ model XiaofeiKnowledgeEntry {
   @@index([workspaceId, updatedAt])
   @@index([sourceId])
   @@map("xiaofei_knowledge_entry")
+}
+
+model XiaofeiKnowledgeUnit {
+  id                String           @id @default(cuid())
+  workspaceId       String
+  workspace         XiaofeiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sourceId          String
+  sourceContentHash String?
+  sourceVersion     Int?
+  entryId           String
+  entryVersion      Int
+  title             String
+  content           Json
+  status            String           @default("draft")
+  eligibility       String           @default("ineligible")
+  staleReason       String?          @db.Text
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, updatedAt])
+  @@index([workspaceId, sourceId])
+  @@index([workspaceId, entryId])
+  @@map("xiaofei_knowledge_unit")
 }

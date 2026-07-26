@@ -57,6 +57,33 @@ export const KnowledgeQualitySchema = z.object({
 	warnings: z.array(z.string().min(1)).default([]),
 });
 
+export const KnowledgeUnitEligibilitySchema = z.enum(["eligible", "ineligible", "stale"]);
+
+/** Durable, content-free provenance for a generated KU. */
+export const KnowledgeUnitLineageSchema = z.object({
+	workspaceId: z.string().min(1),
+	sourceId: z.string().min(1),
+	sourceContentHash: z.string().min(1).nullable(),
+	sourceVersion: z.number().int().nonnegative().nullable(),
+	entryId: z.string().min(1),
+	entryVersion: z.number().int().nonnegative(),
+});
+
+export const NormalizedKnowledgeEntrySchema = z.object({
+	id: z.string().min(1),
+	workspaceId: z.string().min(1),
+	sourceId: z.string().min(1),
+	sourceContentHash: z.string().min(1).nullable(),
+	sourceVersion: z.number().int().nonnegative().nullable(),
+	version: z.number().int().nonnegative(),
+	question: z.string().min(1),
+	answer: z.string().min(1),
+	similarQueries: z.array(z.string().min(1)).default([]),
+	category: z.string().nullable().default(null),
+	tags: z.array(z.string().min(1)).default([]),
+	status: z.enum(["active", "draft", "archived", "deleted"]),
+});
+
 export const KnowledgeUnitSchema = z.object({
 	id: z.string().min(1),
 	title: z.string().min(1),
@@ -71,6 +98,36 @@ export const KnowledgeUnitSchema = z.object({
 	fallbackReply: z.string().min(1),
 	sourceSection: z.string().min(1),
 	quality: KnowledgeQualitySchema,
+	lineage: KnowledgeUnitLineageSchema.optional(),
+	eligibility: KnowledgeUnitEligibilitySchema.default("eligible"),
+	staleReason: z.string().min(1).optional(),
+});
+
+/** Model output cannot set a KU's lifecycle, eligibility, or provenance. */
+export const KnowledgeUnitDraftCandidateSchema = KnowledgeUnitSchema.omit({
+	id: true,
+	status: true,
+	sourceSection: true,
+	quality: true,
+	lineage: true,
+	eligibility: true,
+	staleReason: true,
+}).superRefine((candidate, context) => {
+	for (const field of ["scenarioKeywords", "forbiddenOutputs", "handoffRules"] as const) {
+		if (candidate[field].length === 0) {
+			context.addIssue({
+				code: "custom",
+				path: [field],
+				message: "Generated draft candidates must include their safety boundary.",
+			});
+		}
+	}
+});
+
+export const KnowledgeUnitDraftSchema = KnowledgeUnitSchema.extend({
+	status: z.literal("draft"),
+	lineage: KnowledgeUnitLineageSchema,
+	eligibility: z.literal("ineligible"),
 });
 
 export const GuardrailPolicySchema = z.object({
@@ -281,6 +338,11 @@ export type AgentLifecycleStatus = z.infer<typeof AgentLifecycleStatusSchema>;
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 export type RequiredSlot = z.infer<typeof RequiredSlotSchema>;
 export type KnowledgeUnit = z.infer<typeof KnowledgeUnitSchema>;
+export type KnowledgeUnitEligibility = z.infer<typeof KnowledgeUnitEligibilitySchema>;
+export type KnowledgeUnitLineage = z.infer<typeof KnowledgeUnitLineageSchema>;
+export type NormalizedKnowledgeEntry = z.infer<typeof NormalizedKnowledgeEntrySchema>;
+export type KnowledgeUnitDraftCandidate = z.infer<typeof KnowledgeUnitDraftCandidateSchema>;
+export type KnowledgeUnitDraft = z.infer<typeof KnowledgeUnitDraftSchema>;
 export type GuardrailPolicy = z.infer<typeof GuardrailPolicySchema>;
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 export type CapabilityPlan = z.infer<typeof CapabilityPlanSchema>;

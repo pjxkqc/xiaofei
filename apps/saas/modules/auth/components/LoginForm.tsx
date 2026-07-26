@@ -31,6 +31,10 @@ import { z } from "zod";
 
 import { type OAuthProvider, oAuthProviders } from "../constants/oauth-providers";
 import { useSession } from "../hooks/use-session";
+import {
+	completePreviewOneClickLogin,
+	getLoginRedirectPath,
+} from "../lib/preview-one-click-login-client";
 import { LoginModeSwitch } from "./LoginModeSwitch";
 import { SocialSigninButton } from "./SocialSigninButton";
 
@@ -46,7 +50,11 @@ const formSchema = z.union([
 	}),
 ]);
 
-export function LoginForm() {
+export function LoginForm({
+	previewOneClickLoginEnabled = false,
+}: {
+	previewOneClickLoginEnabled?: boolean;
+}) {
 	const t = useTranslations();
 	const { getAuthErrorMessage } = useAuthErrorMessages();
 	const router = useRouter();
@@ -68,9 +76,11 @@ export function LoginForm() {
 		},
 	});
 
-	const redirectPath = invitationId
-		? `/organization-invitation/${invitationId}`
-		: (redirectTo ?? config.redirectAfterSignIn);
+	const redirectPath = getLoginRedirectPath({
+		invitationId,
+		redirectTo,
+		fallbackPath: config.redirectAfterSignIn,
+	});
 
 	useEffect(() => {
 		if (sessionLoaded && user) {
@@ -132,6 +142,16 @@ export function LoginForm() {
 		}
 	};
 
+	const signInWithPreviewOperator = async () => {
+		try {
+			await completePreviewOneClickLogin({ redirectPath });
+		} catch {
+			form.setError("root", {
+				message: "Preview sign-in is unavailable.",
+			});
+		}
+	};
+
 	const signinMode = form.watch("mode");
 
 	return (
@@ -148,6 +168,17 @@ export function LoginForm() {
 			) : (
 				<>
 					{invitationId && <OrganizationInvitationAlert className="mb-6" />}
+
+					{previewOneClickLoginEnabled && (
+						<Button
+							className="mb-4 w-full"
+							type="button"
+							variant="secondary"
+							onClick={() => signInWithPreviewOperator()}
+						>
+							Continue as Preview operator
+						</Button>
+					)}
 
 					<Form {...form}>
 						<form className="space-y-4" onSubmit={onSubmit}>

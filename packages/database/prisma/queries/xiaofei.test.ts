@@ -16,6 +16,12 @@ const queryMocks = vi.hoisted(() => {
 			findUnique: vi.fn(),
 			update: vi.fn(),
 		},
+		xiaofeiKnowledgeUnit: {
+			create: vi.fn(),
+			findMany: vi.fn(),
+			findUnique: vi.fn(),
+			updateMany: vi.fn(),
+		},
 	};
 
 	return {
@@ -37,6 +43,10 @@ const queryMocks = vi.hoisted(() => {
 		findEntryInTransaction: transactionClient.xiaofeiKnowledgeEntry.findUnique,
 		listEntries: vi.fn(),
 		updateEntry: transactionClient.xiaofeiKnowledgeEntry.update,
+		createUnit: transactionClient.xiaofeiKnowledgeUnit.create,
+		findUnit: vi.fn(),
+		listUnits: vi.fn(),
+		invalidateUnits: transactionClient.xiaofeiKnowledgeUnit.updateMany,
 	};
 });
 
@@ -52,12 +62,17 @@ vi.mock("../client", () => ({
 			findMany: queryMocks.listEntries,
 			findUnique: queryMocks.findEntry,
 		},
+		xiaofeiKnowledgeUnit: {
+			findMany: queryMocks.listUnits,
+			findUnique: queryMocks.findUnit,
+		},
 	},
 }));
 
 import {
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeEntry,
+	createXiaofeiKnowledgeUnit,
 	deleteXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
@@ -99,6 +114,7 @@ describe("Xiaofei knowledge document queries", () => {
 			fileType: "MARKDOWN",
 			sourceUrl: null,
 		});
+		queryMocks.invalidateUnits.mockResolvedValue({ count: 0 });
 	});
 
 	it("serializes workspace writes and persists normalized document content", async () => {
@@ -317,6 +333,10 @@ describe("Xiaofei knowledge document queries", () => {
 			},
 			data: { status: "active", sourceVersion: { increment: 1 } },
 		});
+		expect(queryMocks.invalidateUnits).toHaveBeenCalledWith({
+			where: { workspaceId: "workspace-a", sourceId: "document-1" },
+			data: { status: "draft", eligibility: "stale", staleReason: "source_updated" },
+		});
 	});
 
 	it("serializes workspace-scoped deletes with quota-changing writes", async () => {
@@ -328,6 +348,10 @@ describe("Xiaofei knowledge document queries", () => {
 				workspaceId: "workspace-a",
 				id: "document-1",
 			},
+		});
+		expect(queryMocks.invalidateUnits).toHaveBeenCalledWith({
+			where: { workspaceId: "workspace-a", sourceId: "document-1" },
+			data: { status: "draft", eligibility: "stale", staleReason: "source_deleted" },
 		});
 	});
 
@@ -460,6 +484,62 @@ describe("Xiaofei knowledge document queries", () => {
 		expect(queryMocks.updateEntry).toHaveBeenCalledWith({
 			where: { workspaceId_id: { workspaceId: "workspace-a", id: "entry-1" } },
 			data: { status: "active" },
+		});
+	});
+
+	it("increments entry lineage and invalidates dependent KUs in the same transaction", async () => {
+		queryMocks.findEntryInTransaction.mockResolvedValueOnce({
+			question: "q",
+			answer: "a",
+			similarQueries: [],
+			sourceId: "source-1",
+		});
+		queryMocks.queryRaw.mockResolvedValueOnce([{ count: BigInt(1), bodyBytes: BigInt(2) }]);
+		await updateXiaofeiKnowledgeEntry("workspace-a", "entry-1", { status: "active" });
+		expect(queryMocks.updateEntry).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "entry-1" } },
+			data: { status: "active", entryVersion: { increment: 1 } },
+		});
+		expect(queryMocks.invalidateUnits).toHaveBeenCalledWith({
+			where: { workspaceId: "workspace-a", entryId: "entry-1" },
+			data: { status: "draft", eligibility: "stale", staleReason: "entry_updated" },
+		});
+	});
+
+	it("invalidates dependent KUs before deleting an entry", async () => {
+		await deleteXiaofeiKnowledgeEntry("workspace-a", "entry-1");
+		expect(queryMocks.invalidateUnits).toHaveBeenCalledWith({
+			where: { workspaceId: "workspace-a", entryId: "entry-1" },
+			data: { status: "draft", eligibility: "stale", staleReason: "entry_deleted" },
+		});
+	});
+
+	it("persists KU lineage from an eligible entry and defaults its review state", async () => {
+		queryMocks.findEntryInTransaction.mockResolvedValueOnce({
+			sourceId: "source-1",
+			sourceContentHash: "hash-1",
+			sourceVersion: 2,
+			entryVersion: 3,
+		});
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "hash-1",
+			sourceVersion: 2,
+		});
+		await createXiaofeiKnowledgeUnit({
+			workspaceId: "workspace-a",
+			entryId: "entry-1",
+			title: "Draft unit",
+			content: { title: "Draft unit" },
+		});
+		expect(queryMocks.createUnit).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				workspaceId: "workspace-a",
+				entryId: "entry-1",
+				sourceId: "source-1",
+				sourceContentHash: "hash-1",
+				sourceVersion: 2,
+				entryVersion: 3,
+			}),
 		});
 	});
 });

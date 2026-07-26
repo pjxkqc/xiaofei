@@ -28,6 +28,9 @@ XiaofeiWorkspace
        └─ XiaofeiKnowledgeEntry
             question + answer + optional similar queries/category/tags
             source hash/version snapshot + lifecycle status
+            └─ XiaofeiKnowledgeUnit
+                 generated KU JSON plus workspace/source/entry lineage,
+                 draft eligibility, and stale reason
 ```
 
 The JSON aggregate design for workspace and conversation state is deliberate
@@ -70,6 +73,16 @@ its version, and source deletion sets dependent entry source IDs to null. This
 makes dependent entries ineligible synchronously, without a worker or cascade
 delete. `updateXiaofeiKnowledgeEntry` refreshes that snapshot only when callers
 explicitly change `sourceId`.
+
+Knowledge-unit rows retain the source and entry IDs plus their exact content
+hash/version and entry version. `createXiaofeiKnowledgeUnit` reads that lineage
+inside the workspace transaction and rejects a stale or cross-workspace entry;
+the caller cannot supply lineage independently. New rows default to `draft` and
+`ineligible` unless an outer lifecycle use case changes them. Every source or
+entry update/delete invalidates matching KUs in the same transaction by setting
+them to `draft`, `stale`, and a durable redacted reason. The lineage IDs are
+plain durable values rather than cascading relations so deleting an upstream
+record does not erase the audit trail.
 
 The query boundary also enforces fixed per-workspace ceilings:
 

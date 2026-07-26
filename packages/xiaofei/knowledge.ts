@@ -1,4 +1,12 @@
-import { KnowledgeUnitSchema, type KnowledgeUnit, type RequiredSlot } from "./contracts";
+import {
+	KnowledgeUnitDraftCandidateSchema,
+	KnowledgeUnitDraftSchema,
+	KnowledgeUnitSchema,
+	type KnowledgeUnit,
+	type KnowledgeUnitDraft,
+	type NormalizedKnowledgeEntry,
+	type RequiredSlot,
+} from "./contracts";
 
 const FIELD_LABELS = {
 	applicableScenarios: "适用场景",
@@ -16,6 +24,79 @@ export function parseKnowledgeMarkdown(markdown: string): KnowledgeUnit[] {
 		.slice(1)
 		.map(parseSection)
 		.filter((unit): unit is KnowledgeUnit => unit !== null);
+}
+
+export function createKnowledgeUnitDrafts(input: {
+	workspaceId: string;
+	entries: NormalizedKnowledgeEntry[];
+	candidates: unknown[];
+}): KnowledgeUnitDraft[] {
+	if (input.candidates.length === 0) {
+		throw new Error("Draft KU generation returned no candidates.");
+	}
+	const entries = new Map(input.entries.map((entry) => [entry.id, entry]));
+	return input.candidates.map((candidate, index) => {
+		const parsed = KnowledgeUnitDraftCandidateSchema.parse(candidate);
+		const entryId = readCandidateEntryId(candidate);
+		const entry = entries.get(entryId);
+		if (!entry || entry.workspaceId !== input.workspaceId || entry.status !== "active") {
+			throw new Error("Draft KU candidate references an ineligible knowledge entry.");
+		}
+
+		return KnowledgeUnitDraftSchema.parse({
+			...parsed,
+			id: `${entry.id}-draft-${index + 1}`,
+			status: "draft",
+			sourceSection: entry.question,
+			quality: { status: "warning", blockers: [], warnings: ["待人工审核后才能发布。"] },
+			lineage: {
+				workspaceId: entry.workspaceId,
+				sourceId: entry.sourceId,
+				sourceContentHash: entry.sourceContentHash,
+				sourceVersion: entry.sourceVersion,
+				entryId: entry.id,
+				entryVersion: entry.version,
+			},
+			eligibility: "ineligible",
+		});
+	});
+}
+
+export function invalidateKnowledgeUnitsForLineage(
+	units: KnowledgeUnit[],
+	input: { workspaceId: string; entryId?: string; sourceId?: string; reason: string },
+): KnowledgeUnit[] {
+	return units.map((unit) => {
+		const lineage = unit.lineage;
+		const matches =
+			lineage?.workspaceId === input.workspaceId &&
+			((input.entryId !== undefined && lineage.entryId === input.entryId) ||
+				(input.sourceId !== undefined && lineage.sourceId === input.sourceId));
+		if (!matches) return unit;
+		return KnowledgeUnitSchema.parse({
+			...unit,
+			status: "draft",
+			eligibility: "stale",
+			staleReason: input.reason,
+		});
+	});
+}
+
+export function isKnowledgeUnitEligible(unit: KnowledgeUnit): boolean {
+	return unit.status === "released" && unit.eligibility === "eligible";
+}
+
+function readCandidateEntryId(candidate: unknown): string {
+	if (
+		typeof candidate !== "object" ||
+		candidate === null ||
+		!("entryId" in candidate) ||
+		typeof candidate.entryId !== "string" ||
+		!candidate.entryId
+	) {
+		throw new Error("Draft KU candidate must identify its normalized knowledge entry.");
+	}
+	return candidate.entryId;
 }
 
 function parseSection(section: string): KnowledgeUnit | null {
