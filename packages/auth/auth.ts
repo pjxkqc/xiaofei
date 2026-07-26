@@ -22,6 +22,7 @@ import { parse as parseCookies } from "cookie";
 import { config } from "./config";
 import { updateSeatsInOrganizationSubscription } from "./lib/organization";
 import { invitationOnlyPlugin } from "./plugins/invitation-only";
+import { previewOneClickLoginPlugin } from "./plugins/preview-one-click-login";
 
 const getLocaleFromRequest = (request?: Request) => {
 	const cookies = parseCookies(request?.headers.get("cookie") ?? "");
@@ -219,6 +220,7 @@ export const auth = betterAuth({
 		},
 	},
 	plugins: [
+		previewOneClickLoginPlugin(),
 		admin(),
 		passkey(),
 		magicLink({

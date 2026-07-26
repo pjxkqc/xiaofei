@@ -46,7 +46,11 @@ const formSchema = z.union([
 	}),
 ]);
 
-export function LoginForm() {
+export function LoginForm({
+	previewOneClickLoginEnabled = false,
+}: {
+	previewOneClickLoginEnabled?: boolean;
+}) {
 	const t = useTranslations();
 	const { getAuthErrorMessage } = useAuthErrorMessages();
 	const router = useRouter();
@@ -132,6 +136,26 @@ export function LoginForm() {
 		}
 	};
 
+	const signInWithPreviewOperator = async () => {
+		try {
+			const response = await fetch("/api/auth/preview-one-click-login", {
+				method: "POST",
+				credentials: "same-origin",
+			});
+
+			if (!response.ok) {
+				throw new Error("Preview sign-in failed");
+			}
+
+			await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+			router.replace(redirectPath);
+		} catch {
+			form.setError("root", {
+				message: "Preview sign-in is unavailable.",
+			});
+		}
+	};
+
 	const signinMode = form.watch("mode");
 
 	return (
@@ -148,6 +172,17 @@ export function LoginForm() {
 			) : (
 				<>
 					{invitationId && <OrganizationInvitationAlert className="mb-6" />}
+
+					{previewOneClickLoginEnabled && (
+						<Button
+							className="mb-4 w-full"
+							type="button"
+							variant="secondary"
+							onClick={() => signInWithPreviewOperator()}
+						>
+							Continue as Preview operator
+						</Button>
+					)}
 
 					<Form {...form}>
 						<form className="space-y-4" onSubmit={onSubmit}>
