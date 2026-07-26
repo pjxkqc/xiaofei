@@ -60,6 +60,8 @@ export async function generateKnowledgeUnitDrafts(input: {
 
 export function parseGeneratedCandidates(text: string): unknown[] {
 	try {
+		// OpenAI-compatible providers may wrap the same candidate payload differently;
+		// every extracted candidate still passes the strict domain schema before persistence.
 		const parsed = JSON.parse(extractJson(text)) as unknown;
 		if (Array.isArray(parsed)) return parsed;
 		if (isRecord(parsed) && Array.isArray(parsed.drafts)) return parsed.drafts;
