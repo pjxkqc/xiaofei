@@ -5,6 +5,7 @@ import {
 	createKnowledgeUnitDrafts,
 	createDefaultWorkspaceSnapshot,
 	invalidateKnowledgeUnitsForLineage,
+	invalidateWorkspaceKnowledgeForLineage,
 	isKnowledgeUnitEligible,
 	parseKnowledgeMarkdown,
 	setCapabilityPlanReview,
@@ -124,6 +125,31 @@ describe("KnowledgeUnit markdown parser", () => {
 				expect.objectContaining({ id: "eval", status: "warning" }),
 			]),
 		);
+	});
+
+	it("invalidates capability review and Eval evidence with stale lineage", () => {
+		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", () => "2026-07-24T00:00:00Z");
+		snapshot.knowledgeUnits[0] = {
+			...snapshot.knowledgeUnits[0]!,
+			lineage: {
+				workspaceId: snapshot.knowledgeWorkspaceId,
+				sourceId: "source-1",
+				sourceContentHash: "hash-1",
+				sourceVersion: 1,
+				entryId: "entry-1",
+				entryVersion: 1,
+			},
+		};
+		const reviewed = setCapabilityPlanReview(snapshot, true, () => "2026-07-24T00:01:00Z");
+		const invalidated = invalidateWorkspaceKnowledgeForLineage(reviewed, {
+			sourceId: "source-1",
+			reason: "Source content changed.",
+			now: () => "2026-07-24T00:02:00Z",
+		});
+
+		expect(invalidated.capabilityPlan.reviewed).toBe(false);
+		expect(invalidated.evalSuite).toMatchObject({ status: "warning", capabilityPlanVersion: null });
+		expect(invalidated.knowledgeUnits[0]).toMatchObject({ eligibility: "stale", status: "draft" });
 	});
 
 	it("blocks a KnowledgeUnit that omits safety and fallback fields", () => {

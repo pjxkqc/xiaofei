@@ -3,6 +3,7 @@ import {
 	finalizeTurn,
 	prepareTurn,
 	type ConversationState,
+	type KnowledgeWorkspaceBinding,
 	type PreparedTurn,
 	type RuntimeTurnResult,
 	type TraceEvent,
@@ -15,6 +16,7 @@ const GraphState = Annotation.Root({
 	message: Annotation<string>(),
 	conversation: Annotation<ConversationState>(),
 	snapshot: Annotation<XiaofeiWorkspaceSnapshot>(),
+	knowledgeWorkspaceBinding: Annotation<KnowledgeWorkspaceBinding>(),
 	prepared: Annotation<PreparedTurn | null>({
 		reducer: (_previous, next) => next ?? null,
 		default: () => null,
@@ -33,6 +35,7 @@ const graph = new StateGraph(GraphState)
 			message: state.message,
 			state: state.conversation,
 			snapshot: state.snapshot,
+			knowledgeWorkspaceBinding: state.knowledgeWorkspaceBinding,
 		});
 		return {
 			prepared: {
@@ -84,11 +87,13 @@ export async function runLangGraphTurn(input: {
 	message: string;
 	state: ConversationState;
 	snapshot: XiaofeiWorkspaceSnapshot;
+	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
 }): Promise<RuntimeTurnResult> {
 	const output = await graph.invoke({
 		message: input.message,
 		conversation: input.state,
 		snapshot: input.snapshot,
+		knowledgeWorkspaceBinding: input.knowledgeWorkspaceBinding,
 	});
 	if (!output.result) throw new Error("LangGraph did not produce a runtime result.");
 	return output.result;

@@ -1,8 +1,10 @@
 import {
 	ConversationStateSchema,
+	KnowledgeWorkspaceBindingSchema,
 	RuntimeTurnResultSchema,
 	type ConversationState,
 	type KnowledgeUnit,
+	type KnowledgeWorkspaceBinding,
 	type NextAction,
 	type RiskLevel,
 	type RuntimeTurnResult,
@@ -11,6 +13,7 @@ import {
 	type XiaofeiWorkspaceSnapshot,
 } from "./contracts";
 import { acquireAiRunLease, authorizeAiReply, requestHumanHandoff } from "./conversation";
+import { isKnowledgeUnitEligible } from "./knowledge";
 
 export interface ReplyGenerationInput {
 	message: string;
@@ -37,12 +40,52 @@ export function prepareTurn(input: {
 	message: string;
 	state: ConversationState;
 	snapshot: XiaofeiWorkspaceSnapshot;
+	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
 	now?: () => string;
 }): PreparedTurn {
+	return prepareTurnInternal(input, true);
+}
+
+/** Eval uses the reviewed capability boundary to produce the evidence required at runtime. */
+export function prepareEvalTurn(input: {
+	message: string;
+	state: ConversationState;
+	snapshot: XiaofeiWorkspaceSnapshot;
+	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
+	now?: () => string;
+}): PreparedTurn {
+	return prepareTurnInternal(input, false);
+}
+
+function prepareTurnInternal(
+	input: {
+		message: string;
+		state: ConversationState;
+		snapshot: XiaofeiWorkspaceSnapshot;
+		knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
+		now?: () => string;
+	},
+	requireEvalEvidence: boolean,
+): PreparedTurn {
 	const now = input.now ?? (() => new Date().toISOString());
 	const at = now();
 	const state = ConversationStateSchema.parse(input.state);
 	const traces: TraceEvent[] = [];
+	const binding = KnowledgeWorkspaceBindingSchema.safeParse(input.knowledgeWorkspaceBinding);
+	if (
+		!binding.success ||
+		binding.data.tenantId !== state.tenantId ||
+		binding.data.tenantId !== input.snapshot.agent.tenantId ||
+		binding.data.conversationId !== state.id ||
+		binding.data.knowledgeWorkspaceId !== input.snapshot.knowledgeWorkspaceId
+	) {
+		return blockedAdmission(
+			state,
+			at,
+			"knowledge_workspace_unresolved",
+			"知识工作区映射未解析或不匹配。",
+		);
+	}
 
 	if (state.ownerType !== "ai" || state.aiMode !== "auto_handle") {
 		return {
@@ -63,34 +106,13 @@ export function prepareTurn(input: {
 		};
 	}
 
-	if (
-		!input.snapshot.capabilityPlan.reviewed ||
-		input.snapshot.capabilityPlan.status !== "review_ready"
-	) {
-		return {
-			state: withDecision(state, {
-				knowledge: null,
-				riskLevel: "medium",
-				action: "handoff",
-				handoffReason: "capability_not_reviewed",
-				at,
-			}),
-			knowledge: null,
-			action: "handoff",
-			riskLevel: "medium",
-			reply: "当前能力方案尚未完成审核，我会把问题转交人工客服处理。",
-			handoffReason: "capability_not_reviewed",
-			traces: [
-				...traces,
-				trace(
-					state.id,
-					"admission",
-					at,
-					"能力方案准入阻塞",
-					"KnowledgeUnit 尚未形成已审核的可调用能力边界。",
-				),
-			],
-		};
+	if (!hasCurrentAdmissionEvidence(input.snapshot, requireEvalEvidence)) {
+		return blockedAdmission(
+			state,
+			at,
+			"capability_evidence_stale",
+			"能力审核、可调用 KU 或 Eval 证据不是当前版本。",
+		);
 	}
 
 	const risk = detectRisk(input.message, input.snapshot);
@@ -98,7 +120,9 @@ export function prepareTurn(input: {
 	const knowledge = selectKnowledge(
 		input.message,
 		state,
-		input.snapshot.knowledgeUnits.filter((unit) => callableKnowledgeIds.has(unit.id)),
+		input.snapshot.knowledgeUnits.filter(
+			(unit) => callableKnowledgeIds.has(unit.id) && isKnowledgeUnitEligible(unit),
+		),
 	);
 	traces.push(
 		trace(
@@ -397,7 +421,7 @@ function selectKnowledge(
 	state: ConversationState,
 	units: KnowledgeUnit[],
 ): KnowledgeUnit | null {
-	const released = units.filter((unit) => unit.status === "released");
+	const released = units.filter(isKnowledgeUnitEligible);
 	const normalizedMessage = message.toLocaleLowerCase();
 	const explicit = released.find((unit) =>
 		unit.scenarioKeywords.some((keyword) =>
@@ -406,6 +430,53 @@ function selectKnowledge(
 	);
 	if (explicit) return explicit;
 	return released.find((unit) => unit.id === state.matchedKnowledgeId) ?? null;
+}
+
+function hasCurrentAdmissionEvidence(
+	snapshot: XiaofeiWorkspaceSnapshot,
+	requireEvalEvidence: boolean,
+): boolean {
+	if (!snapshot.capabilityPlan.reviewed || snapshot.capabilityPlan.status !== "review_ready") {
+		return false;
+	}
+	if (
+		requireEvalEvidence &&
+		(snapshot.evalSuite.status !== "passed" ||
+			snapshot.evalSuite.capabilityPlanVersion !== snapshot.capabilityPlan.version)
+	) {
+		return false;
+	}
+	const eligibleIds = snapshot.knowledgeUnits
+		.filter(isKnowledgeUnitEligible)
+		.map((unit) => unit.id);
+	return (
+		eligibleIds.length > 0 &&
+		eligibleIds.length === snapshot.capabilityPlan.knowledgeUnitIds.length &&
+		eligibleIds.every((id) => snapshot.capabilityPlan.knowledgeUnitIds.includes(id))
+	);
+}
+
+function blockedAdmission(
+	state: ConversationState,
+	at: string,
+	handoffReason: string,
+	detail: string,
+): PreparedTurn {
+	return {
+		state: withDecision(state, {
+			knowledge: null,
+			riskLevel: "medium",
+			action: "handoff",
+			handoffReason,
+			at,
+		}),
+		knowledge: null,
+		action: "handoff",
+		riskLevel: "medium",
+		reply: "当前知识能力尚未满足安全准入条件，我会把问题转交人工客服处理。",
+		handoffReason,
+		traces: [trace(state.id, "admission", at, "知识能力准入阻塞", detail)],
+	};
 }
 
 function updateSlots(

@@ -5,7 +5,7 @@ import {
 	type XiaofeiWorkspaceSnapshot,
 } from "./contracts";
 import { createConversationState } from "./conversation";
-import { finalizeTurn, prepareTurn } from "./runtime";
+import { finalizeTurn, prepareEvalTurn } from "./runtime";
 
 const CASES = [
 	{
@@ -56,10 +56,16 @@ export async function runP0EvalSuite(
 			maxFollowUps: snapshot.agent.maxFollowUps,
 			now,
 		});
-		const prepared = prepareTurn({
+		const prepared = prepareEvalTurn({
 			message: testCase.message,
 			state,
 			snapshot,
+			knowledgeWorkspaceBinding: {
+				tenantId: snapshot.agent.tenantId,
+				conversationId: state.id,
+				channelId: "eval",
+				knowledgeWorkspaceId: snapshot.knowledgeWorkspaceId,
+			},
 			now,
 		});
 		const result = await finalizeTurn({
@@ -108,5 +114,6 @@ export async function runP0EvalSuite(
 		failed,
 		cases: results,
 		updatedAt: now(),
+		capabilityPlanVersion: snapshot.capabilityPlan.version,
 	});
 }

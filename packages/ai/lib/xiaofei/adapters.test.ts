@@ -1,34 +1,46 @@
-import { createConversationState, createDefaultWorkspaceSnapshot } from "@repo/xiaofei";
+import {
+	createConversationState,
+	createDefaultWorkspaceSnapshot,
+	runP0EvalSuite,
+} from "@repo/xiaofei";
 import { describe, expect, it } from "vitest";
 
 import { runMastraGovernance } from "./governance";
 import { runLangGraphTurn } from "./langgraph";
 import { runXiaofeiTurn } from "./runtime";
 
-function setup() {
+async function setup() {
 	const snapshot = createDefaultWorkspaceSnapshot("tenant-1");
 	snapshot.capabilityPlan.reviewed = true;
+	snapshot.evalSuite = await runP0EvalSuite(snapshot);
+	const state = createConversationState({
+		id: "conversation-unified",
+		tenantId: "tenant-1",
+		agentId: snapshot.agent.id,
+		maxFollowUps: snapshot.agent.maxFollowUps,
+	});
 	return {
 		snapshot,
-		state: createConversationState({
-			id: "conversation-unified",
-			tenantId: "tenant-1",
-			agentId: snapshot.agent.id,
-			maxFollowUps: snapshot.agent.maxFollowUps,
-		}),
+		state,
+		knowledgeWorkspaceBinding: {
+			tenantId: snapshot.agent.tenantId,
+			conversationId: state.id,
+			channelId: "test",
+			knowledgeWorkspaceId: snapshot.knowledgeWorkspaceId,
+		},
 	};
 }
 
 describe("Xiaofei runtime adapters", () => {
 	it("runs the Mastra governance workflow without an LLM call", async () => {
-		const { snapshot } = setup();
+		const { snapshot } = await setup();
 		const governed = await runMastraGovernance(snapshot);
 		expect(governed.agent.status).toBe("review_ready");
 		expect(governed.knowledgeUnits.every((unit) => unit.status === "released")).toBe(true);
 	});
 
 	it("runs deterministic P0 collection through a real LangGraph StateGraph", async () => {
-		const input = setup();
+		const input = await setup();
 		const result = await runLangGraphTurn({
 			...input,
 			message: "杯子碎了，需要售后",
@@ -39,7 +51,7 @@ describe("Xiaofei runtime adapters", () => {
 	});
 
 	it("runs high-risk exit through the unified runtime without calling the model", async () => {
-		const input = setup();
+		const input = await setup();
 		const result = await runXiaofeiTurn({
 			...input,
 			message: "我要投诉并找人工客服",
