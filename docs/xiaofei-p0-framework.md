@@ -51,11 +51,12 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 
 ## Implemented P0 path
 
-1. The tenant edits Agent instructions, a follow-up limit, and a compact
-   Markdown knowledge source on `/agent-settings`.
-2. Saving deterministically parses each `##` section into a `KnowledgeUnit`.
-   Missing keywords, forbidden outputs, handoff rules, reply policy or fallback
-   blocks that unit.
+1. The tenant edits Agent instructions and a follow-up limit on
+   `/agent-settings`, then manages file, webpage, or manual-Q&A sources on
+   `/knowledge/entries`.
+2. MD/TXT content is normalized locally; PDF/DOCX/XLSX and one public webpage
+   are parsed through the server-side Firecrawl provider. Operators generate,
+   review, and publish source-backed `KnowledgeUnit`s on `/knowledge/units`.
 3. The domain derives a capability plan from released KUs: callable KU IDs,
    takeover/reject boundaries, field matrices, action boundaries, and Eval
    suggestions. A human must review it before automatic handling is admitted.
@@ -109,8 +110,9 @@ This is a framework slice, not a production-complete Agent Center:
   introducing full Agent, Knowledge, Eval, and Trace workspaces;
 - workspace and conversation aggregates use JSON snapshots instead of fully
   normalized tables;
-- Markdown parsing is deterministic; PDF, URL, Feishu and Excel ingestion are
-  deferred;
+- MD/TXT parsing is local and deterministic; PDF/DOCX/XLSX and single-page web
+  ingestion use Firecrawl. OCR, image-derived knowledge, Feishu ingestion, and
+  recursive site crawling are deferred;
 - KU matching is keyword/state based; embeddings, vector search and reranking
   are deferred;
 - capability plans are deterministically derived and reviewed as part of the
