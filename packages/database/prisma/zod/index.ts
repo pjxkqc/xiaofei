@@ -102,9 +102,15 @@ export type XiaofeiKnowledgeDocumentScalarFieldEnum = z.infer<typeof XiaofeiKnow
 
 // File: XiaofeiKnowledgeEntryScalarFieldEnum.schema.ts
 
-export const XiaofeiKnowledgeEntryScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'sourceId', 'sourceContentHash', 'sourceVersion', 'question', 'answer', 'similarQueries', 'category', 'tags', 'status', 'createdAt', 'updatedAt'])
+export const XiaofeiKnowledgeEntryScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'sourceId', 'sourceContentHash', 'sourceVersion', 'question', 'answer', 'similarQueries', 'category', 'tags', 'status', 'entryVersion', 'createdAt', 'updatedAt'])
 
 export type XiaofeiKnowledgeEntryScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeEntryScalarFieldEnumSchema>;
+
+// File: XiaofeiKnowledgeUnitScalarFieldEnum.schema.ts
+
+export const XiaofeiKnowledgeUnitScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'sourceId', 'sourceContentHash', 'sourceVersion', 'entryId', 'entryVersion', 'title', 'content', 'status', 'eligibility', 'staleReason', 'createdAt', 'updatedAt'])
+
+export type XiaofeiKnowledgeUnitScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeUnitScalarFieldEnumSchema>;
 
 // File: SortOrder.schema.ts
 
@@ -448,8 +454,31 @@ export const XiaofeiKnowledgeEntrySchema = z.object({
   category: z.string().nullish(),
   tags: z.array(z.string()),
   status: z.string().default("draft"),
+  entryVersion: z.number().int().default(1),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
 
 export type XiaofeiKnowledgeEntryType = z.infer<typeof XiaofeiKnowledgeEntrySchema>;
+
+
+// File: XiaofeiKnowledgeUnit.schema.ts
+
+export const XiaofeiKnowledgeUnitSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  sourceId: z.string(),
+  sourceContentHash: z.string().nullish(),
+  sourceVersion: z.number().int().nullish(),
+  entryId: z.string(),
+  entryVersion: z.number().int(),
+  title: z.string(),
+  content: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  status: z.string().default("draft"),
+  eligibility: z.string().default("ineligible"),
+  staleReason: z.string().nullish(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiKnowledgeUnitType = z.infer<typeof XiaofeiKnowledgeUnitSchema>;

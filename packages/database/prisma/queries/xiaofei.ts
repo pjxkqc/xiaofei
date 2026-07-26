@@ -73,6 +73,16 @@ export interface ListXiaofeiKnowledgeEntriesOptions {
 	limit?: number;
 }
 
+export interface CreateXiaofeiKnowledgeUnitInput {
+	workspaceId: string;
+	entryId: string;
+	title: string;
+	content: Prisma.InputJsonValue;
+	status?: string;
+	eligibility?: string;
+	staleReason?: string | null;
+}
+
 export const DEFAULT_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE = 25;
 export const MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE = 50;
 export const MAX_XIAOFEI_KNOWLEDGE_DOCUMENTS_PER_WORKSPACE = 100;
@@ -294,6 +304,10 @@ export function updateXiaofeiKnowledgeDocument(
 				sourceVersion: { increment: 1 },
 			},
 		});
+		await invalidateKnowledgeUnits(transaction, workspaceId, {
+			sourceId: id,
+			reason: "source_updated",
+		});
 		return withLegacyKnowledgeDocumentMetadata(document);
 	});
 }
@@ -301,6 +315,10 @@ export function updateXiaofeiKnowledgeDocument(
 export function deleteXiaofeiKnowledgeDocument(workspaceId: string, id: string) {
 	return db.$transaction(async (transaction) => {
 		await lockXiaofeiKnowledgeWorkspace(transaction, workspaceId);
+		await invalidateKnowledgeUnits(transaction, workspaceId, {
+			sourceId: id,
+			reason: "source_deleted",
+		});
 		return transaction.xiaofeiKnowledgeDocument.deleteMany({ where: { workspaceId, id } });
 	});
 }
@@ -387,10 +405,11 @@ export function updateXiaofeiKnowledgeEntry(
 			Number(usage.count),
 			Number(usage.bodyBytes) - entryBodyBytes(existing) + entryBodyBytes(next),
 		);
-		return transaction.xiaofeiKnowledgeEntry.update({
+		const entry = await transaction.xiaofeiKnowledgeEntry.update({
 			where: { workspaceId_id: { workspaceId, id } },
 			data: {
 				...data,
+				entryVersion: { increment: 1 },
 				...(sourceId === null
 					? {}
 					: sourceSnapshot
@@ -401,13 +420,83 @@ export function updateXiaofeiKnowledgeEntry(
 						: {}),
 			},
 		});
+		await invalidateKnowledgeUnits(transaction, workspaceId, {
+			entryId: id,
+			reason: "entry_updated",
+		});
+		return entry;
 	});
 }
 
 export function deleteXiaofeiKnowledgeEntry(workspaceId: string, id: string) {
 	return db.$transaction(async (transaction) => {
 		await lockXiaofeiKnowledgeWorkspace(transaction, workspaceId);
+		await invalidateKnowledgeUnits(transaction, workspaceId, {
+			entryId: id,
+			reason: "entry_deleted",
+		});
 		return transaction.xiaofeiKnowledgeEntry.deleteMany({ where: { workspaceId, id } });
+	});
+}
+
+export function createXiaofeiKnowledgeUnit(input: CreateXiaofeiKnowledgeUnitInput) {
+	return db.$transaction(async (transaction) => {
+		await lockXiaofeiKnowledgeWorkspace(transaction, input.workspaceId);
+		const entry = await transaction.xiaofeiKnowledgeEntry.findUnique({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.entryId } },
+			select: { sourceId: true, sourceContentHash: true, sourceVersion: true, entryVersion: true },
+		});
+		if (!entry?.sourceId) throw new Error("Knowledge entry was not eligible in this workspace.");
+		const source = await transaction.xiaofeiKnowledgeDocument.findUnique({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: entry.sourceId } },
+			select: { contentHash: true, sourceVersion: true },
+		});
+		if (
+			!source ||
+			source.contentHash !== entry.sourceContentHash ||
+			source.sourceVersion !== entry.sourceVersion
+		) {
+			throw new Error("Knowledge entry was not eligible in this workspace.");
+		}
+		return transaction.xiaofeiKnowledgeUnit.create({
+			data: {
+				...input,
+				sourceId: entry.sourceId,
+				sourceContentHash: entry.sourceContentHash,
+				sourceVersion: entry.sourceVersion,
+				entryVersion: entry.entryVersion,
+			},
+		});
+	});
+}
+
+export function listXiaofeiKnowledgeUnits(workspaceId: string) {
+	return db.xiaofeiKnowledgeUnit.findMany({
+		where: { workspaceId },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+
+export function getXiaofeiKnowledgeUnit(workspaceId: string, id: string) {
+	return db.xiaofeiKnowledgeUnit.findUnique({ where: { workspaceId_id: { workspaceId, id } } });
+}
+
+async function invalidateKnowledgeUnits(
+	transaction: Prisma.TransactionClient,
+	workspaceId: string,
+	input: {
+		sourceId?: string;
+		entryId?: string;
+		reason: "source_updated" | "source_deleted" | "entry_deleted" | "entry_updated";
+	},
+) {
+	await transaction.xiaofeiKnowledgeUnit.updateMany({
+		where: {
+			workspaceId,
+			...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
+			...(input.entryId === undefined ? {} : { entryId: input.entryId }),
+		},
+		data: { status: "draft", eligibility: "stale", staleReason: input.reason },
 	});
 }
 
