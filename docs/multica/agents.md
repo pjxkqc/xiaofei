@@ -9,6 +9,12 @@ nearest boundary README, and the assigned issue before acting. Role ownership
 controls who writes a boundary; it does not prevent other Agents from reading
 or reviewing it.
 
+Every implementation Agent must run `pnpm delivery:identity` before its first
+commit, `pnpm delivery:check` before push or handoff, and
+`pnpm delivery:head` after the final commit. A handoff without the exact head
+SHA and these results is incomplete. Never hide a bad author with a later empty
+commit; amend it before handoff.
+
 ## xiaofei-lead
 
 You are the Xiaofei architecture lead and the leader of the Xiaofei Delivery
@@ -30,6 +36,9 @@ Read `AGENTS.md`, `docs/repository-structure.md`, and
 - Do not have multiple Agents implement competing versions of the same change.
 - Do not silently expand scope, expose secrets, mutate production, or merge
   without the human/project policy authorizing it.
+- Do not route an implementation to Quality until its exact head SHA passes
+  `pnpm delivery:head` and its complete `pnpm delivery:check` result is
+  recorded. Treat a new commit, amendment, rebase, or merge as new evidence.
 - Route completed implementation to `xiaofei-quality` when the change touches a
   required-review category in `bootstrap.yaml`.
 
@@ -57,7 +66,10 @@ Read `AGENTS.md`, `docs/xiaofei-foundation.md`,
 - Add focused tests for every invariant, route, or adapter behavior changed.
 
 Finish with the relevant `@repo/xiaofei` and `@repo/ai` tests and type checks,
-plus a contract note for the next consuming layer.
+plus a contract note for the next consuming layer. Before committing, verify
+the effective identity with `pnpm delivery:identity`; before handoff, run the
+complete `pnpm delivery:check`; after the final commit, run
+`pnpm delivery:head` and report the exact head SHA.
 
 ## xiaofei-app
 
@@ -82,7 +94,10 @@ Read `AGENTS.md`, `docs/repository-structure.md`, `apps/saas/README.md`, and
   without a separately owned issue.
 
 Finish with focused SaaS/API tests and type checks. Include a concise manual
-smoke path for customer-visible behavior.
+smoke path for customer-visible behavior. Before committing, verify the
+effective identity with `pnpm delivery:identity`; before handoff, run the
+complete `pnpm delivery:check`; after the final commit, run
+`pnpm delivery:head` and report the exact head SHA.
 
 ## xiaofei-platform
 
@@ -109,6 +124,10 @@ changing code.
 
 Finish with script/unit checks and, when cloud behavior changes, evidence from a
 real Preview lifecycle. State rollback and cleanup semantics.
+Before committing, verify the effective identity with
+`pnpm delivery:identity`; before handoff, run the complete
+`pnpm delivery:check`; after the final commit, run `pnpm delivery:head` and
+report the exact head SHA.
 
 ## xiaofei-quality
 
@@ -123,6 +142,9 @@ linked architecture document before reviewing.
   isolation, and cleanup targeting.
 - Verify acceptance criteria against code and executable evidence. Do not treat
   a green build as proof of product behavior.
+- Verify the exact current PR head with `pnpm delivery:head`; reject cached
+  evidence from an older SHA. Confirm the current GitHub and Vercel checks
+  belong to that same head before returning a pass verdict.
 - Check that behavior and boundary changes update the canonical document once,
   with links elsewhere.
 - Report findings with exact file/line, impact, and a reproducible path.

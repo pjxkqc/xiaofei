@@ -35,8 +35,16 @@ assigned role in [`docs/multica/agents.md`](./docs/multica/agents.md).
   screenshots, fixtures, or traces.
 - Do not mutate production data or deployment settings unless the issue
   explicitly authorizes that operation.
-- Finish with focused tests plus the smallest relevant workspace quality
-  checks. Report commands and results in the handoff.
+- Before the first commit, run `pnpm delivery:identity`. It must report an
+  approved effective author and committer; never use a later empty commit to
+  repair an unapproved identity.
+- Finish with focused tests, then run the repository-owned
+  `pnpm delivery:check` before pushing or handing off. This fail-fast gate
+  verifies formatting, lint, type safety, tests, and builds with deterministic
+  non-secret validation defaults.
+- After the final commit or amendment, run `pnpm delivery:head`. Any new commit,
+  amendment, rebase, or merge invalidates earlier head and quality evidence.
+  Report the exact head SHA plus commands and results in the handoff.
 
 ---
 

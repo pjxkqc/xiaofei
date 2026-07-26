@@ -47,20 +47,26 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Verify the PR head delivery identity
+        if: github.event_name == 'pull_request'
+        run: node scripts/verify-delivery-identity.mjs --head
       - name: Enable the locked pnpm version
         run: corepack enable && corepack prepare pnpm@11.3.0 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check formatting
+        run: pnpm format:check
       - name: Initialize the isolated CI database
         run: pnpm --filter @repo/database push
       - name: Lint
         run: pnpm lint
-      - name: Check formatting
-        run: pnpm format:check
       - name: Type check
         run: pnpm type-check
       - name: Unit tests
