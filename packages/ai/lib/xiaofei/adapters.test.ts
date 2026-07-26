@@ -2,6 +2,7 @@ import { createConversationState, createDefaultWorkspaceSnapshot } from "@repo/x
 import { describe, expect, it } from "vitest";
 
 import { runMastraGovernance } from "./governance";
+import { KnowledgeUnitGenerationError, parseGeneratedCandidates } from "./knowledge-generation";
 import { runLangGraphTurn } from "./langgraph";
 import { runXiaofeiTurn } from "./runtime";
 
@@ -20,6 +21,12 @@ function setup() {
 }
 
 describe("Xiaofei runtime adapters", () => {
+	it("accepts only JSON-array structured KU output and redacts malformed provider output", () => {
+		expect(parseGeneratedCandidates('[{"entryId":"entry-1"}]')).toEqual([{ entryId: "entry-1" }]);
+		expect(() => parseGeneratedCandidates("provider token: secret-value")).toThrow(
+			KnowledgeUnitGenerationError,
+		);
+	});
 	it("runs the Mastra governance workflow without an LLM call", async () => {
 		const { snapshot } = setup();
 		const governed = await runMastraGovernance(snapshot);
