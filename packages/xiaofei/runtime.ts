@@ -528,6 +528,9 @@ function inferSlotValue(key: string, label: string, message: string): string | u
 	if (key.includes("photo") || key.includes("image")) {
 		return /(照片|图片|photo|image|attached|附件)/iu.test(message) ? "已提供照片/图片" : undefined;
 	}
+	if (/(device.*model|model|设备型号|机型|型号)/iu.test(`${key} ${label}`)) {
+		return message.match(/\b[A-Z][A-Za-z0-9]*(?:[- ][A-Za-z0-9]+){1,3}\b/u)?.[0];
+	}
 	if (/(error|fault|code|故障码|错误码)/iu.test(`${key} ${label}`)) {
 		return message.match(/\b[A-Z]{1,4}-?\d{1,5}\b/iu)?.[0];
 	}

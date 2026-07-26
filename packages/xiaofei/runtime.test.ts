@@ -127,6 +127,12 @@ describe("P0 runtime kernel", () => {
 			scenarioKeywords: ["E07"],
 			requiredSlots: [
 				{
+					key: "device_model",
+					label: "设备型号",
+					askText: "请确认设备型号。",
+					required: true,
+				},
+				{
 					key: "error_code",
 					label: "故障码",
 					askText: "请确认设备显示的故障码。",
@@ -155,6 +161,11 @@ describe("P0 runtime kernel", () => {
 			handoffReason: "required_information_collected",
 			missingSlots: [],
 			slots: {
+				device_model: {
+					label: "设备型号",
+					status: "provided",
+					value: "C-Air Pro",
+				},
 				error_code: {
 					label: "故障码",
 					status: "provided",
