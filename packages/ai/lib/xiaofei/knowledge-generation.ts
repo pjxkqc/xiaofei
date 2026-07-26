@@ -89,6 +89,8 @@ async function generateStructuredKnowledgeUnitCandidates(
 			)
 			.join("\n"),
 		{
+			// Keep schema validation inside Mastra so provider-specific prose never becomes a
+			// second parsing path; the domain layer below remains the final lineage gate.
 			structuredOutput: {
 				schema: KnowledgeUnitGenerationCandidatesSchema,
 				jsonPromptInjection: true,
