@@ -30,6 +30,12 @@ type XiaofeiDataParts = Record<string, RuntimeMetadata> & {
 };
 type XiaofeiUIMessage = UIMessage<unknown, XiaofeiDataParts>;
 
+export interface KnowledgeProvenance {
+	entryId: string;
+	kuId: string;
+	sourceLabel: string;
+}
+
 const PROMPT_SUGGESTIONS = [
 	{
 		icon: BotIcon,
@@ -48,7 +54,13 @@ const PROMPT_SUGGESTIONS = [
 	},
 ] as const;
 
-export function AiChat({ conversationId }: { conversationId: string }) {
+export function AiChat({
+	conversationId,
+	provenanceByTitle = {},
+}: {
+	conversationId: string;
+	provenanceByTitle?: Record<string, KnowledgeProvenance>;
+}) {
 	const [input, setInput] = useState("");
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -145,7 +157,13 @@ export function AiChat({ conversationId }: { conversationId: string }) {
 					>
 						{message.parts.map((part, index) => {
 							if (part.type === "data-xiaofei-runtime") {
-								return <RuntimeEvidence key={`${message.id}-runtime-${index}`} data={part.data} />;
+								return (
+									<RuntimeEvidence
+										key={`${message.id}-runtime-${index}`}
+										data={part.data}
+										provenanceByTitle={provenanceByTitle}
+									/>
+								);
 							}
 							if (part.type !== "text") return null;
 							return (
@@ -214,9 +232,16 @@ export function AiChat({ conversationId }: { conversationId: string }) {
 	);
 }
 
-function RuntimeEvidence({ data }: { data: RuntimeMetadata }) {
+function RuntimeEvidence({
+	data,
+	provenanceByTitle,
+}: {
+	data: RuntimeMetadata;
+	provenanceByTitle: Record<string, KnowledgeProvenance>;
+}) {
 	const latestTraces = data.traces.slice(-3);
 	const usedMastra = data.traces.some((trace) => trace.type === "mastra");
+	const provenance = data.knowledgeTitle ? provenanceByTitle[data.knowledgeTitle] : undefined;
 	return (
 		<div className="p-3 text-xs w-full max-w-[94%] rounded-xl border bg-card">
 			<div className="gap-2 flex flex-wrap items-center">
@@ -230,6 +255,12 @@ function RuntimeEvidence({ data }: { data: RuntimeMetadata }) {
 					<span className="text-muted-foreground">KU · {data.knowledgeTitle}</span>
 				)}
 			</div>
+			{provenance && (
+				<p className="mt-2 text-muted-foreground">
+					溯源 · {provenance.sourceLabel} → 条目 {provenance.entryId} → KU {provenance.kuId} →
+					当前能力方案
+				</p>
+			)}
 			<div className="mt-3 gap-1.5 flex flex-col text-muted-foreground">
 				{latestTraces.map((trace) => (
 					<div key={trace.id} className="gap-2 flex items-start">
