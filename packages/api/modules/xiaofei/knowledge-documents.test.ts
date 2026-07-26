@@ -4,10 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
 	createXiaofeiKnowledgeDocument: vi.fn(),
+	createXiaofeiKnowledgeEntry: vi.fn(),
 	deleteXiaofeiKnowledgeDocument: vi.fn(),
+	deleteXiaofeiKnowledgeEntry: vi.fn(),
 	getXiaofeiKnowledgeDocument: vi.fn(),
+	getXiaofeiKnowledgeEntry: vi.fn(),
 	listXiaofeiKnowledgeDocuments: vi.fn(),
+	listXiaofeiKnowledgeEntries: vi.fn(),
 	updateXiaofeiKnowledgeDocument: vi.fn(),
+	updateXiaofeiKnowledgeEntry: vi.fn(),
 	DEFAULT_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE: 25,
 	MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE: 50,
 	XiaofeiKnowledgeDocumentCategory: {
@@ -18,7 +23,11 @@ vi.mock("@repo/database", () => ({
 		MARKDOWN: "MARKDOWN",
 		TEXT: "TEXT",
 		DOCX: "DOCX",
+		PDF: "PDF",
+		XLSX: "XLSX",
 	},
+	XiaofeiKnowledgeDocumentSourceType: { FILE: "FILE", WEB: "WEB", MANUAL: "MANUAL" },
+	XiaofeiKnowledgeEntryQuotaError: class XiaofeiKnowledgeEntryQuotaError extends Error {},
 	XiaofeiKnowledgeDocumentQuotaError: class XiaofeiKnowledgeDocumentQuotaError extends Error {
 		constructor(
 			readonly quota: "document_count" | "stored_body_bytes",
@@ -37,8 +46,16 @@ vi.mock("../organizations/lib/membership", () => ({
 	verifyOrganizationMembership: vi.fn(),
 }));
 
+vi.mock("./knowledge-content-parser", () => ({
+	createKnowledgeContentParser: vi.fn(),
+	validatePublicHttpUrl: vi.fn(),
+	KnowledgeContentParserConfigurationError: class KnowledgeContentParserConfigurationError extends Error {},
+	KnowledgeContentParserError: class KnowledgeContentParserError extends Error {},
+}));
+
 import {
 	createXiaofeiKnowledgeDocument,
+	createXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
 	listXiaofeiKnowledgeDocuments,
@@ -47,9 +64,13 @@ import {
 } from "@repo/database";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
+import { createKnowledgeContentParser, validatePublicHttpUrl } from "./knowledge-content-parser";
 import { knowledgeDocumentListInputSchema } from "./knowledge-document-input";
 import {
 	createKnowledgeDocument,
+	createKnowledgeFile,
+	createKnowledgeWeb,
+	createManualKnowledgeEntries,
 	deleteKnowledgeDocumentForTenant,
 	getKnowledgeDocument,
 	getKnowledgeTenantKey,
@@ -82,6 +103,7 @@ describe("knowledge document application boundary", () => {
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
 		} as never);
+		vi.mocked(createXiaofeiKnowledgeEntry).mockResolvedValue({ id: "entry-1" } as never);
 	});
 
 	it("uses a verified active organization, then the authenticated user, as the tenant", async () => {
@@ -158,6 +180,67 @@ describe("knowledge document application boundary", () => {
 				fileType: "DOCX",
 				category: "POSTSALES",
 				bodyText: "First & second\nFinal paragraph",
+			}),
+		);
+	});
+
+	it("uses the provider only for remote files and persists a normalized entry", async () => {
+		vi.mocked(createKnowledgeContentParser).mockReturnValue({
+			parseFile: vi.fn().mockResolvedValue({
+				markdown: "# Parsed PDF",
+				provider: "firecrawl",
+				parserVersion: "firecrawl-v2",
+			}),
+		} as never);
+
+		await createKnowledgeFile(USER_CONTEXT, {
+			originalFileName: "guide.pdf",
+			mimeType: "application/pdf",
+			category: "PRESALES",
+			contentBase64: Buffer.from("pdf content").toString("base64"),
+		});
+
+		expect(createKnowledgeContentParser).toHaveBeenCalled();
+		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceType: "FILE",
+				fileType: "PDF",
+				provider: "firecrawl",
+				bodyText: "# Parsed PDF",
+			}),
+		);
+		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
+			expect.objectContaining({ sourceId: "document-1", answer: "# Parsed PDF" }),
+		);
+	});
+
+	it("creates manual entries without invoking Firecrawl and records web lineage through the provider", async () => {
+		await createManualKnowledgeEntries(USER_CONTEXT, {
+			category: "POSTSALES",
+			pairs: [{ question: "How do I reset?", answer: "Use the reset link.", tags: ["account"] }],
+		});
+		expect(createKnowledgeContentParser).not.toHaveBeenCalled();
+		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
+			expect.objectContaining({ question: "How do I reset?", sourceId: "document-1" }),
+		);
+
+		vi.mocked(createKnowledgeContentParser).mockReturnValue({
+			scrapeUrl: vi.fn().mockResolvedValue({
+				markdown: "# Web help",
+				provider: "firecrawl",
+				parserVersion: "firecrawl-v2",
+			}),
+		} as never);
+		await createKnowledgeWeb(USER_CONTEXT, {
+			url: "https://example.com/help",
+			category: "PRESALES",
+		});
+		expect(validatePublicHttpUrl).toHaveBeenCalledWith("https://example.com/help");
+		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sourceType: "WEB",
+				sourceUrl: "https://example.com/help",
+				provider: "firecrawl",
 			}),
 		);
 	});

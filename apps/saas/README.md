@@ -17,9 +17,10 @@ The product surface is deliberately kept to six small pages:
   Unit, release-gate, and Eval configuration;
 - `/api-demo` is an authenticated comparison of the public OpenAPI status route
   and the typed browser oRPC client;
-- `/knowledge/documents` manages tenant-scoped Markdown, TXT, and DOCX source
-  documents through authenticated oRPC procedures, with bounded metadata pages
-  and full document bodies loaded only when a document is opened.
+- `/knowledge/entries` adds and manages tenant-scoped normalized entries from a
+  file, one public webpage, or manual Q&A. `/knowledge/documents` remains the
+  source-document view with bounded metadata pages and full bodies loaded only
+  when a document is opened.
 
 The pages can:
 
@@ -34,7 +35,8 @@ The pages can:
 - reset the server-side demonstration conversation.
 - persist public customer/human messages and poll the shared channel without
   introducing a second realtime stack.
-- upload, inspect, edit, change lifecycle status, and delete source documents.
+- upload, scrape, or manually add knowledge; inspect, edit, change lifecycle
+  status, and delete normalized entries and source documents.
 - page through bounded metadata-only document lists while loading body text
   only for the selected document.
 
@@ -86,9 +88,10 @@ pnpm --filter saas dev
 
 The app listens on `http://localhost:3000`. Use `/support` without logging in.
 Create a password user, complete onboarding, then use `/inbox` and
-`/agent-settings` as the support role. Use `/knowledge/documents` to upload a
-UTF-8 `.md` or `.txt` file, or a `.docx` containing ordinary paragraphs; DOCX
-images, OCR, and complex tables are intentionally not supported.
+`/agent-settings` as the support role. Use `/knowledge/entries` to add a UTF-8
+`.md`/`.txt` file, a provider-parsed PDF/DOCX/XLSX, one public webpage, or a
+manual Q&A entry. Provider-only formats and webpages require server-side
+Firecrawl configuration; manual Q&A and MD/TXT do not.
 
 ## Tests
 
