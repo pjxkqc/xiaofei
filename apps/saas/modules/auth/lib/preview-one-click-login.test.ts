@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
 	completePreviewOneClickLogin,
+	getLoginRedirectPath,
 	requestPreviewOneClickLogin,
 	sanitizePreviewRedirectPath,
 } from "./preview-one-click-login-client";
@@ -111,6 +112,25 @@ describe("Preview one-click login", () => {
 	])("allows only safe same-origin paths: %j", (input, expected) => {
 		expect(sanitizePreviewRedirectPath(input)).toBe(expected);
 	});
+
+	it.each([
+		["/knowledge/units", "/knowledge/units"],
+		["/\\evil.example", "/"],
+		["//evil.example", "/"],
+		["https://evil.example", "/"],
+		["/\u0000evil.example", "/"],
+	])(
+		"sanitizes the already-authenticated login redirect before navigation: %j",
+		(redirectTo, expected) => {
+			expect(
+				getLoginRedirectPath({
+					invitationId: null,
+					redirectTo,
+					fallbackPath: "/",
+				}),
+			).toBe(expected);
+		},
+	);
 
 	it("logs Better Auth failures with a strict non-sensitive allowlist", () => {
 		expect(

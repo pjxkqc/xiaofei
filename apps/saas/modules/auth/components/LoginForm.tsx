@@ -31,7 +31,10 @@ import { z } from "zod";
 
 import { type OAuthProvider, oAuthProviders } from "../constants/oauth-providers";
 import { useSession } from "../hooks/use-session";
-import { completePreviewOneClickLogin } from "../lib/preview-one-click-login-client";
+import {
+	completePreviewOneClickLogin,
+	getLoginRedirectPath,
+} from "../lib/preview-one-click-login-client";
 import { LoginModeSwitch } from "./LoginModeSwitch";
 import { SocialSigninButton } from "./SocialSigninButton";
 
@@ -73,9 +76,11 @@ export function LoginForm({
 		},
 	});
 
-	const redirectPath = invitationId
-		? `/organization-invitation/${invitationId}`
-		: (redirectTo ?? config.redirectAfterSignIn);
+	const redirectPath = getLoginRedirectPath({
+		invitationId,
+		redirectTo,
+		fallbackPath: config.redirectAfterSignIn,
+	});
 
 	useEffect(() => {
 		if (sessionLoaded && user) {

@@ -31,6 +31,20 @@ export async function completePreviewOneClickLogin({
 
 const previewNavigationOrigin = "https://preview-navigation.invalid";
 
+export function getLoginRedirectPath({
+	invitationId,
+	redirectTo,
+	fallbackPath,
+}: {
+	invitationId: string | null;
+	redirectTo: string | null;
+	fallbackPath: string;
+}) {
+	return sanitizePreviewRedirectPath(
+		invitationId ? `/organization-invitation/${invitationId}` : (redirectTo ?? fallbackPath),
+	);
+}
+
 export function sanitizePreviewRedirectPath(path: string) {
 	if (!path.startsWith("/") || path.startsWith("//") || hasUnsafeNavigationCharacter(path)) {
 		return "/";
