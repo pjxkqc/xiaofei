@@ -5,14 +5,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@repo/database", () => ({
 	createXiaofeiKnowledgeDocument: vi.fn(),
 	createXiaofeiKnowledgeEntry: vi.fn(),
+	createXiaofeiKnowledgeUnit: vi.fn(),
 	deleteXiaofeiKnowledgeDocument: vi.fn(),
 	deleteXiaofeiKnowledgeEntry: vi.fn(),
+	deleteXiaofeiKnowledgeUnit: vi.fn(),
 	getXiaofeiKnowledgeDocument: vi.fn(),
 	getXiaofeiKnowledgeEntry: vi.fn(),
+	getXiaofeiKnowledgeUnit: vi.fn(),
 	listXiaofeiKnowledgeDocuments: vi.fn(),
 	listXiaofeiKnowledgeEntries: vi.fn(),
+	listXiaofeiKnowledgeUnits: vi.fn(),
 	updateXiaofeiKnowledgeDocument: vi.fn(),
 	updateXiaofeiKnowledgeEntry: vi.fn(),
+	updateXiaofeiKnowledgeUnit: vi.fn(),
 	DEFAULT_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE: 25,
 	MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_PAGE_SIZE: 50,
 	XiaofeiKnowledgeDocumentCategory: {
@@ -58,8 +63,10 @@ import {
 	createXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
+	getXiaofeiKnowledgeUnit,
 	listXiaofeiKnowledgeDocuments,
 	updateXiaofeiKnowledgeDocument,
+	updateXiaofeiKnowledgeUnit,
 	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
 
@@ -76,6 +83,8 @@ import {
 	getKnowledgeTenantKey,
 	listKnowledgeDocuments,
 	updateKnowledgeDocumentForTenant,
+	transitionKnowledgeUnitForTenant,
+	updateKnowledgeUnitForTenant,
 } from "./knowledge-documents";
 import { getOrCreateXiaofeiWorkspaceByTenantKey } from "./service";
 
@@ -83,6 +92,38 @@ const USER_CONTEXT = {
 	session: { activeOrganizationId: null },
 	user: { id: "user-1" },
 };
+
+function knowledgeUnit(status: string, eligibility = "ineligible") {
+	return {
+		id: "unit-1",
+		status,
+		eligibility,
+		content: {
+			id: "unit-1",
+			title: "Returns",
+			status,
+			scenarioKeywords: ["return"],
+			applicableScenarios: ["Returns"],
+			inapplicableScenarios: [],
+			requiredSlots: [],
+			forbiddenOutputs: ["Promise a refund"],
+			handoffRules: ["Escalate disputes"],
+			standardReplyPolicy: "Explain the policy.",
+			fallbackReply: "A support specialist can help.",
+			sourceSection: "Returns entry",
+			quality: { status: "warning", blockers: [], warnings: [] },
+			lineage: {
+				workspaceId: "workspace-user",
+				sourceId: "source-1",
+				sourceContentHash: "hash",
+				sourceVersion: 1,
+				entryId: "entry-1",
+				entryVersion: 1,
+			},
+			eligibility,
+		},
+	};
+}
 
 describe("knowledge document application boundary", () => {
 	beforeEach(() => {
@@ -400,5 +441,72 @@ describe("knowledge document application boundary", () => {
 			),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
 		expect(updateXiaofeiKnowledgeDocument).not.toHaveBeenCalled();
+	});
+
+	it("hides cross-tenant knowledge-unit IDs before a transition", async () => {
+		vi.mocked(getXiaofeiKnowledgeUnit).mockResolvedValueOnce(null);
+		await expect(
+			transitionKnowledgeUnitForTenant(USER_CONTEXT, "other-tenant-unit", "review"),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
+		expect(getXiaofeiKnowledgeUnit).toHaveBeenCalledWith("workspace-user", "other-tenant-unit");
+		expect(updateXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["draft", "publish"],
+		["draft", "revokeReview"],
+		["review_ready", "review"],
+		["review_ready", "revokePublish"],
+		["released", "review"],
+		["released", "revokeReview"],
+	])("enforces the predecessor for %s → %s", async (status, action) => {
+		vi.mocked(getXiaofeiKnowledgeUnit).mockResolvedValueOnce(knowledgeUnit(status) as never);
+		await expect(
+			transitionKnowledgeUnitForTenant(
+				USER_CONTEXT,
+				"unit-1",
+				action as "review" | "revokeReview" | "publish" | "revokePublish",
+			),
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+	});
+
+	it("refuses stale KU transitions and permits review-ready publication", async () => {
+		vi.mocked(getXiaofeiKnowledgeUnit).mockResolvedValueOnce(
+			knowledgeUnit("review_ready", "stale") as never,
+		);
+		await expect(
+			transitionKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", "publish"),
+		).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("stale") });
+
+		vi.mocked(getXiaofeiKnowledgeUnit).mockResolvedValueOnce(
+			knowledgeUnit("review_ready") as never,
+		);
+		vi.mocked(updateXiaofeiKnowledgeUnit).mockResolvedValueOnce(
+			knowledgeUnit("released", "eligible") as never,
+		);
+		await transitionKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", "publish");
+		expect(updateXiaofeiKnowledgeUnit).toHaveBeenCalledWith("workspace-user", "unit-1", {
+			status: "released",
+			eligibility: "eligible",
+		});
+	});
+
+	it("atomically invalidates a released KU when its content is edited", async () => {
+		vi.mocked(getXiaofeiKnowledgeUnit).mockResolvedValueOnce(
+			knowledgeUnit("released", "eligible") as never,
+		);
+		vi.mocked(updateXiaofeiKnowledgeUnit).mockResolvedValueOnce(knowledgeUnit("draft") as never);
+		await updateKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", {
+			standardReplyPolicy: "Updated policy.",
+		});
+		expect(updateXiaofeiKnowledgeUnit).toHaveBeenCalledWith(
+			"workspace-user",
+			"unit-1",
+			expect.objectContaining({
+				status: "draft",
+				eligibility: "ineligible",
+				staleReason: null,
+			}),
+		);
 	});
 });

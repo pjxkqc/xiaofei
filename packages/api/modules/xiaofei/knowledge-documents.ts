@@ -340,6 +340,9 @@ export async function updateKnowledgeUnitForTenant(
 	return await updateXiaofeiKnowledgeUnit(workspace.id, id, {
 		title: candidate.title,
 		content: { ...content, ...candidate, id: unit.id, title: candidate.title },
+		status: "draft",
+		eligibility: "ineligible",
+		staleReason: null,
 	});
 }
 
@@ -354,19 +357,12 @@ export async function transitionKnowledgeUnitForTenant(
 		throw new ORPCError("BAD_REQUEST", {
 			message: "This knowledge unit is stale and must be regenerated.",
 		});
-	const next =
-		action === "review"
-			? { status: "review_ready", eligibility: "ineligible" }
-			: action === "revokeReview"
-				? { status: "draft", eligibility: "ineligible" }
-				: action === "publish"
-					? { status: "released", eligibility: "eligible" }
-					: { status: "draft", eligibility: "ineligible" };
-	if (action === "publish" && unit.status !== "review_ready")
+	const transition = KNOWLEDGE_UNIT_TRANSITIONS[action];
+	if (unit.status !== transition.from)
 		throw new ORPCError("BAD_REQUEST", {
-			message: "Review the knowledge unit before publishing it.",
+			message: `Cannot ${action} a knowledge unit in ${unit.status}.`,
 		});
-	return await updateXiaofeiKnowledgeUnit(workspace.id, id, next);
+	return await updateXiaofeiKnowledgeUnit(workspace.id, id, transition.to);
 }
 
 export async function deleteKnowledgeUnitForTenant(context: XiaofeiAuthContext, id: string) {
@@ -381,6 +377,13 @@ async function requireKnowledgeUnit(workspaceId: string, id: string) {
 	if (!unit) throw new ORPCError("NOT_FOUND", { message: "Knowledge unit not found." });
 	return unit;
 }
+
+const KNOWLEDGE_UNIT_TRANSITIONS = {
+	review: { from: "draft", to: { status: "review_ready", eligibility: "ineligible" } },
+	revokeReview: { from: "review_ready", to: { status: "draft", eligibility: "ineligible" } },
+	publish: { from: "review_ready", to: { status: "released", eligibility: "eligible" } },
+	revokePublish: { from: "released", to: { status: "draft", eligibility: "ineligible" } },
+} as const;
 
 export async function listKnowledgeDocuments(
 	context: XiaofeiAuthContext,
