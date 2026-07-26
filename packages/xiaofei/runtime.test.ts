@@ -154,6 +154,30 @@ describe("P0 runtime kernel", () => {
 		expect(suite.cases.every((testCase) => testCase.knowledgeMatched)).toBe(true);
 	});
 
+	it("derives positive Eval evidence from a custom admitted KU and excludes stale KUs", async () => {
+		const { snapshot } = await setup();
+		const custom = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "custom-policy",
+			title: "自定义政策",
+			scenarioKeywords: ["自定义保修"],
+		};
+		snapshot.knowledgeUnits = [custom, { ...snapshot.knowledgeUnits[0]!, eligibility: "stale" }];
+		snapshot.capabilityPlan.knowledgeUnitIds = [custom.id];
+		const suite = await runP0EvalSuite(snapshot, now);
+
+		expect(suite.cases).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ expectedKnowledgeId: "custom-policy", passed: true }),
+			]),
+		);
+		expect(suite.cases).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ expectedKnowledgeId: "商品破损资料收集" }),
+			]),
+		);
+	});
+
 	it("fails closed when the channel conversation binding does not resolve this tenant workspace", async () => {
 		const { snapshot, state } = await setup();
 		const prepared = prepareTurn({
@@ -170,6 +194,30 @@ describe("P0 runtime kernel", () => {
 		expect(prepared).toMatchObject({
 			action: "handoff",
 			handoffReason: "knowledge_workspace_unresolved",
+		});
+	});
+
+	it("does not select a previously admitted KU after a failed mutation leaves admission cleared", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const clearedSnapshot = {
+			...snapshot,
+			knowledgeUnits: [],
+			capabilityPlan: { ...snapshot.capabilityPlan, reviewed: false, knowledgeUnitIds: [] },
+			evalSuite: { ...snapshot.evalSuite, status: "warning" as const, capabilityPlanVersion: null },
+		};
+
+		const prepared = prepareTurn({
+			message: "你们能处理哪些售后问题？",
+			state,
+			snapshot: clearedSnapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			action: "handoff",
+			knowledge: null,
+			handoffReason: "capability_evidence_stale",
 		});
 	});
 });

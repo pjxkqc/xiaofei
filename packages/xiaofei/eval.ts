@@ -5,17 +5,10 @@ import {
 	type XiaofeiWorkspaceSnapshot,
 } from "./contracts";
 import { createConversationState } from "./conversation";
+import { isKnowledgeUnitEligible } from "./knowledge";
 import { finalizeTurn, prepareEvalTurn } from "./runtime";
 
-const CASES = [
-	{
-		id: "collect-required-slot",
-		title: "破损场景只追问剩余资料",
-		message: "杯子碎了，需要售后",
-		expectedAction: "ask_followup" as const,
-		expectedOwner: "ai" as const,
-		expectedKnowledgeId: "商品破损资料收集",
-	},
+const FIXED_CASES = [
 	{
 		id: "high-risk-handoff",
 		title: "高风险投诉立即交人工",
@@ -32,14 +25,6 @@ const CASES = [
 		expectedOwner: "human" as const,
 		expectedKnowledgeId: null,
 	},
-	{
-		id: "safe-knowledge-reply",
-		title: "低风险知识允许回复",
-		message: "你们能处理哪些售后问题？",
-		expectedAction: "reply" as const,
-		expectedOwner: "ai" as const,
-		expectedKnowledgeId: "服务范围说明",
-	},
 ] as const;
 
 export async function runP0EvalSuite(
@@ -48,7 +33,7 @@ export async function runP0EvalSuite(
 ): Promise<EvalSuite> {
 	const results: EvalCaseResult[] = [];
 
-	for (const testCase of CASES) {
+	for (const testCase of [...FIXED_CASES, ...deriveCurrentKnowledgeCases(snapshot)]) {
 		const state = createConversationState({
 			id: `eval:${testCase.id}`,
 			tenantId: snapshot.agent.tenantId,
@@ -116,4 +101,19 @@ export async function runP0EvalSuite(
 		updatedAt: now(),
 		capabilityPlanVersion: snapshot.capabilityPlan.version,
 	});
+}
+
+function deriveCurrentKnowledgeCases(snapshot: XiaofeiWorkspaceSnapshot) {
+	const admitted = new Set(snapshot.capabilityPlan.knowledgeUnitIds);
+	return snapshot.knowledgeUnits
+		.filter((unit) => admitted.has(unit.id) && isKnowledgeUnitEligible(unit))
+		.map((unit) => ({
+			id: `current-knowledge:${unit.id}`,
+			title: `当前能力 KU 可安全执行：${unit.title}`,
+			message: unit.scenarioKeywords[0] ?? unit.title,
+			expectedAction:
+				unit.requiredSlots.length > 0 ? ("ask_followup" as const) : ("reply" as const),
+			expectedOwner: "ai" as const,
+			expectedKnowledgeId: unit.id,
+		}));
 }

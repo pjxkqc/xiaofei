@@ -44,7 +44,9 @@ vi.mock("@repo/database", () => ({
 }));
 
 vi.mock("./service", () => ({
+	clearKnowledgeWorkspaceAdmission: vi.fn(),
 	getOrCreateXiaofeiWorkspaceByTenantKey: vi.fn(),
+	synchronizeKnowledgeWorkspaceSnapshot: vi.fn(),
 }));
 
 vi.mock("../organizations/lib/membership", () => ({
@@ -65,6 +67,7 @@ import {
 	getXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeEntry,
 	getXiaofeiKnowledgeUnit,
+	listXiaofeiKnowledgeUnits,
 	listXiaofeiKnowledgeDocuments,
 	updateXiaofeiKnowledgeDocument,
 	updateXiaofeiKnowledgeEntry,
@@ -89,7 +92,10 @@ import {
 	transitionKnowledgeUnitForTenant,
 	updateKnowledgeUnitForTenant,
 } from "./knowledge-documents";
-import { getOrCreateXiaofeiWorkspaceByTenantKey } from "./service";
+import {
+	getOrCreateXiaofeiWorkspaceByTenantKey,
+	synchronizeKnowledgeWorkspaceSnapshot,
+} from "./service";
 
 const USER_CONTEXT = {
 	session: { activeOrganizationId: null },
@@ -460,6 +466,27 @@ describe("knowledge document application boundary", () => {
 			status: "active",
 		});
 		expect(getXiaofeiKnowledgeEntry).toHaveBeenLastCalledWith("workspace-user", "entry-1");
+	});
+
+	it("rebuilds the runtime snapshot after a publish so only current eligible KUs are admitted", async () => {
+		vi.mocked(getXiaofeiKnowledgeUnit).mockResolvedValueOnce(
+			knowledgeUnit("review_ready") as never,
+		);
+		vi.mocked(updateXiaofeiKnowledgeUnit).mockResolvedValueOnce(
+			knowledgeUnit("released", "eligible") as never,
+		);
+		vi.mocked(listXiaofeiKnowledgeUnits).mockResolvedValueOnce([
+			knowledgeUnit("released", "eligible"),
+		] as never);
+
+		await transitionKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", "publish");
+
+		expect(synchronizeKnowledgeWorkspaceSnapshot).toHaveBeenCalledWith(
+			expect.objectContaining({
+				tenantKey: "user:user-1",
+				units: [expect.objectContaining({ eligibility: "eligible" })],
+			}),
+		);
 	});
 
 	it("hides cross-tenant knowledge-unit IDs before a transition", async () => {
