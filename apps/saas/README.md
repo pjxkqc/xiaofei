@@ -116,6 +116,14 @@ Create a password user, complete onboarding, then use `/inbox` and
 manual Q&A entry. Provider-only formats and webpages require server-side
 Firecrawl configuration; manual Q&A and MD/TXT do not.
 
+In a Vercel PR Preview only (`VERCEL_ENV=preview`), `/knowledge/entries` and
+`/knowledge/documents` also display a **Preview 测试文件** selector with the
+five fictional materials committed in `public/knowledge-test`. `/knowledge/entries`
+adds a same-origin HTML fixture selector for the webpage flow. A selection only
+prepares the normal input; the existing upload or scrape action remains the
+step that creates a record. The selectors are hidden in Production and local
+development; ordinary inputs remain available everywhere.
+
 ## Tests
 
 ```bash

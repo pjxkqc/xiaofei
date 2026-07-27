@@ -23,7 +23,13 @@ import {
 	Trash2Icon,
 	UploadIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import {
+	getPreviewKnowledgeFileFixture,
+	loadPreviewKnowledgeFixtureFile,
+	previewKnowledgeFileFixtures,
+} from "../lib/preview-knowledge-fixtures";
 
 interface KnowledgeDocumentSummary {
 	id: string;
@@ -51,7 +57,11 @@ interface DocumentDraft {
 	bodyText: string;
 }
 
-export function KnowledgeDocuments() {
+export function KnowledgeDocuments({
+	previewFixtureSelectorVisible = false,
+}: {
+	previewFixtureSelectorVisible?: boolean;
+}) {
 	const [documents, setDocuments] = useState<KnowledgeDocumentSummary[]>([]);
 	const [selected, setSelected] = useState<KnowledgeDocument | null>(null);
 	const [draft, setDraft] = useState<DocumentDraft | null>(null);
@@ -61,6 +71,8 @@ export function KnowledgeDocuments() {
 	const [nextCursor, setNextCursor] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
+	const [previewFileId, setPreviewFileId] = useState("");
+	const fileFormRef = useRef<HTMLFormElement>(null);
 
 	const refreshDocuments = useCallback(async (cursor?: string) => {
 		const page = await orpcClient.xiaofei.listKnowledgeDocuments({
@@ -111,6 +123,7 @@ export function KnowledgeDocuments() {
 				contentBase64: await fileToBase64(file),
 			});
 			form.reset();
+			setPreviewFileId("");
 			setPageCursor(undefined);
 			setPreviousCursors([]);
 			await refreshDocuments(undefined);
@@ -120,6 +133,33 @@ export function KnowledgeDocuments() {
 			toastError("文档上传失败", getErrorMessage(error));
 		} finally {
 			setBusy(false);
+		}
+	}
+
+	async function preparePreviewFile(id: string) {
+		setPreviewFileId(id);
+		const fileInput = fileFormRef.current?.elements.namedItem("knowledge-file");
+		if (!(fileInput instanceof HTMLInputElement)) {
+			setPreviewFileId("");
+			return;
+		}
+		fileInput.value = "";
+		if (!id) {
+			return;
+		}
+		if (!getPreviewKnowledgeFileFixture(id)) {
+			setPreviewFileId("");
+			return;
+		}
+		try {
+			const files = new DataTransfer();
+			files.items.add(await loadPreviewKnowledgeFixtureFile(id));
+			fileInput.files = files.files;
+			toastSuccess("已准备测试文件", "点击现有上传按钮后才会创建记录。");
+		} catch (error) {
+			setPreviewFileId("");
+			fileInput.value = "";
+			toastError("无法准备测试文件", getErrorMessage(error));
 		}
 	}
 
@@ -197,10 +237,35 @@ export function KnowledgeDocuments() {
 				</CardHeader>
 				<CardContent>
 					<form
+						ref={fileFormRef}
 						className="gap-4 md:grid-cols-[1fr_220px_auto] grid items-end"
 						onSubmit={uploadDocument}
 					>
 						<div className="gap-2 flex flex-col">
+							{previewFixtureSelectorVisible && (
+								<div className="p-3 gap-2 flex flex-col rounded-md border border-dashed bg-muted/30">
+									<p className="text-xs text-muted-foreground">
+										Preview 专用：这些是可重复使用的虚构测试资料；选择仅准备输入，不会创建记录。
+									</p>
+									<Label>
+										Preview 测试文件
+										<select
+											aria-label="Preview 测试文件"
+											className="h-10 px-3 mt-1 w-full rounded-md border bg-background"
+											value={previewFileId}
+											onChange={(event) => void preparePreviewFile(event.target.value)}
+											disabled={busy}
+										>
+											<option value="">选择一份虚构资料</option>
+											{previewKnowledgeFileFixtures.map((fixture) => (
+												<option key={fixture.id} value={fixture.id}>
+													{fixture.label}
+												</option>
+											))}
+										</select>
+									</Label>
+								</div>
+							)}
 							<Label htmlFor="knowledge-file">文档文件</Label>
 							<Input
 								id="knowledge-file"
@@ -208,6 +273,7 @@ export function KnowledgeDocuments() {
 								type="file"
 								accept=".md,.txt,.pdf,.docx,.xlsx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 								required
+								onChange={() => setPreviewFileId("")}
 								disabled={busy}
 							/>
 						</div>

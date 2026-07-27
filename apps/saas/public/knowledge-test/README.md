@@ -20,10 +20,15 @@ self-contained.
 
 Suggested flow:
 
-1. add all six sources on `/knowledge/entries`, plus one manual Q&A;
-2. verify content, metadata, source type, and lineage;
-3. generate, review, and publish units on `/knowledge/units`;
-4. review, Eval, and admit capabilities on `/knowledge/capabilities`;
-5. ask the acceptance-anchor questions on `/chatbot`;
-6. edit or delete `qingfeng-campaign-notes.txt` and confirm its previously
+1. in a Vercel PR Preview, open `/knowledge/entries` or `/knowledge/documents` and use the **Preview 测试文件** selector to prepare any of the five fictitious files. On `/knowledge/entries`, **Preview 测试网页** prepares the same-origin HTML fixture URL. Selecting a fixture does not upload or scrape it; use the existing action button to do that.
+2. add all six sources on `/knowledge/entries`, plus one manual Q&A;
+3. verify content, metadata, source type, and lineage;
+4. generate, review, and publish units on `/knowledge/units`;
+5. review, Eval, and admit capabilities on `/knowledge/capabilities`;
+6. ask the acceptance-anchor questions on `/chatbot`;
+7. edit or delete `qingfeng-campaign-notes.txt` and confirm its previously
    admitted answer is no longer eligible.
+
+The selector is rendered only when the server sees `VERCEL_ENV=preview`. It is
+not available in local development or Production, where the normal file and
+webpage inputs remain unchanged.

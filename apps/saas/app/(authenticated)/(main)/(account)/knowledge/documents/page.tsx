@@ -1,4 +1,5 @@
 import { KnowledgeDocuments } from "@ai/components/KnowledgeDocuments";
+import { isPreviewKnowledgeFixtureSelectorVisible } from "@ai/lib/preview-knowledge-fixtures";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default function KnowledgeDocumentsPage() {
@@ -10,7 +11,9 @@ export default function KnowledgeDocumentsPage() {
 				className="max-w-7xl mx-auto"
 			/>
 			<div className="max-w-7xl mx-auto">
-				<KnowledgeDocuments />
+				<KnowledgeDocuments
+					previewFixtureSelectorVisible={isPreviewKnowledgeFixtureSelectorVisible()}
+				/>
 			</div>
 		</>
 	);
