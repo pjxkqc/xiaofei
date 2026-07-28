@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
 	createXiaofeiKnowledgeDocument: vi.fn(),
-	createXiaofeiKnowledgeEntry: vi.fn(),
+	createXiaofeiKnowledgeDocumentWithEntries: vi.fn(),
 	createXiaofeiKnowledgeUnit: vi.fn(),
 	deleteXiaofeiKnowledgeDocument: vi.fn(),
 	deleteXiaofeiKnowledgeEntry: vi.fn(),
@@ -33,6 +33,7 @@ vi.mock("@repo/database", () => ({
 	},
 	XiaofeiKnowledgeDocumentSourceType: { FILE: "FILE", WEB: "WEB", MANUAL: "MANUAL" },
 	XiaofeiKnowledgeEntryQuotaError: class XiaofeiKnowledgeEntryQuotaError extends Error {},
+	XiaofeiKnowledgeEntryEligibilityError: class XiaofeiKnowledgeEntryEligibilityError extends Error {},
 	XiaofeiKnowledgeDocumentQuotaError: class XiaofeiKnowledgeDocumentQuotaError extends Error {
 		constructor(
 			readonly quota: "document_count" | "stored_body_bytes",
@@ -62,7 +63,7 @@ vi.mock("./knowledge-content-parser", () => ({
 
 import {
 	createXiaofeiKnowledgeDocument,
-	createXiaofeiKnowledgeEntry,
+	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeEntry,
@@ -73,6 +74,7 @@ import {
 	updateXiaofeiKnowledgeEntry,
 	updateXiaofeiKnowledgeUnit,
 	XiaofeiKnowledgeDocumentQuotaError,
+	XiaofeiKnowledgeEntryEligibilityError,
 } from "@repo/database";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
@@ -87,6 +89,7 @@ import {
 	getKnowledgeDocument,
 	getKnowledgeTenantKey,
 	listKnowledgeDocuments,
+	splitKnowledgeSource,
 	updateKnowledgeDocumentForTenant,
 	updateKnowledgeEntryForTenant,
 	transitionKnowledgeUnitForTenant,
@@ -153,7 +156,13 @@ describe("knowledge document application boundary", () => {
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
 		} as never);
-		vi.mocked(createXiaofeiKnowledgeEntry).mockResolvedValue({ id: "entry-1" } as never);
+		vi.mocked(createXiaofeiKnowledgeDocumentWithEntries).mockImplementation(
+			async (input) =>
+				({
+					document: { id: "document-1" },
+					entries: input.entries.map((_, index) => ({ id: `entry-${index + 1}` })),
+				}) as never,
+		);
 	});
 
 	it("uses a verified active organization, then the authenticated user, as the tenant", async () => {
@@ -234,7 +243,7 @@ describe("knowledge document application boundary", () => {
 		);
 	});
 
-	it("uses the provider only for remote files and persists a normalized entry", async () => {
+	it("uses the provider only for remote files and persists bounded normalized entries", async () => {
 		vi.mocked(createKnowledgeContentParser).mockReturnValue({
 			parseFile: vi.fn().mockResolvedValue({
 				markdown: "# Parsed PDF",
@@ -251,16 +260,166 @@ describe("knowledge document application boundary", () => {
 		});
 
 		expect(createKnowledgeContentParser).toHaveBeenCalled();
-		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledWith(
 			expect.objectContaining({
-				sourceType: "FILE",
-				fileType: "PDF",
-				provider: "firecrawl",
-				bodyText: "# Parsed PDF",
+				document: expect.objectContaining({
+					sourceType: "FILE",
+					fileType: "PDF",
+					provider: "firecrawl",
+					bodyText: "# Parsed PDF",
+				}),
+				entries: [
+					expect.objectContaining({
+						question: "guide.pdf — Parsed PDF",
+						answer: "# Parsed PDF",
+						tags: ["source", "Parsed PDF"],
+					}),
+				],
 			}),
 		);
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
-			expect.objectContaining({ sourceId: "document-1", answer: "# Parsed PDF" }),
+	});
+
+	it("persists all derived entries through one atomic database call", async () => {
+		await createKnowledgeFile(USER_CONTEXT, {
+			originalFileName: "faq.md",
+			mimeType: "text/markdown",
+			category: "PRESALES",
+			contentBase64: Buffer.from(
+				[
+					"Q: First question?",
+					`A: ${"First answer. ".repeat(10)}`,
+					"Q: Second question?",
+					`A: ${"Second answer. ".repeat(10)}`,
+					"Q: Third question?",
+					`A: ${"Third answer. ".repeat(10)}`,
+				].join("\n"),
+			).toString("base64"),
+		});
+
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledOnce();
+		expect(
+			vi.mocked(createXiaofeiKnowledgeDocumentWithEntries).mock.calls[0][0].entries,
+		).toHaveLength(3);
+	});
+
+	it("splits headings and practical Markdown table rows while merging tiny fragments", () => {
+		const entries = splitKnowledgeSource(
+			"matrix.xlsx",
+			[
+				"# Models",
+				"",
+				"| Model | Room |",
+				"| --- | --- |",
+				"| Mini | 8-20㎡ |",
+				"| Pro | 35-70㎡ |",
+				"",
+				"## Warranty",
+				"",
+				"The motor has a 36 month warranty. It applies from delivery and excludes consumable filters and accidental damage.",
+			].join("\n"),
+		);
+
+		expect(entries).toEqual([
+			expect.objectContaining({
+				provenance: "Models row 1",
+				question: "matrix.xlsx — Models row 1",
+			}),
+			expect.objectContaining({
+				provenance: "Models row 2",
+				question: "matrix.xlsx — Models row 2",
+			}),
+			expect.objectContaining({
+				provenance: "Warranty",
+				answer:
+					"The motor has a 36 month warranty. It applies from delivery and excludes consumable filters and accidental damage.",
+			}),
+		]);
+	});
+
+	it("caps generated entries at twenty", () => {
+		const source = Array.from(
+			{ length: 25 },
+			(_, index) => `## FAQ ${index + 1}\n\nAnchor ${index + 1}. ${"Answer ".repeat(20)}`,
+		).join("\n\n");
+		const entries = splitKnowledgeSource("faq.md", source);
+		expect(entries).toHaveLength(20);
+		expect(entries[entries.length - 1]?.answer).toContain("Anchor 25.");
+	});
+
+	it("recognizes explicit FAQ pairs without requiring Markdown headings", () => {
+		const entries = splitKnowledgeSource(
+			"faq.txt",
+			"Q: Can I return it?\nA: Returns are accepted within 30 days.\n\nQ: Is shipping included?\nA: Standard shipping is included.",
+		);
+		expect(entries).toEqual([
+			expect.objectContaining({
+				provenance: "Can I return it?",
+				answer: "Q: Can I return it?\nA: Returns are accepted within 30 days.",
+			}),
+			expect.objectContaining({ provenance: "Is shipping included?" }),
+		]);
+	});
+
+	it("preserves ordinary content around explicit FAQ pairs", () => {
+		const entries = splitKnowledgeSource(
+			"mixed.md",
+			[
+				"# Support",
+				"",
+				"Intro anchor explains the support scope before the frequently asked questions.",
+				"",
+				"Q: Can I return it?",
+				"A: Return anchor says returns are accepted within 30 days.",
+				"",
+				"Trailing anchor explains that damaged items need a support review.",
+			].join("\n"),
+		);
+		const answers = entries.map((entry) => entry.answer).join("\n");
+
+		expect(answers).toContain("Intro anchor");
+		expect(answers).toContain("Return anchor");
+		expect(answers).toContain("Trailing anchor");
+		expect(answers.match(/Q: Can I return it\?/g)).toHaveLength(1);
+	});
+
+	it("preserves prose around every Markdown table and keeps table rows in source order", () => {
+		const entries = splitKnowledgeSource(
+			"tables.md",
+			[
+				"# Product",
+				"",
+				"Intro anchor before the first table contains enough product context for review.",
+				"",
+				"| Model | Room |",
+				"| --- | --- |",
+				"| Mini | 8-20㎡ |",
+				"",
+				"Middle anchor between the two tables explains how customers choose a model.",
+				"",
+				"| Plan | Response |",
+				"| --- | --- |",
+				"| Standard | 24 hours |",
+				"",
+				"Final anchor after the second table explains escalation and warranty coverage.",
+			].join("\n"),
+		);
+		const answers = entries.map((entry) => entry.answer);
+		const joined = answers.join("\n");
+
+		for (const anchor of ["Intro anchor", "Mini", "Middle anchor", "Standard", "Final anchor"]) {
+			expect(joined).toContain(anchor);
+		}
+		expect(answers.findIndex((answer) => answer.includes("Intro anchor"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Mini")),
+		);
+		expect(answers.findIndex((answer) => answer.includes("Mini"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Middle anchor")),
+		);
+		expect(answers.findIndex((answer) => answer.includes("Middle anchor"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Standard")),
+		);
+		expect(answers.findIndex((answer) => answer.includes("Standard"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Final anchor")),
 		);
 	});
 
@@ -270,10 +429,16 @@ describe("knowledge document application boundary", () => {
 			pairs: [{ question: "How do I reset?", answer: "Use the reset link.", tags: ["account"] }],
 		});
 		expect(createKnowledgeContentParser).not.toHaveBeenCalled();
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
-			expect.objectContaining({ question: "How do I reset?", sourceId: "document-1" }),
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledWith(
+			expect.objectContaining({
+				document: expect.objectContaining({ sourceType: "MANUAL" }),
+				entries: [
+					expect.objectContaining({ question: "How do I reset?", answer: "Use the reset link." }),
+				],
+			}),
 		);
 
+		vi.mocked(createXiaofeiKnowledgeDocumentWithEntries).mockClear();
 		vi.mocked(createKnowledgeContentParser).mockReturnValue({
 			scrapeUrl: vi.fn().mockResolvedValue({
 				markdown: "# Web help",
@@ -286,11 +451,13 @@ describe("knowledge document application boundary", () => {
 			category: "PRESALES",
 		});
 		expect(validatePublicHttpUrl).toHaveBeenCalledWith("https://example.com/help");
-		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledWith(
 			expect.objectContaining({
-				sourceType: "WEB",
-				sourceUrl: "https://example.com/help",
-				provider: "firecrawl",
+				document: expect.objectContaining({
+					sourceType: "WEB",
+					sourceUrl: "https://example.com/help",
+					provider: "firecrawl",
+				}),
 			}),
 		);
 	});
@@ -455,7 +622,7 @@ describe("knowledge document application boundary", () => {
 	it("returns the refreshed entry with computed eligibility after an update", async () => {
 		const refreshed = { id: "entry-1", status: "active", eligible: true };
 		vi.mocked(getXiaofeiKnowledgeEntry)
-			.mockResolvedValueOnce({ id: "entry-1" } as never)
+			.mockResolvedValueOnce({ id: "entry-1", eligible: true } as never)
 			.mockResolvedValueOnce(refreshed as never);
 		vi.mocked(updateXiaofeiKnowledgeEntry).mockResolvedValueOnce({ id: "entry-1" } as never);
 
@@ -466,6 +633,38 @@ describe("knowledge document application boundary", () => {
 			status: "active",
 		});
 		expect(getXiaofeiKnowledgeEntry).toHaveBeenLastCalledWith("workspace-user", "entry-1");
+	});
+
+	it("refuses to activate an entry whose source is no longer current", async () => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValueOnce({
+			id: "entry-1",
+			eligible: false,
+		} as never);
+
+		await expect(
+			updateKnowledgeEntryForTenant(USER_CONTEXT, "entry-1", { status: "active" }),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining("current knowledge entries"),
+		});
+		expect(updateXiaofeiKnowledgeEntry).not.toHaveBeenCalled();
+	});
+
+	it("refuses activation when the persistence boundary detects a source-update race", async () => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValueOnce({
+			id: "entry-1",
+			eligible: true,
+		} as never);
+		vi.mocked(updateXiaofeiKnowledgeEntry).mockRejectedValueOnce(
+			new XiaofeiKnowledgeEntryEligibilityError(),
+		);
+
+		await expect(
+			updateKnowledgeEntryForTenant(USER_CONTEXT, "entry-1", { status: "active" }),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining("current draft knowledge entries"),
+		});
 	});
 
 	it("rebuilds the runtime snapshot after a publish so only current eligible KUs are admitted", async () => {

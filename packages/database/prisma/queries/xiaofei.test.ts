@@ -12,6 +12,7 @@ const queryMocks = vi.hoisted(() => {
 		},
 		xiaofeiKnowledgeEntry: {
 			create: vi.fn(),
+			createManyAndReturn: vi.fn(),
 			deleteMany: vi.fn(),
 			findUnique: vi.fn(),
 			update: vi.fn(),
@@ -38,6 +39,7 @@ const queryMocks = vi.hoisted(() => {
 		updateDocument: vi.fn(),
 		updateDocumentInTransaction: transactionClient.xiaofeiKnowledgeDocument.update,
 		createEntry: transactionClient.xiaofeiKnowledgeEntry.create,
+		createEntries: transactionClient.xiaofeiKnowledgeEntry.createManyAndReturn,
 		deleteEntries: transactionClient.xiaofeiKnowledgeEntry.deleteMany,
 		findEntry: vi.fn(),
 		findEntryInTransaction: transactionClient.xiaofeiKnowledgeEntry.findUnique,
@@ -71,6 +73,7 @@ vi.mock("../client", () => ({
 
 import {
 	createXiaofeiKnowledgeDocument,
+	createXiaofeiKnowledgeDocumentWithEntries,
 	createXiaofeiKnowledgeEntry,
 	createXiaofeiKnowledgeUnit,
 	deleteXiaofeiKnowledgeEntry,
@@ -84,6 +87,7 @@ import {
 	MAX_XIAOFEI_KNOWLEDGE_ENTRIES_PER_WORKSPACE,
 	updateXiaofeiKnowledgeDocument,
 	updateXiaofeiKnowledgeEntry,
+	XiaofeiKnowledgeEntryEligibilityError,
 } from "./xiaofei";
 
 describe("Xiaofei knowledge document queries", () => {
@@ -96,7 +100,10 @@ describe("Xiaofei knowledge document queries", () => {
 			mimeType: "text/markdown",
 			fileType: "MARKDOWN",
 			sourceUrl: null,
+			contentHash: "document-hash",
+			sourceVersion: 1,
 		});
+		queryMocks.createEntries.mockResolvedValue([]);
 		queryMocks.queryRaw.mockResolvedValue([
 			{
 				documentCount: BigInt(0),
@@ -135,6 +142,52 @@ describe("Xiaofei knowledge document queries", () => {
 		expect(queryMocks.createDocument).toHaveBeenCalledWith({
 			data: expect.objectContaining(input),
 		});
+	});
+
+	it("atomically creates one source and all derived entries under one workspace lock", async () => {
+		queryMocks.createEntries.mockResolvedValueOnce([{ id: "entry-1" }, { id: "entry-2" }]);
+		queryMocks.queryRaw
+			.mockResolvedValueOnce([{ count: BigInt(2), bodyBytes: BigInt(100) }])
+			.mockResolvedValueOnce([{ count: BigInt(3), bodyBytes: BigInt(200) }]);
+
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: "workspace-a",
+				originalFileName: "guide.md",
+				mimeType: "text/markdown",
+				fileType: "MARKDOWN",
+				category: "PRESALES",
+				bodyText: "# Guide",
+			},
+			entries: [
+				{ question: "Question 1", answer: "Answer 1", tags: ["source"] },
+				{ question: "Question 2", answer: "Answer 2", tags: ["source"] },
+			],
+		});
+
+		expect(queryMocks.transaction).toHaveBeenCalledOnce();
+		expect(queryMocks.executeRaw).toHaveBeenCalledOnce();
+		expect(queryMocks.queryRaw).toHaveBeenCalledTimes(2);
+		expect(queryMocks.createDocument).toHaveBeenCalledOnce();
+		expect(queryMocks.createEntries).toHaveBeenCalledWith({
+			data: [
+				expect.objectContaining({
+					workspaceId: "workspace-a",
+					sourceId: "document-1",
+					sourceContentHash: "document-hash",
+					sourceVersion: 1,
+					question: "Question 1",
+				}),
+				expect.objectContaining({
+					workspaceId: "workspace-a",
+					sourceId: "document-1",
+					sourceContentHash: "document-hash",
+					sourceVersion: 1,
+					question: "Question 2",
+				}),
+			],
+		});
+		expect(result.entries).toEqual([{ id: "entry-1" }, { id: "entry-2" }]);
 	});
 
 	it("rejects creates above the fixed workspace document count", async () => {
@@ -493,6 +546,13 @@ describe("Xiaofei knowledge document queries", () => {
 			answer: "a",
 			similarQueries: [],
 			sourceId: "source-1",
+			sourceContentHash: "hash-1",
+			sourceVersion: 2,
+			status: "draft",
+		});
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "hash-1",
+			sourceVersion: 2,
 		});
 		queryMocks.queryRaw.mockResolvedValueOnce([{ count: BigInt(1), bodyBytes: BigInt(2) }]);
 		await updateXiaofeiKnowledgeEntry("workspace-a", "entry-1", { status: "active" });
@@ -504,6 +564,30 @@ describe("Xiaofei knowledge document queries", () => {
 			where: { workspaceId: "workspace-a", entryId: "entry-1" },
 			data: { status: "draft", eligibility: "stale", staleReason: "entry_updated" },
 		});
+	});
+
+	it("rejects activation when the source changed before the locked mutation", async () => {
+		queryMocks.findEntryInTransaction.mockResolvedValueOnce({
+			question: "q",
+			answer: "a",
+			similarQueries: [],
+			sourceId: "source-1",
+			sourceContentHash: "old-hash",
+			sourceVersion: 1,
+			status: "draft",
+		});
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "new-hash",
+			sourceVersion: 2,
+		});
+
+		await expect(
+			updateXiaofeiKnowledgeEntry("workspace-a", "entry-1", { status: "active" }),
+		).rejects.toBeInstanceOf(XiaofeiKnowledgeEntryEligibilityError);
+
+		expect(queryMocks.executeRaw).toHaveBeenCalledOnce();
+		expect(queryMocks.updateEntry).not.toHaveBeenCalled();
+		expect(queryMocks.invalidateUnits).not.toHaveBeenCalled();
 	});
 
 	it("invalidates dependent KUs before deleting an entry", async () => {

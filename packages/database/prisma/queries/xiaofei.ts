@@ -58,6 +58,11 @@ export interface CreateXiaofeiKnowledgeEntryInput {
 	status?: string;
 }
 
+export interface CreateXiaofeiKnowledgeDocumentWithEntriesInput {
+	document: CreateXiaofeiKnowledgeDocumentInput;
+	entries: Omit<CreateXiaofeiKnowledgeEntryInput, "workspaceId" | "sourceId">[];
+}
+
 export interface UpdateXiaofeiKnowledgeEntryInput {
 	sourceId?: string;
 	question?: string;
@@ -126,6 +131,13 @@ export class XiaofeiKnowledgeEntryQuotaError extends Error {
 				: "Knowledge entry storage limit reached for this workspace.",
 		);
 		this.name = "XiaofeiKnowledgeEntryQuotaError";
+	}
+}
+
+export class XiaofeiKnowledgeEntryEligibilityError extends Error {
+	constructor() {
+		super("Only current draft knowledge entries can be activated.");
+		this.name = "XiaofeiKnowledgeEntryEligibilityError";
 	}
 }
 
@@ -254,6 +266,42 @@ export function createXiaofeiKnowledgeDocument(input: CreateXiaofeiKnowledgeDocu
 			data: { ...input, contentHash: hashContent(input.bodyText) },
 		});
 		return withLegacyKnowledgeDocumentMetadata(document);
+	});
+}
+
+export function createXiaofeiKnowledgeDocumentWithEntries(
+	input: CreateXiaofeiKnowledgeDocumentWithEntriesInput,
+) {
+	return db.$transaction(async (transaction) => {
+		await lockXiaofeiKnowledgeWorkspace(transaction, input.document.workspaceId);
+		const [documentUsage, entryUsage] = await Promise.all([
+			getKnowledgeDocumentUsage(transaction, input.document.workspaceId),
+			getKnowledgeEntryUsage(transaction, input.document.workspaceId),
+		]);
+		assertDocumentQuota(
+			Number(documentUsage.count) + 1,
+			Number(documentUsage.bodyBytes) + Buffer.byteLength(input.document.bodyText, "utf8"),
+		);
+		assertEntryQuota(
+			Number(entryUsage.count) + input.entries.length,
+			Number(entryUsage.bodyBytes) +
+				input.entries.reduce((total, entry) => total + entryBodyBytes(entry), 0),
+		);
+		const document = await transaction.xiaofeiKnowledgeDocument.create({
+			data: { ...input.document, contentHash: hashContent(input.document.bodyText) },
+		});
+		const entries = input.entries.length
+			? await transaction.xiaofeiKnowledgeEntry.createManyAndReturn({
+					data: input.entries.map((entry) => ({
+						...entry,
+						workspaceId: input.document.workspaceId,
+						sourceId: document.id,
+						sourceContentHash: document.contentHash,
+						sourceVersion: document.sourceVersion,
+					})),
+				})
+			: [];
+		return { document: withLegacyKnowledgeDocumentMetadata(document), entries };
 	});
 }
 
@@ -386,7 +434,15 @@ export function updateXiaofeiKnowledgeEntry(
 		await lockXiaofeiKnowledgeWorkspace(transaction, workspaceId);
 		const existing = await transaction.xiaofeiKnowledgeEntry.findUnique({
 			where: { workspaceId_id: { workspaceId, id } },
-			select: { question: true, answer: true, similarQueries: true, sourceId: true },
+			select: {
+				question: true,
+				answer: true,
+				similarQueries: true,
+				sourceId: true,
+				sourceContentHash: true,
+				sourceVersion: true,
+				status: true,
+			},
 		});
 		if (!existing)
 			return transaction.xiaofeiKnowledgeEntry.update({
@@ -395,13 +451,25 @@ export function updateXiaofeiKnowledgeEntry(
 			});
 		const sourceId = data.sourceId ?? existing.sourceId;
 		let sourceSnapshot: { contentHash: string | null; sourceVersion: number } | undefined;
-		if (data.sourceId !== undefined) {
+		if (data.sourceId !== undefined || data.status === "active") {
 			sourceSnapshot =
-				(await transaction.xiaofeiKnowledgeDocument.findUnique({
-					where: { workspaceId_id: { workspaceId, id: data.sourceId } },
-					select: { contentHash: true, sourceVersion: true },
-				})) ?? undefined;
-			if (!sourceSnapshot) throw new Error("Knowledge source was not found in this workspace.");
+				sourceId === null
+					? undefined
+					: ((await transaction.xiaofeiKnowledgeDocument.findUnique({
+							where: { workspaceId_id: { workspaceId, id: sourceId } },
+							select: { contentHash: true, sourceVersion: true },
+						})) ?? undefined);
+			if (data.sourceId !== undefined && !sourceSnapshot)
+				throw new Error("Knowledge source was not found in this workspace.");
+		}
+		if (
+			data.status === "active" &&
+			(existing.status !== "draft" ||
+				!sourceSnapshot ||
+				sourceSnapshot.contentHash !== existing.sourceContentHash ||
+				sourceSnapshot.sourceVersion !== existing.sourceVersion)
+		) {
+			throw new XiaofeiKnowledgeEntryEligibilityError();
 		}
 		const next = {
 			question: data.question ?? existing.question,
@@ -420,7 +488,7 @@ export function updateXiaofeiKnowledgeEntry(
 				entryVersion: { increment: 1 },
 				...(sourceId === null
 					? {}
-					: sourceSnapshot
+					: data.sourceId !== undefined && sourceSnapshot
 						? {
 								sourceContentHash: sourceSnapshot.contentHash,
 								sourceVersion: sourceSnapshot.sourceVersion,

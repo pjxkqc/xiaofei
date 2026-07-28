@@ -3,7 +3,7 @@ import { generateKnowledgeUnitDrafts } from "@repo/ai";
 import {
 	createXiaofeiKnowledgeUnit,
 	createXiaofeiKnowledgeDocument,
-	createXiaofeiKnowledgeEntry,
+	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
 	deleteXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeUnit,
@@ -20,6 +20,7 @@ import {
 	XiaofeiKnowledgeDocumentCategory,
 	XiaofeiKnowledgeDocumentFileType,
 	XiaofeiKnowledgeDocumentSourceType,
+	XiaofeiKnowledgeEntryEligibilityError,
 	XiaofeiKnowledgeEntryQuotaError,
 	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
@@ -46,7 +47,9 @@ import {
 
 export const MAX_KNOWLEDGE_FILE_BYTES = 4 * 1024 * 1024;
 export const MAX_KNOWLEDGE_BODY_CHARACTERS = 500_000;
+export const MAX_GENERATED_ENTRIES_PER_SOURCE = 20;
 const MAX_DOCX_XML_BYTES = 4 * 1024 * 1024;
+const MIN_GENERATED_ENTRY_CHARACTERS = 80;
 
 const FILE_RULES = {
 	".docx": {
@@ -151,27 +154,23 @@ export async function createKnowledgeFile(
 		? { markdown: decodeLocalFile(file), provider: undefined, parserVersion: undefined }
 		: await parseFile(file, input);
 	try {
-		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id,
-			sourceType: XiaofeiKnowledgeDocumentSourceType.FILE,
-			originalFileName: input.originalFileName,
-			mimeType: input.mimeType,
-			fileType: file.fileType,
-			fileSizeBytes: file.bytes.byteLength,
-			provider: parsed.provider,
-			parserVersion: parsed.parserVersion,
-			category: XiaofeiKnowledgeDocumentCategory[input.category],
-			bodyText: parsed.markdown,
-			fetchedAt: parsed.provider ? new Date() : undefined,
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: workspace.id,
+				sourceType: XiaofeiKnowledgeDocumentSourceType.FILE,
+				originalFileName: input.originalFileName,
+				mimeType: input.mimeType,
+				fileType: file.fileType,
+				fileSizeBytes: file.bytes.byteLength,
+				provider: parsed.provider,
+				parserVersion: parsed.parserVersion,
+				category: XiaofeiKnowledgeDocumentCategory[input.category],
+				bodyText: parsed.markdown,
+				fetchedAt: parsed.provider ? new Date() : undefined,
+			},
+			entries: buildEntriesForSource(input.originalFileName, parsed.markdown, input.category),
 		});
-		await createEntryForSource(
-			workspace.id,
-			source.id,
-			input.originalFileName,
-			parsed.markdown,
-			input.category,
-		);
-		return source;
+		return result.document;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -190,18 +189,20 @@ export async function createKnowledgeWeb(
 		throwKnowledgeParseError(error);
 	}
 	try {
-		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id,
-			sourceType: XiaofeiKnowledgeDocumentSourceType.WEB,
-			sourceUrl: input.url,
-			provider: parsed.provider,
-			parserVersion: parsed.parserVersion,
-			fetchedAt: new Date(),
-			category: XiaofeiKnowledgeDocumentCategory[input.category],
-			bodyText: parsed.markdown,
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: workspace.id,
+				sourceType: XiaofeiKnowledgeDocumentSourceType.WEB,
+				sourceUrl: input.url,
+				provider: parsed.provider,
+				parserVersion: parsed.parserVersion,
+				fetchedAt: new Date(),
+				category: XiaofeiKnowledgeDocumentCategory[input.category],
+				bodyText: parsed.markdown,
+			},
+			entries: buildEntriesForSource(input.url, parsed.markdown, input.category),
 		});
-		await createEntryForSource(workspace.id, source.id, input.url, parsed.markdown, input.category);
-		return source;
+		return result.document;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -214,25 +215,22 @@ export async function createManualKnowledgeEntries(
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const bodyText = input.pairs.map((pair) => `Q: ${pair.question}\nA: ${pair.answer}`).join("\n\n");
 	try {
-		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id,
-			sourceType: XiaofeiKnowledgeDocumentSourceType.MANUAL,
-			category: XiaofeiKnowledgeDocumentCategory[input.category],
-			bodyText,
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: workspace.id,
+				sourceType: XiaofeiKnowledgeDocumentSourceType.MANUAL,
+				category: XiaofeiKnowledgeDocumentCategory[input.category],
+				bodyText,
+			},
+			entries: input.pairs.map((pair) => ({
+				question: pair.question,
+				answer: pair.answer,
+				similarQueries: pair.similarQueries ?? [],
+				tags: pair.tags ?? [],
+				category: input.category,
+			})),
 		});
-		return await Promise.all(
-			input.pairs.map((pair) =>
-				createXiaofeiKnowledgeEntry({
-					workspaceId: workspace.id,
-					sourceId: source.id,
-					question: pair.question,
-					answer: pair.answer,
-					similarQueries: pair.similarQueries ?? [],
-					tags: pair.tags ?? [],
-					category: input.category,
-				}),
-			),
-		);
+		return result.entries;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -257,8 +255,13 @@ export async function updateKnowledgeEntryForTenant(
 	input: UpdateKnowledgeEntryInput,
 ) {
 	const { workspace } = await getKnowledgeWorkspace(context);
-	if (!(await getXiaofeiKnowledgeEntry(workspace.id, id)))
-		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	const existing = await getXiaofeiKnowledgeEntry(workspace.id, id);
+	if (!existing) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	if (input.status === "active" && existing.eligible !== true) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Only current knowledge entries can be activated.",
+		});
+	}
 	try {
 		await clearKnowledgeAdmission(context);
 		await updateXiaofeiKnowledgeEntry(workspace.id, id, input);
@@ -315,9 +318,10 @@ export async function generateKnowledgeUnitsForTenant(
 				}),
 			),
 		});
-		return await Promise.all(
-			drafts.map((draft) =>
-				createXiaofeiKnowledgeUnit({
+		const units = [];
+		for (const draft of drafts) {
+			units.push(
+				await createXiaofeiKnowledgeUnit({
 					workspaceId: workspace.id,
 					entryId: draft.lineage.entryId,
 					title: draft.title,
@@ -325,8 +329,9 @@ export async function generateKnowledgeUnitsForTenant(
 					status: "draft",
 					eligibility: "ineligible",
 				}),
-			),
-		);
+			);
+		}
+		return units;
 	} catch (error) {
 		if (error instanceof ORPCError) throw error;
 		throw new ORPCError("BAD_REQUEST", {
@@ -550,22 +555,182 @@ async function parseFile(
 	}
 }
 
-async function createEntryForSource(
-	workspaceId: string,
-	sourceId: string,
+function buildEntriesForSource(
 	title: string,
-	answer: string,
+	bodyText: string,
 	category: "PRESALES" | "POSTSALES",
 ) {
-	return await createXiaofeiKnowledgeEntry({
-		workspaceId,
-		sourceId,
-		question: title,
-		answer,
+	return splitKnowledgeSource(title, bodyText).map((entry) => ({
+		question: entry.question,
+		answer: entry.answer,
 		category,
 		similarQueries: [],
-		tags: [],
+		tags: ["source", entry.provenance],
+	}));
+}
+
+interface SplitKnowledgeEntry {
+	question: string;
+	answer: string;
+	provenance: string;
+}
+
+/** Deterministically creates bounded, reviewable slices without using a model. */
+export function splitKnowledgeSource(title: string, bodyText: string): SplitKnowledgeEntry[] {
+	const normalized = bodyText.replace(/\r\n?/g, "\n").trim();
+	const candidates = splitMarkdownSections(normalized)
+		.flatMap(splitFaqPairs)
+		.flatMap(splitTableRows);
+	const bounded = boundFragments(mergeTinyFragments(candidates));
+	const entries = bounded.map((entry, index) => {
+		const provenance = (entry.heading || `section ${index + 1}`).slice(0, 100);
+		return {
+			question: `${title} — ${provenance}`.slice(0, 10_000),
+			answer: entry.body,
+			provenance,
+		};
 	});
+	return entries.length ? entries : [{ question: title, answer: normalized, provenance: "source" }];
+}
+
+interface SourceFragment {
+	heading: string;
+	body: string;
+	atomic?: boolean;
+}
+
+function splitFaqPairs(section: SourceFragment): SourceFragment[] {
+	const fragments: SourceFragment[] = [];
+	const expression =
+		/(?:^|\n)\s*(?:Q(?:uestion)?|问)\s*[:：]\s*(.+?)\s*\n\s*(?:A(?:nswer)?|答)\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:Q(?:uestion)?|问)\s*[:：]|$)/giu;
+	let cursor = 0;
+	for (const match of section.body.matchAll(expression)) {
+		const matchStart = match.index ?? 0;
+		const prefix = section.body.slice(cursor, matchStart).trim();
+		if (prefix) fragments.push({ heading: section.heading, body: prefix });
+		const question = match[1].trim();
+		const answer = match[2].trim();
+		if (question && answer) {
+			fragments.push({
+				heading: question,
+				body: `Q: ${question}\nA: ${answer}`,
+				atomic: true,
+			});
+		}
+		cursor = matchStart + match[0].length;
+	}
+	if (!fragments.length) return [section];
+	const suffix = section.body.slice(cursor).trim();
+	if (suffix) fragments.push({ heading: section.heading, body: suffix });
+	return fragments;
+}
+
+function splitMarkdownSections(bodyText: string): SourceFragment[] {
+	const lines = bodyText.split("\n");
+	const sections: SourceFragment[] = [];
+	let heading = "";
+	let content: string[] = [];
+	const push = () => {
+		const body = content.join("\n").trim();
+		if (body) sections.push({ heading, body });
+		content = [];
+	};
+	for (const line of lines) {
+		const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+		if (match) {
+			push();
+			heading = match[2].trim();
+			continue;
+		}
+		content.push(line);
+	}
+	push();
+	if (sections.length) return sections;
+	const titleMatch = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(lines[0] ?? "");
+	return [{ heading: titleMatch?.[2].trim() ?? "", body: bodyText }];
+}
+
+function splitTableRows(section: SourceFragment): SourceFragment[] {
+	if (section.atomic) return [section];
+	const lines = section.body.split("\n");
+	const fragments: SourceFragment[] = [];
+	let proseStart = 0;
+	let lineIndex = 0;
+	let tableIndex = 0;
+	while (lineIndex + 1 < lines.length) {
+		if (!isMarkdownTableRow(lines[lineIndex]) || !isMarkdownTableDivider(lines[lineIndex + 1])) {
+			lineIndex += 1;
+			continue;
+		}
+		let tableEnd = lineIndex + 2;
+		while (tableEnd < lines.length && isMarkdownTableRow(lines[tableEnd])) tableEnd += 1;
+		if (tableEnd === lineIndex + 2) {
+			lineIndex += 2;
+			continue;
+		}
+		pushProseFragment(fragments, section.heading, lines.slice(proseStart, lineIndex));
+		tableIndex += 1;
+		const tableLabel = `${section.heading || "table"}${tableIndex > 1 ? ` table ${tableIndex}` : ""}`;
+		for (let rowIndex = lineIndex + 2; rowIndex < tableEnd; rowIndex += 1) {
+			fragments.push({
+				heading: `${tableLabel} row ${rowIndex - lineIndex - 1}`,
+				body: `${section.heading ? `## ${section.heading}\n\n` : ""}${lines[lineIndex]}\n${lines[lineIndex + 1]}\n${lines[rowIndex]}`,
+				atomic: true,
+			});
+		}
+		proseStart = tableEnd;
+		lineIndex = tableEnd;
+	}
+	pushProseFragment(fragments, section.heading, lines.slice(proseStart));
+	return fragments.length ? fragments : [section];
+}
+
+function pushProseFragment(result: SourceFragment[], heading: string, lines: string[]) {
+	const body = lines.join("\n").trim();
+	if (body) result.push({ heading, body });
+}
+
+function isMarkdownTableRow(line: string) {
+	return /^\s*\|.+\|\s*$/.test(line);
+}
+function isMarkdownTableDivider(line: string) {
+	return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function mergeTinyFragments(fragments: SourceFragment[]): SourceFragment[] {
+	return fragments.reduce<SourceFragment[]>((result, fragment) => {
+		const previous = result[result.length - 1];
+		if (
+			previous &&
+			!previous.atomic &&
+			fragment.body.length < MIN_GENERATED_ENTRY_CHARACTERS &&
+			!fragment.atomic &&
+			!/\brow \d+$/u.test(fragment.heading)
+		) {
+			previous.body = `${previous.body}\n\n${fragment.heading ? `## ${fragment.heading}\n` : ""}${fragment.body}`;
+			return result;
+		}
+		result.push({ ...fragment });
+		return result;
+	}, []);
+}
+
+function boundFragments(fragments: SourceFragment[]): SourceFragment[] {
+	if (fragments.length <= MAX_GENERATED_ENTRIES_PER_SOURCE) return fragments;
+	const retained = fragments.slice(0, MAX_GENERATED_ENTRIES_PER_SOURCE - 1);
+	const overflow = fragments.slice(MAX_GENERATED_ENTRIES_PER_SOURCE - 1);
+	const first = overflow[0];
+	retained.push({
+		heading: first.heading,
+		body: overflow
+			.map((fragment, index) =>
+				index === 0
+					? fragment.body
+					: `${fragment.heading ? `## ${fragment.heading}\n\n` : ""}${fragment.body}`,
+			)
+			.join("\n\n"),
+	});
+	return retained;
 }
 
 function throwKnowledgeParseError(error: unknown): never {
@@ -693,6 +858,11 @@ function throwKnowledgeWriteError(error: unknown): never {
 				? `This workspace can store up to ${error.limit} knowledge entries. Delete one before adding another.`
 				: `This workspace has reached its ${formatMegabytes(error.limit)} MB knowledge entry storage limit.`;
 		throw new ORPCError("BAD_REQUEST", { message });
+	}
+	if (error instanceof XiaofeiKnowledgeEntryEligibilityError) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Only current draft knowledge entries can be activated.",
+		});
 	}
 	throw new ORPCError("INTERNAL_SERVER_ERROR", {
 		message: "The knowledge document could not be saved.",

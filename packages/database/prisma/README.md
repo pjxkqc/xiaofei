@@ -52,6 +52,9 @@ Source and entry reads and mutations require `workspaceId`. The compound
 `workspaceId_id` selector makes a record from another workspace indistinguishable
 from a missing record at the query boundary. Callers must resolve the
 authenticated tenant to a Xiaofei workspace before using these queries.
+Entry activation revalidates the entry status and source hash/version while
+holding the workspace advisory lock, so a concurrent source update cannot leave
+a stale entry marked active.
 
 Source lists return metadata only; `bodyText` is available only from the
 workspace-scoped get query. Source and entry lists use a stable `(createdAt, id)`
@@ -94,7 +97,11 @@ The query boundary also enforces fixed per-workspace ceilings:
 Source and entry create, update, and delete acquire the same PostgreSQL
 transaction-scoped advisory lock derived from `workspaceId`. Quota usage and
 the write therefore execute atomically for one workspace even when requests
-arrive concurrently. A rejected create/update throws
+arrive concurrently. Multi-entry ingestion uses
+`createXiaofeiKnowledgeDocumentWithEntries` to validate both quotas and create
+the source plus all derived entries in one transaction and one bulk insert; it
+must not fan out workspace-locked writes with `Promise.all`. A rejected
+create/update throws
 `XiaofeiKnowledgeDocumentQuotaError` with `quota` set to `document_count` or
 `stored_body_bytes` and a numeric `limit`; callers should map that typed error
 to their transport contract without exposing database errors.

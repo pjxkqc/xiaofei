@@ -17,6 +17,13 @@ import { LoaderCircleIcon, SaveIcon, Trash2Icon, UploadIcon } from "lucide-react
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+	groupKnowledgeEntries,
+	isKnowledgeEntrySelectable,
+	type KnowledgeEntryListItem,
+	type KnowledgeSourceListItem,
+	reconcileSelectableEntryIds,
+} from "../lib/knowledge-entry-groups";
+import {
 	getPreviewKnowledgeFileFixture,
 	getPreviewKnowledgeWebFixtureUrl,
 	loadPreviewKnowledgeFixtureFile,
@@ -24,16 +31,11 @@ import {
 	previewKnowledgeWebFixture,
 } from "../lib/preview-knowledge-fixtures";
 
-interface Entry {
-	id: string;
-	question: string;
+interface Entry extends KnowledgeEntryListItem {
 	answer: string;
 	similarQueries: string[];
 	tags: string[];
 	category: string | null;
-	status: string;
-	eligible?: boolean;
-	sourceId: string | null;
 }
 interface ManualPair {
 	id: number;
@@ -44,6 +46,8 @@ interface ManualPair {
 }
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_MANUAL_PAIRS = 20;
+const MAX_LISTED_ENTRIES = 500;
+const MAX_LISTED_SOURCES = 100;
 
 export function KnowledgeEntries({
 	previewFixtureSelectorVisible = false,
@@ -51,17 +55,24 @@ export function KnowledgeEntries({
 	previewFixtureSelectorVisible?: boolean;
 }) {
 	const [entries, setEntries] = useState<Entry[]>([]);
+	const [sources, setSources] = useState<KnowledgeSourceListItem[]>([]);
 	const [selected, setSelected] = useState<Entry | null>(null);
+	const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [category, setCategory] = useState<"PRESALES" | "POSTSALES">("PRESALES");
 	const [manualPairs, setManualPairs] = useState<ManualPair[]>([emptyManualPair(1)]);
 	const [previewFileId, setPreviewFileId] = useState("");
 	const [previewWebUrl, setPreviewWebUrl] = useState("");
 	const fileFormRef = useRef<HTMLFormElement>(null);
-	const refresh = useCallback(
-		async () => setEntries((await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 })).items),
-		[],
-	);
+	const refresh = useCallback(async () => {
+		const [nextEntries, nextSources] = await Promise.all([
+			loadKnowledgeEntries(),
+			loadKnowledgeSources(),
+		]);
+		setEntries(nextEntries);
+		setSources(nextSources);
+		setSelectedEntryIds((current) => reconcileSelectableEntryIds(current, nextEntries));
+	}, []);
 	useEffect(() => {
 		void refresh().catch(() => toastError("无法读取知识条目"));
 	}, [refresh]);
@@ -222,6 +233,42 @@ export function KnowledgeEntries({
 			setBusy(false);
 		}
 	}
+	async function activateSelected() {
+		const selectableIds = reconcileSelectableEntryIds(selectedEntryIds, entries);
+		if (!selectableIds.length) {
+			setSelectedEntryIds([]);
+			return toastError("没有可启用的条目", "只能启用来源当前有效的草稿条目。");
+		}
+		setBusy(true);
+		try {
+			const results: PromiseSettledResult<unknown>[] = [];
+			for (const id of selectableIds) {
+				try {
+					results.push({
+						status: "fulfilled",
+						value: await orpcClient.xiaofei.updateKnowledgeEntry({ id, status: "active" }),
+					});
+				} catch (reason) {
+					results.push({ status: "rejected", reason });
+				}
+			}
+			setSelectedEntryIds([]);
+			await refresh();
+			const failedCount = results.filter((result) => result.status === "rejected").length;
+			if (failedCount) {
+				toastError(
+					"部分条目启用失败",
+					`${selectableIds.length - failedCount} 项已启用，${failedCount} 项请刷新后重试。`,
+				);
+			} else {
+				toastSuccess("已启用所选条目", "现在可在知识单元页面选择这些当前条目。");
+			}
+		} catch (error) {
+			toastError("批量启用失败", message(error));
+		} finally {
+			setBusy(false);
+		}
+	}
 	return (
 		<div className="gap-6 flex flex-col">
 			<div className="gap-4 lg:grid-cols-3 grid">
@@ -373,23 +420,57 @@ export function KnowledgeEntries({
 				<Card>
 					<CardHeader>
 						<CardTitle>知识条目</CardTitle>
-						<CardDescription>{entries.length} 个当前租户条目</CardDescription>
+						<CardDescription>
+							{entries.length} 个当前租户条目；按来源分组，可批量启用复核后的条目。
+						</CardDescription>
 					</CardHeader>
 					<CardContent className="gap-2 flex max-h-[600px] flex-col overflow-auto">
-						{entries.map((entry) => (
-							<button
-								key={entry.id}
-								type="button"
-								className="p-3 rounded-md text-left hover:bg-muted"
-								onClick={() => void openEntry(entry.id)}
-								disabled={busy}
-							>
-								<p className="font-medium line-clamp-2">{entry.question}</p>
-								<p className="text-xs text-muted-foreground">
-									{entry.eligible ? "可用" : "需复核"} · {entry.status}
+						{groupKnowledgeEntries(entries, sources).map((group) => (
+							<div key={group.key} className="gap-1 flex flex-col">
+								<p className="px-3 pt-2 text-xs font-medium text-muted-foreground">
+									来源：{group.label}（{group.entries.length} 项）
 								</p>
-							</button>
+								{group.entries.map((entry) => (
+									<div
+										key={entry.id}
+										className="gap-2 p-3 flex items-start rounded-md hover:bg-muted"
+									>
+										<input
+											aria-label={`选择 ${entry.question}`}
+											type="checkbox"
+											checked={selectedEntryIds.includes(entry.id)}
+											onChange={() =>
+												setSelectedEntryIds((current) =>
+													current.includes(entry.id)
+														? current.filter((id) => id !== entry.id)
+														: [...current, entry.id],
+												)
+											}
+											disabled={busy || !isKnowledgeEntrySelectable(entry)}
+										/>
+										<button
+											type="button"
+											className="flex-1 text-left"
+											onClick={() => void openEntry(entry.id)}
+											disabled={busy}
+										>
+											<p className="font-medium line-clamp-2">{entry.question}</p>
+											<p className="text-xs text-muted-foreground">
+												{entry.eligible ? "可用" : "需复核"} · {entry.status}
+											</p>
+										</button>
+									</div>
+								))}
+							</div>
 						))}
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => void activateSelected()}
+							disabled={busy || !selectedEntryIds.length}
+						>
+							启用所选条目（{selectedEntryIds.length}）
+						</Button>
 					</CardContent>
 				</Card>
 				<Card>
@@ -532,4 +613,34 @@ async function fileToBase64(file: File) {
 	for (let index = 0; index < bytes.length; index += 32_768)
 		binary += String.fromCharCode(...bytes.subarray(index, index + 32_768));
 	return btoa(binary);
+}
+
+async function loadKnowledgeEntries(): Promise<Entry[]> {
+	const entries: Entry[] = [];
+	const seenCursors = new Set<string>();
+	let cursor: string | undefined;
+	while (entries.length < MAX_LISTED_ENTRIES) {
+		const page = await orpcClient.xiaofei.listKnowledgeEntries({ cursor, limit: 50 });
+		entries.push(...(page.items as Entry[]));
+		const nextCursor = page.nextCursor ?? undefined;
+		if (!nextCursor || seenCursors.has(nextCursor)) break;
+		seenCursors.add(nextCursor);
+		cursor = nextCursor;
+	}
+	return entries.slice(0, MAX_LISTED_ENTRIES);
+}
+
+async function loadKnowledgeSources(): Promise<KnowledgeSourceListItem[]> {
+	const sources: KnowledgeSourceListItem[] = [];
+	const seenCursors = new Set<string>();
+	let cursor: string | undefined;
+	while (sources.length < MAX_LISTED_SOURCES) {
+		const page = await orpcClient.xiaofei.listKnowledgeDocuments({ cursor, limit: 50 });
+		sources.push(...(page.items as KnowledgeSourceListItem[]));
+		const nextCursor = page.nextCursor ?? undefined;
+		if (!nextCursor || seenCursors.has(nextCursor)) break;
+		seenCursors.add(nextCursor);
+		cursor = nextCursor;
+	}
+	return sources.slice(0, MAX_LISTED_SOURCES);
 }
