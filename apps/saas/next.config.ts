@@ -3,6 +3,7 @@ import { PrismaPlugin } from "@prisma/nextjs-monorepo-workaround-plugin";
 import type { NextConfig } from "next";
 import nextIntlPlugin from "next-intl/plugin";
 
+// Publish the long-lived UAT Preview through Git so branch-scoped integrations are reapplied.
 const withNextIntl = nextIntlPlugin("./modules/i18n/request.ts");
 
 const nextConfig: NextConfig = {
