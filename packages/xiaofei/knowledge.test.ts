@@ -101,13 +101,13 @@ describe("KnowledgeUnit markdown parser", () => {
 	it("builds released, source-traceable KnowledgeUnits from the P0 template", () => {
 		const units = parseKnowledgeMarkdown(DEFAULT_KNOWLEDGE_MARKDOWN);
 
-		expect(units).toHaveLength(2);
-		expect(units[0]).toMatchObject({
-			title: "商品破损资料收集",
+		expect(units).toHaveLength(9);
+		expect(units[2]).toMatchObject({
+			title: "收货破损、错发或缺件",
 			status: "released",
 			requiredSlots: [
 				{ key: "order_id", label: "订单号" },
-				{ key: "damage_photo", label: "破损照片" },
+				{ key: "damage_photo", label: "问题照片" },
 			],
 			quality: { status: "passed", blockers: [] },
 		});
@@ -169,19 +169,18 @@ describe("KnowledgeUnit markdown parser", () => {
 		expect(snapshot.capabilityPlan).toMatchObject({
 			status: "review_ready",
 			reviewed: false,
-			knowledgeUnitIds: ["商品破损资料收集", "服务范围说明"],
-			fieldMatrix: [
-				{
-					knowledgeId: "商品破损资料收集",
-					fields: ["订单号", "破损照片"],
+			knowledgeUnitIds: expect.arrayContaining([
+				"收货破损-错发或缺件",
+				"退换货与退款规则咨询",
+				"服务范围-寒暄与问题引导",
+			]),
+			fieldMatrix: expect.arrayContaining([
+				expect.objectContaining({
+					knowledgeId: "收货破损-错发或缺件",
+					fields: ["订单号", "问题照片"],
 					exitWhen: "必问字段齐全后转人工核实",
-				},
-				{
-					knowledgeId: "服务范围说明",
-					fields: [],
-					exitWhen: "低风险回复完成或触发转人工条件",
-				},
-			],
+				}),
+			]),
 		});
 		expect(snapshot.gates).toEqual(
 			expect.arrayContaining([

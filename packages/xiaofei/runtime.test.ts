@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+	ConversationStateSchema,
+	XiaofeiWorkspaceSnapshotSchema,
 	createConversationState,
 	createDefaultWorkspaceSnapshot,
 	finalizeTurn,
@@ -61,7 +63,7 @@ describe("P0 runtime kernel", () => {
 	it("collects only the next missing slot and keeps AI ownership", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const prepared = prepareTurn({
-			message: "我收到的杯子碎了",
+			message: "我收到的杯子裂开了",
 			state,
 			snapshot,
 			knowledgeWorkspaceBinding,
@@ -71,7 +73,7 @@ describe("P0 runtime kernel", () => {
 		const result = await finalizeTurn({
 			prepared,
 			snapshot,
-			message: "我收到的杯子碎了",
+			message: "我收到的杯子裂开了",
 			replyGenerator: { generate } as ReplyGenerator,
 			now,
 		});
@@ -84,6 +86,166 @@ describe("P0 runtime kernel", () => {
 			missingSlots: ["order_id", "damage_photo"],
 			remainingFollowUps: 1,
 		});
+	});
+
+	it("keeps low-risk refund policy questions with AI instead of treating the noun as an action", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const prepared = prepareTurn({
+			message: "我想先了解一下退款条件是什么？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "我想先了解一下退款条件是什么？",
+			replyGenerator: { generate: async () => "可以先保留订单信息，并以当前订单规则确认资格。" },
+			now,
+		});
+
+		expect(result.state).toMatchObject({
+			ownerType: "ai",
+			nextAction: "reply",
+			matchedKnowledgeId: "退换货与退款规则咨询",
+		});
+	});
+
+	it("matches a bounded related phrasing without requiring an exact keyword substring", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const deliveryUnit = {
+			...snapshot.knowledgeUnits[1]!,
+			title: "履约追踪",
+			scenarioKeywords: ["如何查询配送进度"],
+			applicableScenarios: [],
+		};
+		snapshot.knowledgeUnits = [deliveryUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [deliveryUnit.id];
+		const prepared = prepareTurn({
+			message: "怎么查询配送进度呢？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			knowledge: { id: deliveryUnit.id },
+			action: "ask_followup",
+		});
+		expect(prepared.traces).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					title: "命中 KnowledgeUnit",
+					detail: expect.stringContaining("related"),
+				}),
+			]),
+		);
+	});
+
+	it("hydrates fallback defaults when reading legacy snapshots and conversation state", async () => {
+		const { snapshot, state } = await setup();
+		const legacySnapshot = JSON.parse(JSON.stringify(snapshot)) as {
+			agent: Record<string, unknown>;
+		};
+		const legacyState = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+		delete legacySnapshot.agent.fallbackPolicy;
+		delete legacyState.consecutiveKnowledgeMisses;
+
+		expect(XiaofeiWorkspaceSnapshotSchema.parse(legacySnapshot).agent.fallbackPolicy).toMatchObject(
+			{
+				maxClarifications: 2,
+			},
+		);
+		expect(ConversationStateSchema.parse(legacyState).consecutiveKnowledgeMisses).toBe(0);
+	});
+
+	it("clarifies consecutive knowledge misses before a soft handoff", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const firstPrepared = prepareTurn({
+			message: "你们火星门店几点关门？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const first = await finalizeTurn({
+			prepared: firstPrepared,
+			snapshot,
+			message: "你们火星门店几点关门？",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+		const secondPrepared = prepareTurn({
+			message: "就是火星线下门店的营业时间",
+			state: first.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const second = await finalizeTurn({
+			prepared: secondPrepared,
+			snapshot,
+			message: "就是火星线下门店的营业时间",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+		const thirdPrepared = prepareTurn({
+			message: "没有其他信息了",
+			state: second.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const third = await finalizeTurn({
+			prepared: thirdPrepared,
+			snapshot,
+			message: "没有其他信息了",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+
+		expect(first.state).toMatchObject({
+			ownerType: "ai",
+			nextAction: "clarify",
+			consecutiveKnowledgeMisses: 1,
+		});
+		expect(second.state).toMatchObject({
+			ownerType: "ai",
+			nextAction: "clarify",
+			consecutiveKnowledgeMisses: 2,
+		});
+		expect(third.state).toMatchObject({
+			ownerType: "human",
+			handoffReason: "knowledge_missing",
+			consecutiveKnowledgeMisses: 3,
+		});
+		expect(third.reply).toContain("不需要重新描述");
+	});
+
+	it("still hands off an explicit refund action request immediately", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const prepared = prepareTurn({
+			message: "请立即给我退款，我不要解释",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "请立即给我退款，我不要解释",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+
+		expect(result.state).toMatchObject({
+			ownerType: "human",
+			handoffReason: "high_risk_action_request",
+		});
+		expect(result.reply).toContain("不需要重新描述");
 	});
 
 	it("hands off after all required information is collected", async () => {
@@ -207,7 +369,7 @@ describe("P0 runtime kernel", () => {
 
 		expect(suite.status).toBe("passed");
 		expect(suite.failed).toBe(0);
-		expect(suite.passed).toBe(4);
+		expect(suite.passed).toBe(snapshot.capabilityPlan.knowledgeUnitIds.length + 2);
 		expect(suite.cases.every((testCase) => testCase.knowledgeMatched)).toBe(true);
 	});
 
@@ -238,7 +400,7 @@ describe("P0 runtime kernel", () => {
 	it("allows optional-only KU slots to reply and keeps Eval expectations aligned", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const optionalOnly = {
-			...snapshot.knowledgeUnits[1]!,
+			...snapshot.knowledgeUnits[0]!,
 			id: "optional-only-policy",
 			title: "净芯年包政策",
 			scenarioKeywords: ["净芯年包"],

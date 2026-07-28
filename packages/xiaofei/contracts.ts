@@ -29,6 +29,26 @@ export const NextActionSchema = z.enum([
 ]);
 export const RiskLevelSchema = z.enum(["low", "medium", "high"]);
 
+export const DEFAULT_FALLBACK_POLICY = {
+	maxClarifications: 2,
+	clarificationReply:
+		"我还没有准确匹配到对应资料，先不急着转人工。请补充商品或服务名称、订单状态，以及你最想确认的问题；也可以直接说“查物流”“退换规则”“商品故障”或“发票支付”。",
+	handoffReply:
+		"我暂时仍没在已审核资料中找到确定答案。为了避免误导，我会把你的问题和已经提供的信息一起转给人工同事继续确认，你不需要重新描述。",
+} as const;
+
+export const FallbackPolicySchema = z
+	.object({
+		maxClarifications: z.number().int().min(0).max(3).default(2),
+		clarificationReply: z
+			.string()
+			.min(1)
+			.max(1_000)
+			.default(DEFAULT_FALLBACK_POLICY.clarificationReply),
+		handoffReply: z.string().min(1).max(1_000).default(DEFAULT_FALLBACK_POLICY.handoffReply),
+	})
+	.default({ ...DEFAULT_FALLBACK_POLICY });
+
 export const AgentProfileSchema = z.object({
 	id: z.string().min(1),
 	tenantId: z.string().min(1),
@@ -40,6 +60,7 @@ export const AgentProfileSchema = z.object({
 	supportedLanguages: z.array(z.string().min(1)).default([]),
 	fallbackLanguage: z.string().min(1),
 	maxFollowUps: z.number().int().nonnegative(),
+	fallbackPolicy: FallbackPolicySchema,
 	forbiddenOutputs: z.array(z.string().min(1)).default([]),
 	handoffRules: z.array(z.string().min(1)).default([]),
 });
@@ -265,6 +286,7 @@ export const ConversationStateSchema = z.object({
 	riskLevel: RiskLevelSchema,
 	nextAction: NextActionSchema,
 	remainingFollowUps: z.number().int().nonnegative(),
+	consecutiveKnowledgeMisses: z.number().int().nonnegative().default(0),
 	handoffReason: z.string().optional(),
 	handoffPackage: HandoffPackageSchema.optional(),
 	sendBlockedReasons: z.array(z.string().min(1)).default([]),
@@ -372,6 +394,7 @@ export type SlotStatus = z.infer<typeof SlotStatusSchema>;
 export type SlotValue = z.infer<typeof SlotValueSchema>;
 export type NextAction = z.infer<typeof NextActionSchema>;
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
+export type FallbackPolicy = z.infer<typeof FallbackPolicySchema>;
 export type HandoffPackage = z.infer<typeof HandoffPackageSchema>;
 export type ConversationState = z.infer<typeof ConversationStateSchema>;
 export type AiRunLease = z.infer<typeof AiRunLeaseSchema>;

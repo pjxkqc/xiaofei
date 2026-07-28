@@ -15,7 +15,7 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 | `conversation.ts` | Conversation creation, owner transitions, lease validation, and slot updates                                                    |
 | `knowledge.ts`    | Deterministic Markdown parsing, KU validation, and knowledge selection                                                          |
 | `runtime.ts`      | P0 turn preparation, risk decisions, candidate finalization, Guardrail, handoff, and trace creation                             |
-| `eval.ts`         | Four deterministic P0 release assertions                                                                                        |
+| `eval.ts`         | Deterministic P0 release assertions for every admitted KU plus risk and fallback behavior                                       |
 | `defaults.ts`     | Default workspace plus deterministic KU capability plans, review transitions, and release gates                                 |
 | `ports.ts`        | Product-owned channel adapter interface                                                                                         |
 
@@ -29,8 +29,10 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
    current owner and epoch.
 3. A customer-visible reply is authorized only after candidate generation and
    final Guardrail evaluation.
-4. Missing released knowledge, high risk, conflicting information, exhausted
-   follow-ups, or a configured handoff condition must fail safely.
+4. Missing released knowledge must not be invented: the runtime first uses the
+   configured clarification budget while AI keeps ownership, then performs a
+   soft handoff. High risk, conflicting information, exhausted collection
+   follow-ups, or an explicit handoff condition still exits immediately.
 5. Automatic handling requires an explicitly reviewed capability plan, and the
    runtime may only select KUs listed in that plan.
 6. High-risk business actions may be described in the tool registry but remain
@@ -44,7 +46,7 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 ```text
 message
   → require reviewed capability plan
-  → select only KUs admitted by that plan
+  → select only KUs admitted by that plan using exact or bounded related-text matching
   → update slots and risk
   → choose reply / follow-up / handoff / stop
   → run selected model adapter when permitted
@@ -58,14 +60,17 @@ send a customer message itself.
 
 ## Knowledge Unit source
 
-The P0 parser treats each Markdown `##` section as one KU. A callable unit needs
+The P0 parser treats each Markdown `##` section as one KU. The enhanced default
+set covers nine common presales and aftersales categories without inventing
+prices, stock, order state, or business-action results. A callable unit needs
 scenario keywords, forbidden output, handoff conditions, standard reply policy,
 and fallback text. Required slots are optional for pure knowledge answers and
 mandatory for collection flows.
 
-Parsing is deterministic so configuration review and Eval results are
-reproducible. Embeddings, vector stores, and document ingestion belong in a
-future retrieval adapter, not in these P0 contracts.
+Parsing and matching are deterministic so configuration review and Eval results
+are reproducible. Matching prefers exact phrases and allows only bounded
+character-pair similarity; an unrelated question does not become model input.
+Embeddings and vector stores remain future retrieval-adapter work.
 
 Saving knowledge regenerates the capability plan and invalidates its previous
 review and Eval evidence. Review admits the exact KU IDs and field matrices;
