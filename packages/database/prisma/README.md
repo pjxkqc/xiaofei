@@ -52,6 +52,9 @@ Source and entry reads and mutations require `workspaceId`. The compound
 `workspaceId_id` selector makes a record from another workspace indistinguishable
 from a missing record at the query boundary. Callers must resolve the
 authenticated tenant to a Xiaofei workspace before using these queries.
+Entry activation revalidates the entry status and source hash/version while
+holding the workspace advisory lock, so a concurrent source update cannot leave
+a stale entry marked active.
 
 Source lists return metadata only; `bodyText` is available only from the
 workspace-scoped get query. Source and entry lists use a stable `(createdAt, id)`

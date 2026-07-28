@@ -33,6 +33,7 @@ vi.mock("@repo/database", () => ({
 	},
 	XiaofeiKnowledgeDocumentSourceType: { FILE: "FILE", WEB: "WEB", MANUAL: "MANUAL" },
 	XiaofeiKnowledgeEntryQuotaError: class XiaofeiKnowledgeEntryQuotaError extends Error {},
+	XiaofeiKnowledgeEntryEligibilityError: class XiaofeiKnowledgeEntryEligibilityError extends Error {},
 	XiaofeiKnowledgeDocumentQuotaError: class XiaofeiKnowledgeDocumentQuotaError extends Error {
 		constructor(
 			readonly quota: "document_count" | "stored_body_bytes",
@@ -73,6 +74,7 @@ import {
 	updateXiaofeiKnowledgeEntry,
 	updateXiaofeiKnowledgeUnit,
 	XiaofeiKnowledgeDocumentQuotaError,
+	XiaofeiKnowledgeEntryEligibilityError,
 } from "@repo/database";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
@@ -646,6 +648,23 @@ describe("knowledge document application boundary", () => {
 			message: expect.stringContaining("current knowledge entries"),
 		});
 		expect(updateXiaofeiKnowledgeEntry).not.toHaveBeenCalled();
+	});
+
+	it("refuses activation when the persistence boundary detects a source-update race", async () => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValueOnce({
+			id: "entry-1",
+			eligible: true,
+		} as never);
+		vi.mocked(updateXiaofeiKnowledgeEntry).mockRejectedValueOnce(
+			new XiaofeiKnowledgeEntryEligibilityError(),
+		);
+
+		await expect(
+			updateKnowledgeEntryForTenant(USER_CONTEXT, "entry-1", { status: "active" }),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining("current draft knowledge entries"),
+		});
 	});
 
 	it("rebuilds the runtime snapshot after a publish so only current eligible KUs are admitted", async () => {

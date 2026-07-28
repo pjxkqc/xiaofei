@@ -87,6 +87,7 @@ import {
 	MAX_XIAOFEI_KNOWLEDGE_ENTRIES_PER_WORKSPACE,
 	updateXiaofeiKnowledgeDocument,
 	updateXiaofeiKnowledgeEntry,
+	XiaofeiKnowledgeEntryEligibilityError,
 } from "./xiaofei";
 
 describe("Xiaofei knowledge document queries", () => {
@@ -545,6 +546,13 @@ describe("Xiaofei knowledge document queries", () => {
 			answer: "a",
 			similarQueries: [],
 			sourceId: "source-1",
+			sourceContentHash: "hash-1",
+			sourceVersion: 2,
+			status: "draft",
+		});
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "hash-1",
+			sourceVersion: 2,
 		});
 		queryMocks.queryRaw.mockResolvedValueOnce([{ count: BigInt(1), bodyBytes: BigInt(2) }]);
 		await updateXiaofeiKnowledgeEntry("workspace-a", "entry-1", { status: "active" });
@@ -556,6 +564,30 @@ describe("Xiaofei knowledge document queries", () => {
 			where: { workspaceId: "workspace-a", entryId: "entry-1" },
 			data: { status: "draft", eligibility: "stale", staleReason: "entry_updated" },
 		});
+	});
+
+	it("rejects activation when the source changed before the locked mutation", async () => {
+		queryMocks.findEntryInTransaction.mockResolvedValueOnce({
+			question: "q",
+			answer: "a",
+			similarQueries: [],
+			sourceId: "source-1",
+			sourceContentHash: "old-hash",
+			sourceVersion: 1,
+			status: "draft",
+		});
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "new-hash",
+			sourceVersion: 2,
+		});
+
+		await expect(
+			updateXiaofeiKnowledgeEntry("workspace-a", "entry-1", { status: "active" }),
+		).rejects.toBeInstanceOf(XiaofeiKnowledgeEntryEligibilityError);
+
+		expect(queryMocks.executeRaw).toHaveBeenCalledOnce();
+		expect(queryMocks.updateEntry).not.toHaveBeenCalled();
+		expect(queryMocks.invalidateUnits).not.toHaveBeenCalled();
 	});
 
 	it("invalidates dependent KUs before deleting an entry", async () => {

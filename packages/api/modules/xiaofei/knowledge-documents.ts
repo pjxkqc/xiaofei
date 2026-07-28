@@ -20,6 +20,7 @@ import {
 	XiaofeiKnowledgeDocumentCategory,
 	XiaofeiKnowledgeDocumentFileType,
 	XiaofeiKnowledgeDocumentSourceType,
+	XiaofeiKnowledgeEntryEligibilityError,
 	XiaofeiKnowledgeEntryQuotaError,
 	XiaofeiKnowledgeDocumentQuotaError,
 } from "@repo/database";
@@ -857,6 +858,11 @@ function throwKnowledgeWriteError(error: unknown): never {
 				? `This workspace can store up to ${error.limit} knowledge entries. Delete one before adding another.`
 				: `This workspace has reached its ${formatMegabytes(error.limit)} MB knowledge entry storage limit.`;
 		throw new ORPCError("BAD_REQUEST", { message });
+	}
+	if (error instanceof XiaofeiKnowledgeEntryEligibilityError) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Only current draft knowledge entries can be activated.",
+		});
 	}
 	throw new ORPCError("INTERNAL_SERVER_ERROR", {
 		message: "The knowledge document could not be saved.",

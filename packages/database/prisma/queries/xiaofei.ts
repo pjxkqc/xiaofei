@@ -134,6 +134,13 @@ export class XiaofeiKnowledgeEntryQuotaError extends Error {
 	}
 }
 
+export class XiaofeiKnowledgeEntryEligibilityError extends Error {
+	constructor() {
+		super("Only current draft knowledge entries can be activated.");
+		this.name = "XiaofeiKnowledgeEntryEligibilityError";
+	}
+}
+
 const DOCUMENT_METADATA_SELECT = {
 	id: true,
 	workspaceId: true,
@@ -427,7 +434,15 @@ export function updateXiaofeiKnowledgeEntry(
 		await lockXiaofeiKnowledgeWorkspace(transaction, workspaceId);
 		const existing = await transaction.xiaofeiKnowledgeEntry.findUnique({
 			where: { workspaceId_id: { workspaceId, id } },
-			select: { question: true, answer: true, similarQueries: true, sourceId: true },
+			select: {
+				question: true,
+				answer: true,
+				similarQueries: true,
+				sourceId: true,
+				sourceContentHash: true,
+				sourceVersion: true,
+				status: true,
+			},
 		});
 		if (!existing)
 			return transaction.xiaofeiKnowledgeEntry.update({
@@ -436,13 +451,25 @@ export function updateXiaofeiKnowledgeEntry(
 			});
 		const sourceId = data.sourceId ?? existing.sourceId;
 		let sourceSnapshot: { contentHash: string | null; sourceVersion: number } | undefined;
-		if (data.sourceId !== undefined) {
+		if (data.sourceId !== undefined || data.status === "active") {
 			sourceSnapshot =
-				(await transaction.xiaofeiKnowledgeDocument.findUnique({
-					where: { workspaceId_id: { workspaceId, id: data.sourceId } },
-					select: { contentHash: true, sourceVersion: true },
-				})) ?? undefined;
-			if (!sourceSnapshot) throw new Error("Knowledge source was not found in this workspace.");
+				sourceId === null
+					? undefined
+					: ((await transaction.xiaofeiKnowledgeDocument.findUnique({
+							where: { workspaceId_id: { workspaceId, id: sourceId } },
+							select: { contentHash: true, sourceVersion: true },
+						})) ?? undefined);
+			if (data.sourceId !== undefined && !sourceSnapshot)
+				throw new Error("Knowledge source was not found in this workspace.");
+		}
+		if (
+			data.status === "active" &&
+			(existing.status !== "draft" ||
+				!sourceSnapshot ||
+				sourceSnapshot.contentHash !== existing.sourceContentHash ||
+				sourceSnapshot.sourceVersion !== existing.sourceVersion)
+		) {
+			throw new XiaofeiKnowledgeEntryEligibilityError();
 		}
 		const next = {
 			question: data.question ?? existing.question,
@@ -461,7 +488,7 @@ export function updateXiaofeiKnowledgeEntry(
 				entryVersion: { increment: 1 },
 				...(sourceId === null
 					? {}
-					: sourceSnapshot
+					: data.sourceId !== undefined && sourceSnapshot
 						? {
 								sourceContentHash: sourceSnapshot.contentHash,
 								sourceVersion: sourceSnapshot.sourceVersion,
