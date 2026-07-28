@@ -290,6 +290,24 @@ export function NavBar() {
 		];
 
 		const orgSettingsPrefix = `${basePath}/settings`;
+		const knowledgeSubItems: NavSubItem[] = [
+			{
+				label: t("app.menu.knowledgeEntries"),
+				href: "/knowledge/entries",
+			},
+			{
+				label: t("app.menu.knowledgeUnits"),
+				href: "/knowledge/units",
+			},
+			{
+				label: t("app.menu.knowledgeCapabilities"),
+				href: "/knowledge/capabilities",
+			},
+			{
+				label: t("app.menu.knowledgeConversationTest"),
+				href: "/chatbot",
+			},
+		];
 		const organizationSubItems: Array<NavSubItem> | undefined =
 			authConfig.organizations.enable && activeOrganization && isOrganizationAdmin
 				? [
@@ -338,10 +356,11 @@ export function NavBar() {
 				isActive: pathname.startsWith("/api-demo"),
 			},
 			{
-				label: t("app.menu.knowledgeDocuments"),
-				href: "/knowledge/units",
+				label: t("app.menu.knowledgeGovernance"),
+				href: "/knowledge/entries",
 				icon: BookOpenTextIcon,
-				isActive: pathname.startsWith("/knowledge/"),
+				isActive: pathname.startsWith("/knowledge/") || pathname === "/chatbot",
+				subItems: knowledgeSubItems,
 			},
 			...(organizationSubItems
 				? [

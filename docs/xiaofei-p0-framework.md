@@ -51,7 +51,7 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 
 ## Implemented P0 path
 
-1. The tenant edits Agent instructions, collection follow-up limits, and the
+1. A support operator edits Agent instructions, collection follow-up limits, and the
    bounded knowledge-miss clarification/soft-handoff policy on
    `/agent-settings`. The same page can load the enhanced nine-category default
    knowledge into a draft without silently overwriting persisted customization.
@@ -63,7 +63,7 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
    takeover/reject boundaries, field matrices, action boundaries, and Eval
    suggestions. A human must review it before automatic handling is admitted.
 4. A Mastra Workflow checks the knowledge and policy boundary.
-5. The tenant can run deterministic business assertions for every currently
+5. The support operator can run deterministic business assertions for every currently
    admitted KU plus fixed high-risk and knowledge-miss cases. They cover
    matching, slot collection, clarification, high-risk handoff, Action, and
    Owner. Saving KU or changing capability review invalidates old Eval evidence.
@@ -97,6 +97,14 @@ recursive crawl. Manual Q&A (up to 20 pairs per submission) bypasses Firecrawl.
 Provider configuration failures are safe errors, so manual Q&A and MD/TXT
 remain available without a provider key. See the [API module guide](../packages/api/modules/xiaofei/README.md)
 for the protected procedure boundary.
+
+For P0, all knowledge sources, entries, KUs, capability admission, Chatbot
+validation, and public conversations map server-side to
+`channel:public-support`. Operator authentication authorizes governance but
+does not select a per-user or per-organization knowledge workspace. The UI
+exposes the demo path as four linked steps: ingestion, KU review, capability
+review/Eval, and conversation testing. Multi-channel tenant mapping remains a
+future Flyranking/LoopDesk adapter concern.
 
 The initial registry deliberately exposes only the boundary:
 

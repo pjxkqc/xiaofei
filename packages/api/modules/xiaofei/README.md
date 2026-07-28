@@ -20,14 +20,14 @@ persistence.
 | `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role           |
 | `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                  |
 | `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                         |
-| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a tenant source document               |
-| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only source document summaries                  |
-| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                                |
+| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document       |
+| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only public-channel source summaries            |
+| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one public-channel source document                               |
 | `updateKnowledgeDocument`                  | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status           |
-| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                              |
+| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one public-channel source document                             |
 | `createKnowledgeWeb`                       | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry  |
 | `createManualKnowledgeEntries`             | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                 |
-| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage tenant-scoped normalized entries and eligibility               |
+| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage public-channel normalized entries and eligibility              |
 | `generate/list/update/deleteKnowledgeUnit` | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
@@ -50,10 +50,13 @@ conversations or choose a workspace. Inbox and governance procedures use
 future `support` role, or `admin`. Flyranking/LoopDesk tenant and channel
 mapping remains a future adapter concern.
 
-Knowledge documents use a separate authenticated operator tenant key: the
-active organization ID when present, otherwise the authenticated user ID.
-Every document query receives the resolved workspace ID; a caller cannot choose
-a workspace ID, and cross-tenant reads or mutations return not found.
+Knowledge sources, normalized entries, generated KUs, capability review, Eval,
+authenticated Chatbot validation, and public conversations all use that same
+server-selected public workspace. Changing the active organization or support
+user does not silently switch the governed knowledge behind the customer
+channel. Every knowledge procedure still starts with `supportProcedure`; the
+browser cannot choose a workspace ID, and row reads or mutations remain scoped
+to the server-resolved workspace.
 
 ## Persistence boundary
 

@@ -12,7 +12,7 @@ import {
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
-import { FlaskConicalIcon, ShieldCheckIcon } from "lucide-react";
+import { FlaskConicalIcon, MessageSquareIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -24,6 +24,7 @@ export function KnowledgeCapabilities() {
 	if (!snapshot)
 		return <div className="py-24 text-sm text-muted-foreground">正在加载能力方案…</div>;
 	const admitted = isAdmitted(snapshot);
+	const hasPublishedKnowledge = snapshot.capabilityPlan.knowledgeUnitIds.length > 0;
 	const toggleReview = async () => {
 		setBusy(true);
 		try {
@@ -76,7 +77,10 @@ export function KnowledgeCapabilities() {
 						将安全转人工。
 					</p>
 					<div className="gap-2 flex flex-wrap">
-						<Button onClick={() => void toggleReview()} disabled={busy}>
+						<Button
+							onClick={() => void toggleReview()}
+							disabled={busy || (!hasPublishedKnowledge && !snapshot.capabilityPlan.reviewed)}
+						>
 							<ShieldCheckIcon className="mr-2 size-4" />
 							{snapshot.capabilityPlan.reviewed ? "撤回审核" : "审核能力方案"}
 						</Button>
@@ -91,7 +95,25 @@ export function KnowledgeCapabilities() {
 						<Button variant="outline" asChild>
 							<Link href="/knowledge/units">审核、发布或撤销 KU</Link>
 						</Button>
+						{admitted ? (
+							<Button asChild>
+								<Link href="/chatbot">
+									<MessageSquareIcon className="mr-2 size-4" />
+									进入会话测试
+								</Link>
+							</Button>
+						) : (
+							<Button disabled>
+								<MessageSquareIcon className="mr-2 size-4" />
+								审核并通过 Eval 后测试
+							</Button>
+						)}
 					</div>
+					{!hasPublishedKnowledge && (
+						<p className="text-sm text-amber-700 dark:text-amber-400">
+							尚无已发布 KU。请返回第 2 步完成审核和发布，再进行能力审核。
+						</p>
+					)}
 				</CardContent>
 			</Card>
 			<Card>

@@ -1,3 +1,4 @@
+import { KnowledgeFlowNav } from "@ai/components/KnowledgeFlowNav";
 import { KnowledgeUnits } from "@ai/components/KnowledgeUnits";
 import { PageHeader } from "@shared/components/PageHeader";
 
@@ -10,6 +11,7 @@ export default function KnowledgeUnitsPage() {
 				className="max-w-7xl mx-auto"
 			/>
 			<div className="max-w-7xl mx-auto">
+				<KnowledgeFlowNav current="units" />
 				<KnowledgeUnits />
 			</div>
 		</>

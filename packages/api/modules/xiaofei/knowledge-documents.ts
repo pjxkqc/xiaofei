@@ -31,7 +31,6 @@ import {
 } from "@repo/xiaofei";
 import { strFromU8, unzipSync } from "fflate";
 
-import { verifyOrganizationMembership } from "../organizations/lib/membership";
 import {
 	createKnowledgeContentParser,
 	KnowledgeContentParserConfigurationError,
@@ -42,6 +41,7 @@ import type { XiaofeiAuthContext } from "./service";
 import {
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	clearKnowledgeWorkspaceAdmission,
+	PUBLIC_SUPPORT_TENANT_KEY,
 	synchronizeKnowledgeWorkspaceSnapshot,
 } from "./service";
 
@@ -110,17 +110,10 @@ interface UpdateKnowledgeUnitInput {
 	fallbackReply?: string;
 }
 
-export async function getKnowledgeTenantKey(context: XiaofeiAuthContext): Promise<string> {
-	const organizationId = context.session.activeOrganizationId;
-	if (!organizationId) return `user:${context.user.id}`;
-
-	const membership = await verifyOrganizationMembership(organizationId, context.user.id);
-	if (!membership) {
-		throw new ORPCError("FORBIDDEN", {
-			message: "You do not have access to the active organization.",
-		});
-	}
-	return `organization:${organizationId}`;
+export async function getKnowledgeTenantKey(_context: XiaofeiAuthContext): Promise<string> {
+	// P0 operates one public support channel. The authenticated context authorizes
+	// governance through supportProcedure; it must not select a different runtime workspace.
+	return PUBLIC_SUPPORT_TENANT_KEY;
 }
 
 export async function createKnowledgeDocument(

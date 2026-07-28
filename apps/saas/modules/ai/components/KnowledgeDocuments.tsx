@@ -128,7 +128,7 @@ export function KnowledgeDocuments({
 			setPreviousCursors([]);
 			await refreshDocuments(undefined);
 			await openDocument(created.id);
-			toastSuccess("文档已上传", "文本已提取并保存到当前租户。");
+			toastSuccess("文档已上传", "文本已提取并保存到公共客服工作区。");
 		} catch (error) {
 			toastError("文档上传失败", getErrorMessage(error));
 		} finally {

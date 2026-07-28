@@ -14,7 +14,7 @@ production-complete Agent Center.
 
 - configure Agent instructions and follow-up limits from a dedicated settings
   page;
-- add tenant-scoped knowledge from local MD/TXT parsing, Firecrawl-parsed
+- add shared public-support knowledge from local MD/TXT parsing, Firecrawl-parsed
   PDF/DOCX/XLSX or a public webpage, and manual Q&A;
 - manage normalized sources on `/knowledge/entries`, then generate, review, and
   publish governed units on `/knowledge/units`;
@@ -39,7 +39,9 @@ production-complete Agent Center.
 The public customer channel is available at `/support`; the authenticated
 support inbox is at `/inbox`. Agent, KU, governance, and Eval settings are
 available at `/agent-settings`, while `/chatbot` remains a runtime evidence
-console.
+console. Knowledge ingestion, KU review, capability admission, and Chatbot
+validation intentionally share the server-selected `channel:public-support`
+workspace in P0 so the operator tests the same knowledge used by customers.
 
 ## Architecture
 

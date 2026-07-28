@@ -6,7 +6,7 @@ organization features inherited from supastarter.
 
 ## Xiaofei surface
 
-The product surface is deliberately kept to six small pages:
+The product surface is deliberately kept to small, focused pages:
 
 - `/support` is a public, no-login customer conversation page;
 - `/inbox` is the authenticated support-agent inbox for online state, ownership,
@@ -17,12 +17,19 @@ The product surface is deliberately kept to six small pages:
   Unit, release-gate, and Eval configuration;
 - `/api-demo` is an authenticated comparison of the public OpenAPI status route
   and the typed browser oRPC client;
-- `/knowledge/entries` adds and manages tenant-scoped normalized entries from a
-  file, one public webpage, or manual Q&A. `/knowledge/documents` remains the
-  source-document view with bounded metadata pages and full bodies loaded only
-  when a document is opened.
+- `/knowledge/entries` adds and manages normalized entries for the shared
+  public-support workspace from a file, one public webpage, or manual Q&A.
+  `/knowledge/documents` remains the source-document view with bounded metadata
+  pages and full bodies loaded only when a document is opened.
 - `/knowledge/units` generates Draft KUs from current normalized entries and
   provides the minimal human review, edit, publish/revoke, and delete surface.
+- `/knowledge/capabilities` reviews the derived capability plan and runs the
+  deterministic Eval gate before conversation use.
+
+The authenticated knowledge and Chatbot pages share a four-step navigation:
+source/entry ingestion → KU generation/review → capability review/Eval →
+conversation testing. The active organization only affects inherited Supa
+surfaces; it does not change this P0 public-support channel's knowledge.
 
 The pages can:
 
@@ -82,6 +89,12 @@ configuration / eval
     → protected xiaofei.* procedure
     → shared P0 `channel:public-support` snapshot in PostgreSQL / Neon
 
+knowledge governance
+  KnowledgeEntries → KnowledgeUnits → KnowledgeCapabilities
+    → support-role /api/rpc procedures
+    → normalized source/entry/KU rows in the same `channel:public-support` workspace
+    → reviewed capability + current Eval evidence in the shared snapshot
+
 conversation
   AiChat
     → same-origin /api/rpc
@@ -120,7 +133,8 @@ pnpm --filter saas dev
 
 The app listens on `http://localhost:3000`. Use `/support` without logging in.
 Create a password user, complete onboarding, then use `/inbox` and
-`/agent-settings` as the support role. Use `/knowledge/entries` to add a UTF-8
+`/agent-settings` as the support role. Use the four-step navigation beginning
+at `/knowledge/entries` to add a UTF-8
 `.md`/`.txt` file, a provider-parsed PDF/DOCX/XLSX, one public webpage, or a
 manual Q&A entry. Provider-only formats and webpages require server-side
 Firecrawl configuration; manual Q&A and MD/TXT do not.
