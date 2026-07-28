@@ -3,6 +3,27 @@ import test from "node:test";
 
 import { cleanupNeonPreview } from "./cleanup-neon-preview.mjs";
 
+void test("preserves the durable uat branch without calling Neon", async () => {
+	let fetchCalled = false;
+
+	const result = await cleanupNeonPreview({
+		apiKey: "",
+		projectId: "",
+		gitBranch: "uat",
+		logger: { log: () => undefined },
+		fetchImpl: async () => {
+			fetchCalled = true;
+			throw new Error("fetch must not be called for uat");
+		},
+	});
+
+	assert.deepEqual(result, {
+		branchName: "preview/uat",
+		status: "preserved",
+	});
+	assert.equal(fetchCalled, false);
+});
+
 void test("deletes only the exact disposable branch and hides the API key from logs", async () => {
 	const requests = [];
 	const logs = [];

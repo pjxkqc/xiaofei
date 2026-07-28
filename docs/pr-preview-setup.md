@@ -6,32 +6,40 @@ merged. Cloud credentials are never committed to the repository.
 
 ## Delivery flow
 
-1. Create a short-lived branch from `main` and open a pull request.
-2. GitHub Actions starts the `quality` workflow with a disposable PostgreSQL
+1. `main` is the only Production source: Vercel Production uses it with Neon
+   `main`. `uat` is the durable UAT source: its Vercel branch Preview uses
+   Neon `preview/uat`.
+2. For normal delivery, create a short-lived feature branch from `uat` and open
+   a pull request back into `uat`. Each feature PR retains its own Vercel
+   Preview URL and Neon `preview/<feature-branch>` database branch.
+3. GitHub Actions starts the `quality` workflow with a disposable PostgreSQL
    service. Vercel starts the Preview deployment independently.
-3. GitHub runs lint, formatting, type checks, unit tests, production builds, and
+4. GitHub runs lint, formatting, type checks, unit tests, production builds, and
    the SaaS and marketing Chromium suites.
-4. The Vercel Git integration builds `apps/saas`. The Neon integration creates
+5. The Vercel Git integration builds `apps/saas`. The Neon integration creates
    `preview/<git-branch>` from the Neon `main` branch and injects that branch's
    pooled and unpooled connection strings into the Preview build.
-5. `scripts/vercel-build.mjs` applies the Prisma schema with the unpooled URL,
+6. `scripts/vercel-build.mjs` applies the Prisma schema with the unpooled URL,
    restores the pooled runtime URL, and builds the application.
-6. The Preview must pass the manual smoke checks below. A new push cancels stale
+7. The Preview must pass the manual smoke checks below. A new push cancels stale
    GitHub work and replaces the branch alias with the latest deployment.
-7. Reviewers pin UI feedback with Vercel Toolbar comments. Every unresolved
+8. Reviewers pin UI feedback with Vercel Toolbar comments. Every unresolved
    comment keeps the `Vercel Preview Comments` check from passing.
-8. Merge only after GitHub quality, Vercel deployment, Preview comments, signup,
-   database isolation, and the real streaming Chatbot have all passed.
-9. GitHub deletes the merged short-lived branch. The
-   `cleanup-preview-database` workflow immediately hard-deletes the matching
-   disposable Neon database branch. Vercel retains immutable deployments
-   according to project retention instead of deleting them synchronously.
+9. Merge a feature only after GitHub quality, Vercel deployment, Preview
+   comments, signup, database isolation, and the real streaming Chatbot have
+   all passed.
+10. GitHub deletes the merged short-lived feature branch. The
+    `cleanup-preview-database` workflow immediately hard-deletes the matching
+    disposable Neon database branch. Vercel retains immutable deployments
+    according to project retention instead of deleting them synchronously.
 
 ```mermaid
 flowchart LR
-  PR["GitHub PR"] --> CI["GitHub quality"]
-  PR --> VP["Vercel Preview"]
-  VP --> NB["Neon preview/<branch>"]
+  FEATURE["feature PR → uat"] --> CI["GitHub quality"]
+  FEATURE --> VP["Vercel Preview"]
+  VP --> NB["Neon preview/<feature-branch>"]
+  UAT["uat branch"] --> UVP["durable Vercel Preview"]
+  UVP --> UNB["Neon preview/uat"]
   VP --> CHAT["/chatbot"]
   CHAT --> RT["Xiaofei governed runtime"]
   RT --> AI["OpenAI-compatible gateway"]
@@ -45,10 +53,10 @@ Preview database exists long enough for interactive product review.
 
 ## GitHub quality gate
 
-`.github/workflows/validate-prs.yml` runs for pull requests into `main`, pushes
-to `main`, and manual dispatches. Its concurrency key is the PR number or Git
-ref, with `cancel-in-progress: true`, so an older commit cannot finish after and
-override the latest result.
+`.github/workflows/validate-prs.yml` runs for pull requests into `main` or
+`uat`, pushes to either branch, and manual dispatches. Its concurrency key is
+the PR number or Git ref, with `cancel-in-progress: true`, so an older commit
+cannot finish after and override the latest result.
 
 The workflow:
 
@@ -63,9 +71,13 @@ GitHub Actions receives placeholder application configuration only. It never
 uses Vercel secrets, the Neon integration connection strings, or the real AI
 gateway key.
 
-Repository setting `delete_branch_on_merge` must remain enabled. This keeps the
-repository tidy and is the event that allows branch-scoped cloud resources to
-become obsolete.
+Repository setting `delete_branch_on_merge` must remain enabled for disposable
+feature and promotion branches. Never open `uat → main` directly: merging that
+PR can delete the durable `uat` branch. For a production promotion, create a
+temporary `promote/uat-YYYYMMDD-*` branch from `uat`, open that branch's PR to
+`main`, and merge only after its gates pass. Then fast-forward `uat` to the
+latest `main`. This keeps the long-lived UAT deployment and data branch intact
+while returning it to the released baseline.
 
 ## Preview UI feedback
 
@@ -94,9 +106,11 @@ comment-to-issue flow is stable and its permissions are intentionally scoped.
 `.github/workflows/cleanup-preview-database.yml` runs only for a same-repository
 PR `closed` event. It looks up the exact `preview/<head-ref>` branch and calls
 the Neon delete API. It never searches by a partial branch name and cannot
-select `main`. Missing or already-deleted branches are successful no-ops, so a
-rerun is safe. GitHub stores the project-scoped `NEON_API_KEY` as an Actions
-secret and the non-secret `NEON_PROJECT_ID` as an Actions variable.
+select `main`. `uat` returns `preserved` before any Neon request, so its durable
+`preview/uat` branch cannot be deleted by this workflow. Missing or
+already-deleted disposable branches are successful no-ops, so a rerun is safe.
+GitHub stores the project-scoped `NEON_API_KEY` as an Actions secret and the
+non-secret `NEON_PROJECT_ID` as an Actions variable.
 
 ## Vercel configuration
 
@@ -126,6 +140,11 @@ None of these variables may use a `NEXT_PUBLIC_` prefix. Changing a Vercel
 variable affects new deployments only; redeploy the relevant commit or push a
 new commit after a rotation.
 
+`uat` reuses the existing Vercel Preview variables; no additional current secret
+is required. Better Auth and Preview one-click login use the same Preview
+behavior as feature branches. Vercel Custom Environments are not required for
+this design.
+
 ## Neon isolation and schema initialization
 
 - Project: `neon-bronze-paddle`
@@ -139,9 +158,36 @@ The integration injects `DATABASE_URL` for pooled application traffic and
 `DIRECT_URL` as an unpooled fallback. The build fails by variable name when
 either connection class is missing; it never prints a connection string.
 
-Every Preview must show a distinct `preview/<git-branch>` branch in Neon.
-Production uses Neon `main`. A Preview must never silently fall back to the
-production database.
+Every feature Preview must show a distinct `preview/<git-branch>` branch in
+Neon. The durable `uat` branch maps to `preview/uat`; Production uses Neon
+`main`. A Preview must never silently fall back to the production database.
+Neon branches are copy-on-write: they begin with a copy of their parent data and
+subsequent writes are isolated. UAT must not contain real sensitive customer
+data.
+
+## Durable UAT operating procedure
+
+After this change is merged, a controller performs these manual steps (this PR
+does not create `uat`, change cloud configuration, or alter production):
+
+1. Create `uat` from the latest `main`, then push it. Confirm the GitHub
+   `quality` workflow runs for the push.
+2. Confirm the stable Vercel `uat` branch alias is Ready and Neon has
+   `preview/uat`.
+3. Use Preview one-click login for a minimal smoke test. Trigger one `uat`
+   redeployment and confirm its UAT data remains present.
+4. Confirm Vercel Production remains on `main` and Neon `main` is unchanged.
+
+For day-to-day work, target feature PRs to `uat`; their branch Preview URLs and
+`preview/<feature-branch>` databases remain disposable and are cleaned after
+close. To release, follow the temporary `promote/uat-YYYYMMDD-* → main` flow
+above, then fast-forward `uat` to `main`.
+
+Current platform limits require manual protection: GitHub Free private
+repositories cannot enforce branch protection, Neon Free has no protected
+branch, and named Vercel Custom Environments require a paid plan. Treat `main`
+and `uat` as controller-managed branches; do not delete, force-push, or directly
+merge `uat → main`.
 
 ## Chatbot request path
 
