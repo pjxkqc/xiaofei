@@ -10,7 +10,7 @@ persistence.
 | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract   |
 | `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                          |
-| `saveConfig`                               | `PUT /xiaofei/config`                               | Rebuild Markdown KU, run Mastra governance, and persist the snapshot  |
+| `saveConfig`                               | `PUT /xiaofei/config`                               | Persist Agent/fallback policy, rebuild KU, and run Mastra governance  |
 | `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs        |
 | `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates              |
 | `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                        |
@@ -57,7 +57,15 @@ a workspace ID, and cross-tenant reads or mutations return not found.
 The service validates JSON snapshots with schemas from `@repo/xiaofei` before
 and after persistence. New workspaces start from the domain default. New
 conversations start from `createConversationState`; existing state and traces
-must parse successfully before use.
+must parse successfully before use. Older JSON snapshots that predate fallback
+policy and consecutive knowledge-miss fields receive domain-owned defaults
+during schema parsing; no database migration or destructive rewrite is needed.
+
+`saveConfig` accepts the Agent's collection follow-up limit plus a bounded
+fallback policy: zero to three knowledge-miss clarification turns, one
+clarification reply, and one final soft-handoff reply. The API only validates
+and persists these values; matching, risk classification, Owner transitions,
+and Guardrail decisions remain in `@repo/xiaofei`.
 
 Knowledge changes regenerate the capability plan and clear stale Eval evidence.
 The API refuses to run Eval before the current capability plan is reviewed.

@@ -12,10 +12,15 @@ vi.mock("../organizations/lib/membership", () => ({
 	verifyOrganizationMembership: vi.fn(),
 }));
 
+import { getXiaofeiWorkspace } from "@repo/database";
 import { createDefaultWorkspaceSnapshot } from "@repo/xiaofei";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
-import { createKnowledgeWorkspaceBinding, getXiaofeiTenantKey } from "./service";
+import {
+	createKnowledgeWorkspaceBinding,
+	getOrCreateXiaofeiWorkspaceByTenantKey,
+	getXiaofeiTenantKey,
+} from "./service";
 
 describe("authenticated Xiaofei workspace binding", () => {
 	beforeEach(() => {
@@ -74,5 +79,24 @@ describe("authenticated Xiaofei workspace binding", () => {
 				channelId: "authenticated:chatbot",
 			}),
 		).toMatchObject({ tenantId: "organization:other-org" });
+	});
+
+	it("loads a legacy persisted snapshot with domain fallback defaults", async () => {
+		const legacySnapshot = JSON.parse(
+			JSON.stringify(createDefaultWorkspaceSnapshot("organization:org-1")),
+		) as { agent: Record<string, unknown> };
+		delete legacySnapshot.agent.fallbackPolicy;
+		vi.mocked(getXiaofeiWorkspace).mockResolvedValue({
+			id: "workspace-1",
+			tenantKey: "organization:org-1",
+			snapshot: legacySnapshot,
+		} as never);
+
+		const result = await getOrCreateXiaofeiWorkspaceByTenantKey("organization:org-1");
+
+		expect(result.snapshot.agent.fallbackPolicy).toMatchObject({
+			maxClarifications: 2,
+			clarificationReply: expect.stringContaining("先不急着转人工"),
+		});
 	});
 });
