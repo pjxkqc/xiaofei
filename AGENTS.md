@@ -45,6 +45,16 @@ assigned role in [`docs/multica/agents.md`](./docs/multica/agents.md).
 - After the final commit or amendment, run `pnpm delivery:head`. Any new commit,
   amendment, rebase, or merge invalidates earlier head and quality evidence.
   Report the exact head SHA plus commands and results in the handoff.
+- For ordinary work, check out the repository with
+  `multica repo checkout https://github.com/pjxkqc/xiaofei --ref uat`, create an
+  `agent/<issue-key>-<short-slug>` branch from `origin/uat`, and open the Draft
+  PR back to `uat`.
+- Never open `uat → main` directly. An explicitly authorized production release
+  uses a temporary `promote/uat-YYYYMMDD-*` branch from the accepted UAT head
+  and a separate PR to `main`; after release, fast-forward `uat` to `main`.
+- Use the repository-owned
+  [`xiaofei-pr-delivery`](./docs/multica/skills/xiaofei-pr-delivery/SKILL.md)
+  workflow for branch, PR, exact-head, Preview, cleanup, and promotion evidence.
 
 ---
 

@@ -9,7 +9,7 @@ project:
   description: >
     Governed customer-service Agent platform with public customer chat,
     authenticated support operations, knowledge governance, safe handoff, and
-    PR-isolated delivery.
+    PR-isolated delivery through a durable UAT branch before Production.
   repository:
     type: github_repo
     url: https://github.com/pjxkqc/xiaofei
@@ -20,6 +20,8 @@ defaults:
   max_concurrent_tasks: 1
   global_instructions: ../../AGENTS.md
   collaboration: collaboration.md
+  development_ref: uat
+  delivery_skill: skills/xiaofei-pr-delivery/SKILL.md
 
 agents:
   - slug: xiaofei-lead
@@ -94,3 +96,17 @@ github:
   pull_request_title_pattern: "[<issue-key>] <outcome>"
   require_issue_key_in_pull_request_body: true
   delete_merged_branch: true
+  development_base: uat
+  production_base: main
+  promotion_branch_pattern: promote/uat-YYYYMMDD-<short-slug>
+  forbid_direct_uat_to_main: true
+
+skills:
+  - name: xiaofei-pr-delivery
+    source: skills/xiaofei-pr-delivery/SKILL.md
+    assign_to:
+      - xiaofei-lead
+      - xiaofei-runtime
+      - xiaofei-app
+      - xiaofei-platform
+      - xiaofei-quality
