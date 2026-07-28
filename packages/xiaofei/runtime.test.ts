@@ -112,6 +112,23 @@ describe("P0 runtime kernel", () => {
 		});
 	});
 
+	it("does not confuse stated intent to learn with a request to execute a refund", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const prepared = prepareTurn({
+			message: "我要了解退款规则和申请流程",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			action: "reply",
+			riskLevel: "low",
+			knowledge: { id: "退换货与退款规则咨询" },
+		});
+	});
+
 	it("matches a bounded related phrasing without requiring an exact keyword substring", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const deliveryUnit = {

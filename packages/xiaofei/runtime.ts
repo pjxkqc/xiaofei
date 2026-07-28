@@ -634,9 +634,25 @@ function detectRisk(
 	if (alwaysEscalate.test(message)) {
 		return { level: "high", reason: "high_risk_or_human_request" };
 	}
-	const actionRequest =
-		/(?:我要|要求|帮我|给我|必须|马上|立即|立刻|want a|need a).{0,16}(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)/iu;
-	if (actionRequest.test(message)) {
+	const informationalQuestion =
+		/(规则|条件|流程|政策|怎么|如何|多久|什么时候|能不能|是否|了解|咨询|请问|问一下|what|how|policy|process)/iu.test(
+			message,
+		);
+	const directAction =
+		/^(?:马上|立即|立刻)?(?:给我|帮我)?(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)[！!。.\s]*$/iu.test(
+			message,
+		);
+	const forcefulAction =
+		/(?:帮我|给我|必须|要求你们?|马上给我|立即给我|立刻给我).{0,12}(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)/iu.test(
+			message,
+		);
+	const statedAction =
+		!informationalQuestion &&
+		/(?:我要|我需要|想要|want a|need a).{0,10}(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)/iu.test(
+			message,
+		);
+	const actionRequest = directAction || forcefulAction || statedAction;
+	if (actionRequest) {
 		return { level: "high", reason: "high_risk_action_request" };
 	}
 	const match = snapshot.guardrails.handoffKeywords.find((keyword) =>
@@ -644,9 +660,7 @@ function detectRisk(
 	);
 	if (
 		match &&
-		(alwaysEscalate.test(match) ||
-			/(冲突|不一致|无法核实)/u.test(match) ||
-			actionRequest.test(message))
+		(alwaysEscalate.test(match) || /(冲突|不一致|无法核实)/u.test(match) || actionRequest)
 	) {
 		return { level: "high", reason: `handoff_keyword:${match}` };
 	}
