@@ -313,7 +313,7 @@ function ConversationItem({
 				/>
 			</div>
 			<p className="mt-1 text-xs truncate text-muted-foreground">
-				{conversation.lastMessage || "新会话"}
+				{conversation.lastMessage ? plainTextMessagePreview(conversation.lastMessage) : "新会话"}
 			</p>
 			<div className="mt-2 gap-2 flex items-center justify-between">
 				<span className="text-[11px] text-muted-foreground">
@@ -325,6 +325,16 @@ function ConversationItem({
 			</div>
 		</button>
 	);
+}
+
+function plainTextMessagePreview(value: string): string {
+	return value
+		.replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
+		.replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
+		.replace(/^\s*(?:[-+*]|\d+[.)])\s+/gmu, "")
+		.replace(/[*_~`>#]/gu, "")
+		.replace(/\s+/gu, " ")
+		.trim();
 }
 
 function OwnerBadge({ conversation }: { conversation: SupportConversation }) {
