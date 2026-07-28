@@ -65,6 +65,11 @@ To roll back immediately, remove the Preview variable or set it to any value
 other than `true`, then redeploy. Production and development deployments stay
 disabled even if the flag is present.
 
+The long-lived `uat` Git branch is also a Vercel Preview deployment, so it uses
+this same one-click login contract. Its stable branch alias and Neon
+`preview/uat` database are the shared UAT environment; short-lived feature
+Previews remain disposable.
+
 ## Request paths
 
 ```text
