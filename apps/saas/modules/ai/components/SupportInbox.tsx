@@ -29,7 +29,10 @@ import {
 	UsersRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
+
+import "streamdown/styles.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
 
 export function SupportInbox() {
 	const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
@@ -346,11 +349,17 @@ function AgentMessageBubble({ message }: { message: SupportMessage }) {
 			</div>
 			<div
 				className={cn(
-					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl whitespace-pre-wrap",
-					isCustomer ? "border bg-muted" : "bg-primary text-primary-foreground",
+					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl",
+					isCustomer
+						? "border bg-muted whitespace-pre-wrap"
+						: "prose prose-sm prose-invert bg-primary text-primary-foreground **:max-w-full",
 				)}
 			>
-				{message.text}
+				{isCustomer ? (
+					message.text
+				) : (
+					<Streamdown className="wrap-break-words">{message.text}</Streamdown>
+				)}
 			</div>
 		</div>
 	);

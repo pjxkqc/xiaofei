@@ -20,7 +20,10 @@ import {
 	UserRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
+
+import "streamdown/styles.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
 
 const STORAGE_KEY = "xiaofei-public-support-conversation";
 
@@ -305,12 +308,18 @@ function MessageBubble({
 			</div>
 			<div
 				className={cn(
-					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl whitespace-pre-wrap",
-					isCustomer ? "bg-primary text-primary-foreground" : "border bg-muted",
+					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl",
+					isCustomer
+						? "bg-primary whitespace-pre-wrap text-primary-foreground"
+						: "prose prose-sm dark:prose-invert border bg-muted **:max-w-full",
 					pending && "opacity-80",
 				)}
 			>
-				{message.text}
+				{isCustomer ? (
+					message.text
+				) : (
+					<Streamdown className="wrap-break-words">{message.text}</Streamdown>
+				)}
 			</div>
 		</div>
 	);
