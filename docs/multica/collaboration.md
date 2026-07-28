@@ -38,21 +38,24 @@ to the squad so the leader can route it.
 
 1. The owner restates outcome, paths, risk, and validation before editing.
 2. The owner checks `AGENTS.md`, this protocol, and the local boundary README.
-3. The owner runs `pnpm delivery:identity` before the first commit and fixes the
+3. The owner uses `$xiaofei-pr-delivery`, checks out the repository with
+   `multica repo checkout https://github.com/pjxkqc/xiaofei --ref uat`, and
+   creates the task branch from the current `origin/uat`.
+4. The owner runs `pnpm delivery:identity` before the first commit and fixes the
    effective identity if it is not approved.
-4. A cross-boundary dependency becomes a child issue or an explicit handoff;
+5. A cross-boundary dependency becomes a child issue or an explicit handoff;
    Agents do not race in shared files.
-5. The owner implements the smallest acceptance-complete change and records
+6. The owner implements the smallest acceptance-complete change and records
    focused evidence.
-6. The owner runs `pnpm delivery:check` before push or handoff.
-7. After the final commit, the owner runs `pnpm delivery:head` and records the
+7. The owner runs `pnpm delivery:check` before push or handoff.
+8. After the final commit, the owner runs `pnpm delivery:head` and records the
    exact head SHA. New commits, amendments, rebases, and merges invalidate prior
    head and quality evidence.
-8. Required-risk categories go to `xiaofei-quality` for independent review.
-9. The owner addresses findings and opens or updates one PR.
-10. A human merges unless the project explicitly enables an automated merge
+9. Required-risk categories go to `xiaofei-quality` for independent review.
+10. The owner addresses findings and opens or updates one Draft PR to `uat`.
+11. A human merges unless the project explicitly enables an automated merge
     policy.
-11. Platform evidence confirms Preview creation/cleanup or production delivery
+12. Platform evidence confirms Preview creation/cleanup or production delivery
     when the issue affects those lifecycles.
 
 ## Delivery preflight
@@ -90,6 +93,7 @@ integration can associate the pull request reliably.
 
 ```text
 branch:   agent/XF-123-short-outcome
+base:     uat
 title:    [XF-123] Short outcome
 PR body:  Multica issue: XF-123
 ```
@@ -98,6 +102,13 @@ Use the actual workspace issue prefix in place of `XF`. Keep one PR focused on
 one parent outcome even when it integrates several already-reviewed child
 issues. Delete merged source branches; Preview database cleanup is handled by
 the repository workflow described in `docs/pr-preview-setup.md`.
+
+Ordinary implementation and documentation PRs target the durable `uat` branch.
+Do not open `uat → main` directly. An explicitly authorized production
+promotion creates `promote/uat-YYYYMMDD-<short-slug>` from the accepted UAT head
+and opens that temporary branch to `main`. After release, fast-forward `uat` to
+the released `main` head. GitHub Free cannot enforce these private-repository
+branch rules, so the Lead and Quality Agent must reject a wrong base.
 
 ## Handoff format
 
@@ -140,6 +151,8 @@ An issue is done only when:
 - required independent review is resolved;
 - canonical docs match the new behavior;
 - the PR links to the Multica issue;
+- an ordinary PR targets `uat`, or an explicitly authorized promotion uses a
+  temporary `promote/uat-*` branch to `main`;
 - Preview evidence is present when behavior is externally observable;
 - production or Preview cleanup status is known when delivery was in scope;
 - deferred work is an explicit issue, not a hidden TODO.

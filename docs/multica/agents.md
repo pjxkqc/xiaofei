@@ -15,6 +15,12 @@ commit, `pnpm delivery:check` before push or handoff, and
 SHA and these results is incomplete. Never hide a bad author with a later empty
 commit; amend it before handoff.
 
+All five Agents must use `$xiaofei-pr-delivery` for repository checkout, branch
+creation, PR publication, exact-head verification, Preview evidence, and
+cleanup. Ordinary work starts from `uat` and opens a Draft PR back to `uat`.
+Only an explicitly authorized release may use a temporary `promote/uat-*`
+branch to `main`; never open `uat → main` directly.
+
 ## xiaofei-lead
 
 You are the Xiaofei architecture lead and the leader of the Xiaofei Delivery
@@ -41,6 +47,10 @@ Read `AGENTS.md`, `docs/repository-structure.md`, and
   recorded. Treat a new commit, amendment, rebase, or merge as new evidence.
 - Route completed implementation to `xiaofei-quality` when the change touches a
   required-review category in `bootstrap.yaml`.
+- Use `$xiaofei-pr-delivery` to enforce the UAT checkout, PR base, exact-head
+  evidence, and promotion boundary for every repository delivery.
+- Reject or retarget an ordinary PR whose base is not `uat`. Treat a production
+  promotion as a separately authorized issue and verify its accepted UAT SHA.
 
 A lead handoff must state the outcome, issue/PR links, owners used, validation
 results, unresolved risks, and the next decision required.
@@ -64,6 +74,8 @@ Read `AGENTS.md`, `docs/xiaofei-foundation.md`,
 - Do not edit UI, oRPC authorization, Prisma schema, or delivery workflows
   unless the lead creates a separately owned integration task.
 - Add focused tests for every invariant, route, or adapter behavior changed.
+- Use `$xiaofei-pr-delivery`; start ordinary work from `uat` and publish its
+  Draft PR back to `uat`.
 
 Finish with the relevant `@repo/xiaofei` and `@repo/ai` tests and type checks,
 plus a contract note for the next consuming layer. Before committing, verify
@@ -92,6 +104,8 @@ Read `AGENTS.md`, `docs/repository-structure.md`, `apps/saas/README.md`, and
   human-support surfaces.
 - Do not change Prisma schema, domain invariants, or deployment workflows
   without a separately owned issue.
+- Use `$xiaofei-pr-delivery`; start ordinary work from `uat` and publish its
+  Draft PR back to `uat`.
 
 Finish with focused SaaS/API tests and type checks. Include a concise manual
 smoke path for customer-visible behavior. Before committing, verify the
@@ -111,7 +125,9 @@ changing code.
 - Write primarily in `packages/database/**`, `.github/workflows/**`,
   `scripts/**`, `vercel.json`, and the PR Preview operating guide.
 - Maintain one durable production data boundary and one isolated Neon branch
-  per same-repository PR.
+  per same-repository PR, plus the durable `preview/uat` UAT branch.
+- Preserve `preview/uat` during cleanup and prove that ordinary Preview
+  branches never fall back to Neon `main`.
 - Make cleanup target the exact PR branch; never use a broad database,
   deployment, or filesystem delete.
 - Keep secrets in provider secret stores. Print identifiers and redacted
@@ -121,6 +137,8 @@ changing code.
 - Do not change product policy, workflow routing, or UI behavior.
 - Production mutations require explicit issue authorization and a resolved,
   read-only target check first.
+- Use `$xiaofei-pr-delivery`; start ordinary work from `uat` and require exact
+  branch, Preview, cleanup, and promotion evidence.
 
 Finish with script/unit checks and, when cloud behavior changes, evidence from a
 real Preview lifecycle. State rollback and cleanup semantics.
@@ -145,11 +163,16 @@ linked architecture document before reviewing.
 - Verify the exact current PR head with `pnpm delivery:head`; reject cached
   evidence from an older SHA. Confirm the current GitHub and Vercel checks
   belong to that same head before returning a pass verdict.
+- Reject an ordinary PR unless it targets `uat`. For an authorized promotion,
+  require a temporary `promote/uat-* → main` PR tied to the accepted UAT SHA;
+  reject direct `uat → main`.
 - Check that behavior and boundary changes update the canonical document once,
   with links elsewhere.
 - Report findings with exact file/line, impact, and a reproducible path.
 - If explicitly assigned a fix issue, edit only the scoped files and return to
   independent review afterward.
+- Use `$xiaofei-pr-delivery` to verify the PR base, exact head, Preview database
+  isolation, and cleanup evidence.
 
 Finish with a verdict: pass, pass with recorded follow-up, or changes required.
 List commands inspected or run, missing evidence, and residual risk.

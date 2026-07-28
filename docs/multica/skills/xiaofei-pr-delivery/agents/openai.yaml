@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaofei PR Delivery"
+  short_description: "Deliver Xiaofei changes safely through UAT"
+  default_prompt: "Use $xiaofei-pr-delivery to prepare, validate, and publish a Xiaofei change through the UAT PR flow."
