@@ -26,8 +26,11 @@ The product surface is deliberately kept to six small pages:
 
 The pages can:
 
-- edit Agent instructions and follow-up limits, or import/edit Markdown
-  knowledge;
+- edit Agent instructions, collection follow-up limits, and the bounded
+  knowledge-miss clarification/soft-handoff policy;
+- load the enhanced nine-category default knowledge into the current draft, or
+  import/edit Markdown knowledge without silently overwriting persisted tenant
+  customization;
 - save configuration through the protected Xiaofei oRPC module;
 - review the capability plan derived from released KUs;
 - run deterministic KU-match, Action, and Owner release assertions;

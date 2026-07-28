@@ -13,7 +13,7 @@ import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
-import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
+import { DEFAULT_KNOWLEDGE_MARKDOWN, type XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
 import {
 	BracesIcon,
@@ -22,6 +22,7 @@ import {
 	FlaskConicalIcon,
 	MessageSquareIcon,
 	NetworkIcon,
+	RotateCcwIcon,
 	SaveIcon,
 	ShieldCheckIcon,
 	SparklesIcon,
@@ -33,6 +34,7 @@ import { useEffect, useState } from "react";
 interface ConfigDraft {
 	instructions: string;
 	maxFollowUps: number;
+	fallbackPolicy: XiaofeiWorkspaceSnapshot["agent"]["fallbackPolicy"];
 	knowledgeMarkdown: string;
 }
 
@@ -85,6 +87,15 @@ export function XiaofeiAgentSettings() {
 		}
 	};
 
+	const loadEnhancedDefaultKnowledge = () => {
+		if (!draft) return;
+		setDraft({ ...draft, knowledgeMarkdown: DEFAULT_KNOWLEDGE_MARKDOWN });
+		toastSuccess(
+			"增强版默认知识已载入草稿",
+			"包含 9 类售前售后场景；保存后仍需审核能力方案并重新运行 Eval。",
+		);
+	};
+
 	const reviewCapability = async () => {
 		if (!snapshot) return;
 		setReviewing(true);
@@ -133,6 +144,9 @@ export function XiaofeiAgentSettings() {
 	const hasUnsavedChanges =
 		draft.instructions !== snapshot.agent.instructions ||
 		draft.maxFollowUps !== snapshot.agent.maxFollowUps ||
+		draft.fallbackPolicy.maxClarifications !== snapshot.agent.fallbackPolicy.maxClarifications ||
+		draft.fallbackPolicy.clarificationReply !== snapshot.agent.fallbackPolicy.clarificationReply ||
+		draft.fallbackPolicy.handoffReply !== snapshot.agent.fallbackPolicy.handoffReply ||
 		draft.knowledgeMarkdown !== snapshot.knowledgeMarkdown;
 	const capabilityReviewed = snapshot.capabilityPlan.reviewed;
 	const evalPassed = snapshot.evalSuite.status === "passed" && snapshot.evalSuite.failed === 0;
@@ -204,8 +218,8 @@ export function XiaofeiAgentSettings() {
 								/>
 							</div>
 
-							<div className="gap-2 max-w-40 flex flex-col">
-								<Label htmlFor="max-follow-ups">最大追问轮次</Label>
+							<div className="gap-2 max-w-52 flex flex-col">
+								<Label htmlFor="max-follow-ups">资料收集最大追问轮次</Label>
 								<Input
 									id="max-follow-ups"
 									type="number"
@@ -219,6 +233,76 @@ export function XiaofeiAgentSettings() {
 										})
 									}
 								/>
+							</div>
+						</CardContent>
+					</Card>
+
+					<Card>
+						<CardHeader>
+							<CardTitle>兜底策略</CardTitle>
+							<CardDescription>
+								知识未命中时先澄清并保留 AI 托管，达到上限后才使用软性话术转人工。
+							</CardDescription>
+						</CardHeader>
+						<CardContent className="gap-5 flex flex-col">
+							<div className="gap-2 max-w-52 flex flex-col">
+								<Label htmlFor="max-clarifications">未命中澄清轮数</Label>
+								<Input
+									id="max-clarifications"
+									type="number"
+									min={0}
+									max={3}
+									value={draft.fallbackPolicy.maxClarifications}
+									onChange={(event) =>
+										setDraft({
+											...draft,
+											fallbackPolicy: {
+												...draft.fallbackPolicy,
+												maxClarifications: Number(event.target.value),
+											},
+										})
+									}
+								/>
+								<p className="text-xs text-muted-foreground">
+									设为 0 会在首次知识缺失时直接软性转人工；建议保留 1–2 轮。
+								</p>
+							</div>
+							<div className="gap-2 flex flex-col">
+								<Label htmlFor="clarification-reply">澄清回复</Label>
+								<Textarea
+									id="clarification-reply"
+									value={draft.fallbackPolicy.clarificationReply}
+									onChange={(event) =>
+										setDraft({
+											...draft,
+											fallbackPolicy: {
+												...draft.fallbackPolicy,
+												clarificationReply: event.target.value,
+											},
+										})
+									}
+									className="min-h-24"
+								/>
+							</div>
+							<div className="gap-2 flex flex-col">
+								<Label htmlFor="handoff-reply">最终软性转人工回复</Label>
+								<Textarea
+									id="handoff-reply"
+									value={draft.fallbackPolicy.handoffReply}
+									onChange={(event) =>
+										setDraft({
+											...draft,
+											fallbackPolicy: {
+												...draft.fallbackPolicy,
+												handoffReply: event.target.value,
+											},
+										})
+									}
+									className="min-h-24"
+								/>
+								<p className="text-xs text-muted-foreground">
+									该话术也用于替换被最终 Guardrail 拦截的不安全模型回复。
+								</p>
 							</div>
 						</CardContent>
 					</Card>
@@ -240,19 +324,31 @@ export function XiaofeiAgentSettings() {
 								<p className="text-xs text-muted-foreground">
 									可直接编辑，也可导入 `.md` / `.txt` 文件覆盖当前草稿。
 								</p>
-								<Button variant="outline" size="sm" asChild>
-									<label htmlFor="knowledge-file" className="cursor-pointer">
-										<UploadIcon className="mr-2 size-4" />
-										导入知识文件
-										<input
-											id="knowledge-file"
-											type="file"
-											accept=".md,.txt,text/markdown,text/plain"
-											className="hidden"
-											onChange={(event) => void importKnowledgeMarkdown(event)}
-										/>
-									</label>
-								</Button>
+								<div className="gap-2 flex flex-wrap">
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={loadEnhancedDefaultKnowledge}
+										disabled={draft.knowledgeMarkdown === DEFAULT_KNOWLEDGE_MARKDOWN}
+									>
+										<RotateCcwIcon className="mr-2 size-4" />
+										载入增强默认知识
+									</Button>
+									<Button variant="outline" size="sm" asChild>
+										<label htmlFor="knowledge-file" className="cursor-pointer">
+											<UploadIcon className="mr-2 size-4" />
+											导入知识文件
+											<input
+												id="knowledge-file"
+												type="file"
+												accept=".md,.txt,text/markdown,text/plain"
+												className="hidden"
+												onChange={(event) => void importKnowledgeMarkdown(event)}
+											/>
+										</label>
+									</Button>
+								</div>
 							</div>
 							<Textarea
 								value={draft.knowledgeMarkdown}
@@ -531,6 +627,7 @@ function toDraft(snapshot: XiaofeiWorkspaceSnapshot): ConfigDraft {
 	return {
 		instructions: snapshot.agent.instructions,
 		maxFollowUps: snapshot.agent.maxFollowUps,
+		fallbackPolicy: { ...snapshot.agent.fallbackPolicy },
 		knowledgeMarkdown: snapshot.knowledgeMarkdown,
 	};
 }

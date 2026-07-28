@@ -49,6 +49,16 @@ const PROMPT_SUGGESTIONS = [
 	},
 	{
 		icon: ShieldCheckIcon,
+		text: "了解退款规则",
+		prompt: "请问一般退款条件和流程是什么？",
+	},
+	{
+		icon: BotIcon,
+		text: "演示知识缺失澄清",
+		prompt: "你们火星线下门店几点关门？",
+	},
+	{
+		icon: ShieldCheckIcon,
 		text: "演示高风险退出",
 		prompt: "我要投诉你们，马上给我退款",
 	},
