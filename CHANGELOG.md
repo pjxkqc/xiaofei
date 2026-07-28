@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-29
+
+### Changed
+
+- Added a canonical Release status page for the current Production, UAT, and
+  PR Preview revisions, stable URLs, feature differences, and safe test access.
+- Added the Release page and GitHub Release/tag steps to the Multica production
+  promotion workflow.
+
 ## 2026-07-28
 
 ### Changed

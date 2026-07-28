@@ -212,6 +212,7 @@ configuration, required evidence, cleanup semantics, and troubleshooting.
 - [P0 framework architecture](./docs/xiaofei-p0-framework.md)
 - [Domain foundation and invariants](./docs/xiaofei-foundation.md)
 - [PR Preview CI/CD](./docs/pr-preview-setup.md)
+- [Current release, environments, URLs, and test access](./docs/releases/README.md)
 - [Repository structure and ownership](./docs/repository-structure.md)
 - [Multica import and multi-Agent workflow](./docs/multica/README.md)
 - [Coding agent guidelines](./AGENTS.md)
