@@ -59,6 +59,8 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 2. MD/TXT content is normalized locally; PDF/DOCX/XLSX and one public webpage
    are parsed through the server-side Firecrawl provider. Operators generate,
    review, and publish source-backed `KnowledgeUnit`s on `/knowledge/units`.
+   Generated presales context fields remain optional so ordinary FAQ and model
+   recommendations cannot accidentally enter the collect-then-handoff path.
 3. The domain derives a capability plan from released KUs: callable KU IDs,
    takeover/reject boundaries, field matrices, action boundaries, and Eval
    suggestions. A human must review it before automatic handling is admitted.

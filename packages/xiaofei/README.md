@@ -67,6 +67,12 @@ scenario keywords, forbidden output, handoff conditions, standard reply policy,
 and fallback text. Required slots are optional for pure knowledge answers and
 mandatory for collection flows.
 
+For generated source-backed knowledge, the domain deterministically keeps
+`PRESALES` slots optional even if a model candidate marks them required. This
+prevents an ordinary FAQ or recommendation from entering the
+collect-then-handoff path while preserving required slots for explicit
+aftersales collection flows and hand-authored KUs.
+
 Parsing and matching are deterministic so configuration review and Eval results
 are reproducible. Matching prefers exact phrases and allows only bounded
 character-pair similarity; an unrelated question does not become model input.

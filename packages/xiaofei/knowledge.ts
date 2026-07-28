@@ -42,9 +42,14 @@ export function createKnowledgeUnitDrafts(input: {
 		if (!entry || entry.workspaceId !== input.workspaceId || entry.status !== "active") {
 			throw new Error("Draft KU candidate references an ineligible knowledge entry.");
 		}
+		const requiredSlots =
+			entry.category === "PRESALES"
+				? parsed.requiredSlots.map((slot) => ({ ...slot, required: false }))
+				: parsed.requiredSlots;
 
 		return KnowledgeUnitDraftSchema.parse({
 			...parsed,
+			requiredSlots,
 			id: `${entry.id}-draft-${index + 1}`,
 			status: "draft",
 			sourceSection: entry.question,

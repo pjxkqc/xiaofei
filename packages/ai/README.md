@@ -48,6 +48,11 @@ An adapter may generate a candidate response, but it cannot:
 - execute refund, compensation, reshipment, or another high-risk write;
 - decide that an unreleased KU is safe.
 
+Structured KU generation also treats ordinary FAQ and presales context fields
+as optional. The vendor-neutral domain layer enforces that rule again before a
+Draft is created; aftersales collection fields retain their explicit required
+semantics.
+
 ## Extending the conversation flow
 
 1. Add or refine LangGraph nodes behind the existing `RuntimeTurnResult`

@@ -68,6 +68,37 @@ describe("KnowledgeUnit markdown parser", () => {
 		).toThrow();
 	});
 
+	it("keeps generated presales Q&A slots optional without changing postsales collection", () => {
+		const candidate = {
+			...validCandidate(),
+			requiredSlots: [
+				{
+					key: "room_area",
+					label: "使用空间面积",
+					askText: "请补充使用空间面积。",
+					required: true,
+				},
+			],
+		};
+		const [presalesDraft] = createKnowledgeUnitDrafts({
+			workspaceId: "workspace-1",
+			entries: [{ ...activeEntry, category: "PRESALES" }],
+			candidates: [candidate],
+		});
+		const [postsalesDraft] = createKnowledgeUnitDrafts({
+			workspaceId: "workspace-1",
+			entries: [activeEntry],
+			candidates: [candidate],
+		});
+
+		expect(presalesDraft?.requiredSlots).toEqual([
+			expect.objectContaining({ key: "room_area", required: false }),
+		]);
+		expect(postsalesDraft?.requiredSlots).toEqual([
+			expect.objectContaining({ key: "room_area", required: true }),
+		]);
+	});
+
 	it("rejects candidates from another workspace and invalidates all dependent lineage", () => {
 		expect(() =>
 			createKnowledgeUnitDrafts({
