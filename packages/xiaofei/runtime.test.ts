@@ -242,8 +242,7 @@ describe("P0 runtime kernel", () => {
 			snapshot,
 			message: "C-Air Mini 适合多大的房间？",
 			replyGenerator: {
-				generate: async () =>
-					"C-Air Mini 适合 8–20㎡ 的房间。如果方便，请说一下房间面积、是否需要联网。",
+				generate: async () => "C-Air Mini 适合 8–20㎡ 的房间，最低噪音 25dB(A)，不支持 Wi-Fi。",
 			},
 			now,
 		});
