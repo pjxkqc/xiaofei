@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-28
+
+### Changed
+
+- Expanded the Xiaofei P0 default knowledge from two to nine presales and
+  aftersales categories.
+- Added bounded related-text KU matching and separated informational refund
+  questions from explicit high-risk action requests.
+- Added configurable knowledge-miss clarification and soft-handoff behavior to
+  the existing Agent settings page.
+
 ## 2026-07-23
 
 ### Changed

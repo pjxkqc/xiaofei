@@ -48,6 +48,14 @@ Changing a source or normalized entry deterministically revokes KU eligibility,
 capability review, and Eval evidence. This does not replace the final Guardrail
 or `ownerEpoch` lease check; those remain the customer-visible send authority.
 
+Knowledge absence is fail-safe without being an automatic ownership transfer.
+The kernel may send only a configured, deterministic clarification reply while
+keeping AI ownership; it never asks a model to invent missing facts. A bounded
+consecutive-miss counter then moves the conversation to a soft human handoff.
+Explicit human requests, complaints, legal or safety risk, conflicting
+evidence, and high-risk business-action requests still bypass clarification
+and hand off immediately.
+
 This maps to the source requirements for session state, admission and handling
 rights, human handoff, response blocking, and execution records.
 
