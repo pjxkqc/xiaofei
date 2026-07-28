@@ -97,8 +97,9 @@ describe("authenticated Xiaofei workspace binding", () => {
 		const result = await getOrCreateXiaofeiWorkspaceByTenantKey("organization:org-1");
 
 		expect(result.snapshot.agent.fallbackPolicy).toMatchObject({
-			maxClarifications: 2,
+			maxClarifications: 5,
 			clarificationReply: expect.stringContaining("先不急着转人工"),
+			attentionReply: expect.stringContaining("待关注"),
 		});
 	});
 

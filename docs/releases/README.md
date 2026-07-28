@@ -60,10 +60,11 @@ quality runs Node.js 22, and the repository declares Node.js 22 or newer.
 | Preview fixture selectors and one-click operator                                              | Hidden     | Yes | Yes              |
 | Flyranking/LoopDesk target architecture documentation                                         | No         | Yes | Yes              |
 | Reusable Multica `xiaofei-pr-delivery` skill                                                  | No         | Yes | Yes              |
-| Nine-category default knowledge, bounded clarification, and soft handoff                      | No         | No  | Yes              |
+| Nine-category default knowledge, bounded clarification, and explicit-risk handoff             | No         | No  | Yes              |
 | Shared public-support governance workspace and four-step knowledge-to-conversation navigation | No         | No  | Yes              |
 | Presales slots kept non-blocking and generated `C-Air`/`Wi-Fi` product terms preserved        | No         | No  | Yes              |
 | Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | No         | No  | Yes              |
+| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | No         | No  | Yes              |
 
 The table describes deployed revisions, not merely code that exists somewhere
 in the repository. UAT currently adds delivery and target-architecture
@@ -112,8 +113,8 @@ authorization header to this page, a GitHub Release, or a Multica issue.
    create or review normalized entries.
 3. Continue through `/knowledge/units` and `/knowledge/capabilities`; publish
    only reviewed KUs and require passing current-version Eval evidence.
-4. Use `/chatbot` to verify a governed answer, provenance, knowledge-miss
-   clarification, and soft handoff.
+4. Use `/chatbot` to verify a governed answer, provenance, contextual follow-up,
+   and knowledge-miss attention without automatic exit.
 5. Open `/support` in a signed-out browser, send a customer question, and
    confirm the same conversation and owner state in `/inbox`.
 

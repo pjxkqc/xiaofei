@@ -50,11 +50,14 @@ or `ownerEpoch` lease check; those remain the customer-visible send authority.
 
 Knowledge absence is fail-safe without being an automatic ownership transfer.
 The kernel may send only a configured, deterministic clarification reply while
-keeping AI ownership; it never asks a model to invent missing facts. A bounded
-consecutive-miss counter then moves the conversation to a soft human handoff.
-Explicit human requests, complaints, legal or safety risk, conflicting
-evidence, and high-risk business-action requests still bypass clarification
-and hand off immediately.
+keeping AI ownership; it never asks a model to invent missing facts. Every miss
+creates an operator-visible attention state. Reaching the configured
+clarification budget changes the deterministic customer reply but does not
+transfer ownership, so a later message that matches reviewed knowledge can
+clear the attention state and resume a governed reply. Explicit human requests,
+complaints, legal or safety risk, conflicting evidence, high-risk
+business-action requests, and required human-permission actions still bypass
+clarification and hand off immediately.
 
 This maps to the source requirements for session state, admission and handling
 rights, human handoff, response blocking, and execution records.

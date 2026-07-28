@@ -120,7 +120,9 @@ export async function sendPublicSupportMessage(externalId: string, text: string)
 export async function listSupportConversations(): Promise<SupportConversationSummary[]> {
 	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
 	const conversations = await listXiaofeiConversations(workspace.id);
-	return conversations.map(toSummary);
+	return conversations
+		.map(toSummary)
+		.sort((left, right) => Number(right.attentionRequired) - Number(left.attentionRequired));
 }
 
 export async function getSupportConversation(externalId: string) {
@@ -202,6 +204,9 @@ function toSummary(record: SupportConversationRecord): SupportConversationSummar
 		status: record.status,
 		ownerType: state.ownerType,
 		stage: state.stage,
+		attentionRequired: state.operatorAttention !== null,
+		attentionReason: state.operatorAttention?.reason ?? null,
+		attentionSince: state.operatorAttention?.since ?? null,
 		online:
 			record.lastCustomerSeenAt !== null &&
 			Date.now() - record.lastCustomerSeenAt.getTime() <= ONLINE_WINDOW_MS,

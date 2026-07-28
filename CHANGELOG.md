@@ -8,6 +8,10 @@
   PR Preview revisions, stable URLs, feature differences, and safe test access.
 - Added the Release page and GitHub Release/tag steps to the Multica production
   promotion workflow.
+- Preserved the last admitted KU for bounded contextual follow-ups such as room
+  size and networking answers.
+- Replaced automatic handoff after repeated knowledge misses with an
+  operator-visible attention state while Xiaofei keeps handling later messages.
 
 ## 2026-07-28
 

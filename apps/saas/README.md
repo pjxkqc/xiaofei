@@ -34,7 +34,7 @@ surfaces; it does not change this P0 public-support channel's knowledge.
 The pages can:
 
 - edit Agent instructions, collection follow-up limits, and the bounded
-  knowledge-miss clarification/soft-handoff policy;
+  knowledge-miss clarification/operator-attention policy;
 - load the enhanced nine-category default knowledge into the current draft, or
   import/edit Markdown knowledge without silently overwriting persisted tenant
   customization;
@@ -47,6 +47,9 @@ The pages can:
 - reset the server-side demonstration conversation.
 - persist public customer/human messages and poll the shared channel without
   introducing a second realtime stack.
+- prioritize knowledge-miss conversations in `/inbox` with a visible
+  **待人工关注** state while Xiaofei retains ownership and keeps matching later
+  customer messages.
 - upload, scrape, or manually add knowledge; inspect, edit, change lifecycle
   status, and delete normalized entries and source documents.
 - page through bounded metadata-only document lists while loading body text

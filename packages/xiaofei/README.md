@@ -29,10 +29,11 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
    current owner and epoch.
 3. A customer-visible reply is authorized only after candidate generation and
    final Guardrail evaluation.
-4. Missing released knowledge must not be invented: the runtime first uses the
-   configured clarification budget while AI keeps ownership, then performs a
-   soft handoff. High risk, conflicting information, exhausted collection
-   follow-ups, or an explicit handoff condition still exits immediately.
+4. Missing released knowledge must not be invented: the runtime uses the
+   configured clarification budget, marks the conversation for operator
+   attention, and keeps AI ownership so later answerable messages can recover.
+   High risk, conflicting information, exhausted required-slot collection, or
+   an explicit handoff condition still exits immediately.
 5. Automatic handling requires an explicitly reviewed capability plan, and the
    runtime may only select KUs listed in that plan.
 6. High-risk business actions may be described in the tool registry but remain
@@ -77,8 +78,10 @@ Parsing and matching are deterministic so configuration review and Eval results
 are reproducible. Matching preserves explicit Latin product phrases such as
 `C-Air`, `Wi-Fi`, and `CADR` inside generated composite fields, prefers exact
 phrases, and allows only bounded character-pair similarity; an unrelated
-question does not become model input. Embeddings and vector stores remain
-future retrieval-adapter work.
+question does not become model input. A short answer to an immediately preceding
+question may reuse the last admitted KU when the prior reply explicitly invited
+details such as room size, networking, budget, model, or order number. Embeddings
+and vector stores remain future retrieval-adapter work.
 
 Saving knowledge regenerates the capability plan and invalidates its previous
 review and Eval evidence. Review admits the exact KU IDs and field matrices;

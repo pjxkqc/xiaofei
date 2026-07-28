@@ -15,11 +15,12 @@ export const saveXiaofeiConfig = supportProcedure
 	.input(
 		z.object({
 			instructions: z.string().min(20).max(4_000),
-			maxFollowUps: z.number().int().min(1).max(5),
+			maxFollowUps: z.number().int().min(1).max(10),
 			fallbackPolicy: z
 				.object({
-					maxClarifications: z.number().int().min(0).max(3),
+					maxClarifications: z.number().int().min(0).max(10),
 					clarificationReply: z.string().trim().min(1).max(1_000),
+					attentionReply: z.string().trim().min(1).max(1_000),
 					handoffReply: z.string().trim().min(1).max(1_000),
 				})
 				.optional(),

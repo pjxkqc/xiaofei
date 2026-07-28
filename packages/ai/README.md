@@ -38,7 +38,10 @@ to React components, traces, test snapshots, or logs.
 
 The graph receives a message, current `ConversationState`, and validated
 `XiaofeiWorkspaceSnapshot`, and returns a `RuntimeTurnResult`. The Mastra Agent
-implements the smaller `ReplyGenerator` boundary.
+implements the smaller `ReplyGenerator` boundary. When the domain admits a
+bounded contextual follow-up, the adapter includes Xiaofei's previous safe
+reply so a short answer such as room size plus networking preference can be
+understood without asking the customer to repeat the product name.
 
 An adapter may generate a candidate response, but it cannot:
 

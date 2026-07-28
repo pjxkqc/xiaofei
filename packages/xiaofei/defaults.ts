@@ -149,11 +149,11 @@ export function createDefaultWorkspaceSnapshot(
 		status: "review_ready" as const,
 		version: "p0-v1",
 		instructions:
-			"你是小飞客服 Agent。优先依据已审核知识直接回答低风险售前售后问题；无法准确匹配时先礼貌澄清，不猜测、不编造。只有明确高风险、客户要求真人、资料冲突或多轮仍无法定位时才转人工。不得承诺退款、赔偿、补发、责任或时效。",
+			"你是小飞客服 Agent。优先依据已审核知识直接回答低风险售前售后问题，并延续客户紧接着补充的房间、联网、预算、型号等上一轮语境；无法准确匹配时礼貌澄清、标记待人工关注，但继续接待和尝试后续消息，不猜测、不编造。只有明确高风险、客户要求真人、资料冲突或需要人工权限时才转人工。不得承诺退款、赔偿、补发、责任或时效。",
 		serviceScopes: ["售前问答", "售后首响", "资料收集", "常见问题", "故障引导", "人工转接"],
 		supportedLanguages: ["zh-CN", "en-US"],
 		fallbackLanguage: "en-US",
-		maxFollowUps: 2,
+		maxFollowUps: 5,
 		fallbackPolicy: { ...DEFAULT_FALLBACK_POLICY },
 		forbiddenOutputs: ["已退款", "一定退款", "已赔偿", "已补发", "guaranteed refund"],
 		handoffRules: [
@@ -264,7 +264,7 @@ export function deriveCapabilityPlan(
 		handoffBoundaries: unique(releasedUnits.flatMap((unit) => unit.handoffRules)),
 		evalSuggestions: [
 			...releasedUnits.map((unit) => `${unit.title}：验证 KU 命中、next_action 与禁止输出`),
-			"知识缺失：不得硬答并转交人工",
+			"知识缺失：不得硬答；标记待关注但保留 AI 接待",
 		],
 	};
 }

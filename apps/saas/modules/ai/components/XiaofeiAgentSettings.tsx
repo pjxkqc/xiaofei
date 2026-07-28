@@ -146,6 +146,7 @@ export function XiaofeiAgentSettings() {
 		draft.maxFollowUps !== snapshot.agent.maxFollowUps ||
 		draft.fallbackPolicy.maxClarifications !== snapshot.agent.fallbackPolicy.maxClarifications ||
 		draft.fallbackPolicy.clarificationReply !== snapshot.agent.fallbackPolicy.clarificationReply ||
+		draft.fallbackPolicy.attentionReply !== snapshot.agent.fallbackPolicy.attentionReply ||
 		draft.fallbackPolicy.handoffReply !== snapshot.agent.fallbackPolicy.handoffReply ||
 		draft.knowledgeMarkdown !== snapshot.knowledgeMarkdown;
 	const capabilityReviewed = snapshot.capabilityPlan.reviewed;
@@ -224,7 +225,7 @@ export function XiaofeiAgentSettings() {
 									id="max-follow-ups"
 									type="number"
 									min={1}
-									max={5}
+									max={10}
 									value={draft.maxFollowUps}
 									onChange={(event) =>
 										setDraft({
@@ -241,7 +242,7 @@ export function XiaofeiAgentSettings() {
 						<CardHeader>
 							<CardTitle>兜底策略</CardTitle>
 							<CardDescription>
-								知识未命中时先澄清并保留 AI 托管，达到上限后才使用软性话术转人工。
+								知识未命中时标记客服关注但保留小飞接待；明确风险或人工请求才转接。
 							</CardDescription>
 						</CardHeader>
 						<CardContent className="gap-5 flex flex-col">
@@ -251,7 +252,7 @@ export function XiaofeiAgentSettings() {
 									id="max-clarifications"
 									type="number"
 									min={0}
-									max={3}
+									max={10}
 									value={draft.fallbackPolicy.maxClarifications}
 									onChange={(event) =>
 										setDraft({
@@ -264,7 +265,7 @@ export function XiaofeiAgentSettings() {
 									}
 								/>
 								<p className="text-xs text-muted-foreground">
-									设为 0 会在首次知识缺失时直接软性转人工；建议保留 1–2 轮。
+									达到轮数后改用“待关注回复”，不会自动退出会话；建议设置 3–5 轮。
 								</p>
 							</div>
 							<div className="gap-2 flex flex-col">
@@ -285,7 +286,27 @@ export function XiaofeiAgentSettings() {
 								/>
 							</div>
 							<div className="gap-2 flex flex-col">
-								<Label htmlFor="handoff-reply">最终软性转人工回复</Label>
+								<Label htmlFor="attention-reply">待人工关注回复</Label>
+								<Textarea
+									id="attention-reply"
+									value={draft.fallbackPolicy.attentionReply}
+									onChange={(event) =>
+										setDraft({
+											...draft,
+											fallbackPolicy: {
+												...draft.fallbackPolicy,
+												attentionReply: event.target.value,
+											},
+										})
+									}
+									className="min-h-24"
+								/>
+								<p className="text-xs text-muted-foreground">
+									连续未命中超过澄清轮数后使用；客服工作台会显示待关注，但小飞继续匹配后续消息。
+								</p>
+							</div>
+							<div className="gap-2 flex flex-col">
+								<Label htmlFor="handoff-reply">真正转人工回复</Label>
 								<Textarea
 									id="handoff-reply"
 									value={draft.fallbackPolicy.handoffReply}

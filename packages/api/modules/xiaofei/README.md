@@ -68,10 +68,12 @@ policy and consecutive knowledge-miss fields receive domain-owned defaults
 during schema parsing; no database migration or destructive rewrite is needed.
 
 `saveConfig` accepts the Agent's collection follow-up limit plus a bounded
-fallback policy: zero to three knowledge-miss clarification turns, one
-clarification reply, and one final soft-handoff reply. The API only validates
-and persists these values; matching, risk classification, Owner transitions,
-and Guardrail decisions remain in `@repo/xiaofei`.
+fallback policy: zero to ten knowledge-miss clarification turns, a
+clarification reply, an operator-attention reply, and a true handoff reply. A
+knowledge miss is projected into the support conversation summary so `/inbox`
+can prioritize it without transferring ownership. The API only validates and
+persists these values; matching, risk classification, Owner transitions, and
+Guardrail decisions remain in `@repo/xiaofei`.
 
 Knowledge changes regenerate the capability plan and clear stale Eval evidence.
 The API refuses to run Eval before the current capability plan is reviewed.

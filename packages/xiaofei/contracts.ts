@@ -30,21 +30,24 @@ export const NextActionSchema = z.enum([
 export const RiskLevelSchema = z.enum(["low", "medium", "high"]);
 
 export const DEFAULT_FALLBACK_POLICY = {
-	maxClarifications: 2,
+	maxClarifications: 5,
 	clarificationReply:
 		"我还没有准确匹配到对应资料，先不急着转人工。请补充商品或服务名称、订单状态，以及你最想确认的问题；也可以直接说“查物流”“退换规则”“商品故障”或“发票支付”。",
+	attentionReply:
+		"这个问题目前没有已审核资料可以准确回答，我已经为客服标记为待关注，但小飞会继续接待。你可以继续补充信息，或直接提出其他问题。",
 	handoffReply:
 		"我暂时仍没在已审核资料中找到确定答案。为了避免误导，我会把你的问题和已经提供的信息一起转给人工同事继续确认，你不需要重新描述。",
 } as const;
 
 export const FallbackPolicySchema = z
 	.object({
-		maxClarifications: z.number().int().min(0).max(3).default(2),
+		maxClarifications: z.number().int().min(0).max(10).default(5),
 		clarificationReply: z
 			.string()
 			.min(1)
 			.max(1_000)
 			.default(DEFAULT_FALLBACK_POLICY.clarificationReply),
+		attentionReply: z.string().min(1).max(1_000).default(DEFAULT_FALLBACK_POLICY.attentionReply),
 		handoffReply: z.string().min(1).max(1_000).default(DEFAULT_FALLBACK_POLICY.handoffReply),
 	})
 	.default({ ...DEFAULT_FALLBACK_POLICY });
@@ -271,6 +274,13 @@ export const HandoffPackageSchema = z.object({
 	createdAt: z.string().min(1),
 });
 
+export const ConversationAttentionSchema = z.object({
+	reason: z.literal("knowledge_missing"),
+	since: z.string().min(1),
+	latestAt: z.string().min(1),
+	missCount: z.number().int().positive(),
+});
+
 export const ConversationStateSchema = z.object({
 	id: z.string().min(1),
 	tenantId: z.string().min(1),
@@ -287,6 +297,7 @@ export const ConversationStateSchema = z.object({
 	nextAction: NextActionSchema,
 	remainingFollowUps: z.number().int().nonnegative(),
 	consecutiveKnowledgeMisses: z.number().int().nonnegative().default(0),
+	operatorAttention: ConversationAttentionSchema.nullable().default(null),
 	handoffReason: z.string().optional(),
 	handoffPackage: HandoffPackageSchema.optional(),
 	sendBlockedReasons: z.array(z.string().min(1)).default([]),
@@ -357,6 +368,9 @@ export const SupportConversationSummarySchema = z.object({
 	status: SupportConversationStatusSchema,
 	ownerType: OwnerTypeSchema,
 	stage: ConversationStageSchema,
+	attentionRequired: z.boolean().default(false),
+	attentionReason: z.string().nullable().default(null),
+	attentionSince: z.string().nullable().default(null),
 	online: z.boolean(),
 	assignedUserName: z.string().nullable(),
 	lastMessage: z.string(),
@@ -396,6 +410,7 @@ export type NextAction = z.infer<typeof NextActionSchema>;
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 export type FallbackPolicy = z.infer<typeof FallbackPolicySchema>;
 export type HandoffPackage = z.infer<typeof HandoffPackageSchema>;
+export type ConversationAttention = z.infer<typeof ConversationAttentionSchema>;
 export type ConversationState = z.infer<typeof ConversationStateSchema>;
 export type AiRunLease = z.infer<typeof AiRunLeaseSchema>;
 export type TraceEvent = z.infer<typeof TraceEventSchema>;

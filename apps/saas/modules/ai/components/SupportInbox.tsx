@@ -20,6 +20,7 @@ import type {
 import { orpcClient } from "@shared/lib/orpc-client";
 import {
 	ArrowUpIcon,
+	BellRingIcon,
 	BotIcon,
 	BookOpenIcon,
 	ExternalLinkIcon,
@@ -204,11 +205,19 @@ export function SupportInbox() {
 											{conversation.online ? "在线" : "离线"}
 										</Badge>
 										<OwnerBadge conversation={conversation} />
+										{conversation.attentionRequired && (
+											<Badge status="warning">
+												<BellRingIcon className="mr-1 size-3" />
+												待人工关注
+											</Badge>
+										)}
 									</div>
 									<CardDescription className="mt-1">
-										{conversation.handoffReason
-											? `转人工原因：${conversation.handoffReason}`
-											: "公共网站客服渠道"}
+										{conversation.attentionRequired
+											? "知识暂未命中；小飞仍在接待并会继续尝试匹配，人工可旁观或主动接管。"
+											: conversation.handoffReason
+												? `转人工原因：${conversation.handoffReason}`
+												: "公共网站客服渠道"}
 									</CardDescription>
 								</div>
 								<Button
@@ -316,9 +325,14 @@ function ConversationItem({
 				{conversation.lastMessage ? plainTextMessagePreview(conversation.lastMessage) : "新会话"}
 			</p>
 			<div className="mt-2 gap-2 flex items-center justify-between">
-				<span className="text-[11px] text-muted-foreground">
-					{conversation.ownerType === "ai" ? "小飞接待" : "人工接待"}
-				</span>
+				<div className="gap-1.5 flex items-center">
+					<span className="text-[11px] text-muted-foreground">
+						{conversation.ownerType === "ai" ? "小飞接待" : "人工接待"}
+					</span>
+					{conversation.attentionRequired && (
+						<span className="font-medium text-warning text-[11px]">待关注</span>
+					)}
+				</div>
 				<span className="text-[11px] text-muted-foreground">
 					{formatListTime(conversation.lastMessageAt ?? conversation.updatedAt)}
 				</span>

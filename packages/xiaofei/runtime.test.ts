@@ -84,7 +84,7 @@ describe("P0 runtime kernel", () => {
 			ownerType: "ai",
 			nextAction: "ask_followup",
 			missingSlots: ["order_id", "damage_photo"],
-			remainingFollowUps: 1,
+			remainingFollowUps: 4,
 		});
 	});
 
@@ -207,14 +207,100 @@ describe("P0 runtime kernel", () => {
 
 		expect(XiaofeiWorkspaceSnapshotSchema.parse(legacySnapshot).agent.fallbackPolicy).toMatchObject(
 			{
-				maxClarifications: 2,
+				maxClarifications: 5,
+				attentionReply: expect.stringContaining("待关注"),
 			},
 		);
 		expect(ConversationStateSchema.parse(legacyState).consecutiveKnowledgeMisses).toBe(0);
+		expect(ConversationStateSchema.parse(legacyState).operatorAttention).toBeNull();
 	});
 
-	it("clarifies consecutive knowledge misses before a soft handoff", async () => {
+	it("keeps the matched KU for a short contextual answer to the previous reply", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const productUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "c-air-mini",
+			title: "C-Air Mini 选型",
+			scenarioKeywords: ["C-Air Mini", "小房间空气净化器"],
+			applicableScenarios: ["客户询问 C-Air Mini 的适用面积和联网能力"],
+			requiredSlots: [],
+			standardReplyPolicy:
+				"C-Air Mini 适合 8–20㎡，最低噪音 25dB(A)，不支持 Wi-Fi；需要联网时说明该型号不符合需求。",
+		};
+		snapshot.knowledgeUnits = [productUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [productUnit.id];
+
+		const firstPrepared = prepareTurn({
+			message: "C-Air Mini 适合多大的房间？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const first = await finalizeTurn({
+			prepared: firstPrepared,
+			snapshot,
+			message: "C-Air Mini 适合多大的房间？",
+			replyGenerator: {
+				generate: async () =>
+					"C-Air Mini 适合 8–20㎡ 的房间。如果方便，请说一下房间面积、是否需要联网。",
+			},
+			now,
+		});
+		const secondPrepared = prepareTurn({
+			message: "20平方，需要联网",
+			state: first.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const second = await finalizeTurn({
+			prepared: secondPrepared,
+			snapshot,
+			message: "20平方，需要联网",
+			replyGenerator: {
+				generate: async () => "面积符合，但 C-Air Mini 不支持 Wi-Fi，需要选择支持联网的型号。",
+			},
+			now,
+		});
+		const unrelatedPrepared = prepareTurn({
+			message: "你们火星门店几点关门？",
+			state: first.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(secondPrepared).toMatchObject({
+			action: "reply",
+			knowledge: { id: productUnit.id },
+		});
+		expect(unrelatedPrepared).toMatchObject({
+			action: "clarify",
+			knowledge: null,
+		});
+		expect(secondPrepared.traces).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					title: "命中 KnowledgeUnit",
+					detail: expect.stringContaining("context"),
+				}),
+			]),
+		);
+		expect(second).toMatchObject({
+			reply: expect.stringContaining("不支持 Wi-Fi"),
+			state: {
+				ownerType: "ai",
+				matchedKnowledgeId: productUnit.id,
+				consecutiveKnowledgeMisses: 0,
+				operatorAttention: null,
+			},
+		});
+	});
+
+	it("marks knowledge misses for operator attention without relinquishing AI ownership", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		snapshot.agent.fallbackPolicy.maxClarifications = 1;
 		const firstPrepared = prepareTurn({
 			message: "你们火星门店几点关门？",
 			state,
@@ -243,17 +329,17 @@ describe("P0 runtime kernel", () => {
 			replyGenerator: { generate: vi.fn() },
 			now,
 		});
-		const thirdPrepared = prepareTurn({
-			message: "没有其他信息了",
+		const recoveredPrepared = prepareTurn({
+			message: "怎么查询配送进度呢？",
 			state: second.state,
 			snapshot,
 			knowledgeWorkspaceBinding,
 			now,
 		});
-		const third = await finalizeTurn({
-			prepared: thirdPrepared,
+		const recovered = await finalizeTurn({
+			prepared: recoveredPrepared,
 			snapshot,
-			message: "没有其他信息了",
+			message: "怎么查询配送进度呢？",
 			replyGenerator: { generate: vi.fn() },
 			now,
 		});
@@ -262,18 +348,28 @@ describe("P0 runtime kernel", () => {
 			ownerType: "ai",
 			nextAction: "clarify",
 			consecutiveKnowledgeMisses: 1,
+			operatorAttention: {
+				reason: "knowledge_missing",
+				missCount: 1,
+			},
 		});
 		expect(second.state).toMatchObject({
 			ownerType: "ai",
-			nextAction: "clarify",
+			nextAction: "fallback",
 			consecutiveKnowledgeMisses: 2,
+			operatorAttention: {
+				reason: "knowledge_missing",
+				missCount: 2,
+			},
 		});
-		expect(third.state).toMatchObject({
-			ownerType: "human",
-			handoffReason: "knowledge_missing",
-			consecutiveKnowledgeMisses: 3,
+		expect(second.reply).toContain("待关注");
+		expect(recovered.state).toMatchObject({
+			ownerType: "ai",
+			matchedKnowledgeId: "订单与物流进度",
+			consecutiveKnowledgeMisses: 0,
+			operatorAttention: null,
 		});
-		expect(third.reply).toContain("不需要重新描述");
+		expect(recovered.state.nextAction).toBe("ask_followup");
 	});
 
 	it("still hands off an explicit refund action request immediately", async () => {

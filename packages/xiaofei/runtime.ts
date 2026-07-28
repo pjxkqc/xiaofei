@@ -157,6 +157,13 @@ function prepareTurnInternal(
 	}
 
 	if (!knowledge) {
+		const missCount = state.consecutiveKnowledgeMisses + 1;
+		const operatorAttention = {
+			reason: "knowledge_missing" as const,
+			since: state.operatorAttention?.since ?? at,
+			latestAt: at,
+			missCount,
+		};
 		if (state.consecutiveKnowledgeMisses < input.snapshot.agent.fallbackPolicy.maxClarifications) {
 			return {
 				state: withDecision(state, {
@@ -164,7 +171,8 @@ function prepareTurnInternal(
 					riskLevel: "low",
 					action: "clarify",
 					at,
-					consecutiveKnowledgeMisses: state.consecutiveKnowledgeMisses + 1,
+					consecutiveKnowledgeMisses: missCount,
+					operatorAttention,
 				}),
 				knowledge: null,
 				action: "clarify",
@@ -176,8 +184,8 @@ function prepareTurnInternal(
 						state.id,
 						"policy",
 						at,
-						"知识缺失先澄清",
-						`第 ${state.consecutiveKnowledgeMisses + 1}/${input.snapshot.agent.fallbackPolicy.maxClarifications} 次澄清，继续由 AI 托管。`,
+						"知识缺失，等待人工关注",
+						`第 ${missCount}/${input.snapshot.agent.fallbackPolicy.maxClarifications} 次澄清；已标记待关注，继续由 AI 托管。`,
 					),
 				],
 			};
@@ -185,18 +193,26 @@ function prepareTurnInternal(
 		return {
 			state: withDecision(state, {
 				knowledge: null,
-				riskLevel: "medium",
-				action: "handoff",
-				handoffReason: "knowledge_missing",
+				riskLevel: "low",
+				action: "fallback",
 				at,
-				consecutiveKnowledgeMisses: state.consecutiveKnowledgeMisses + 1,
+				consecutiveKnowledgeMisses: missCount,
+				operatorAttention,
 			}),
 			knowledge: null,
-			action: "handoff",
-			riskLevel: "medium",
-			reply: input.snapshot.agent.fallbackPolicy.handoffReply,
-			handoffReason: "knowledge_missing",
-			traces,
+			action: "fallback",
+			riskLevel: "low",
+			reply: input.snapshot.agent.fallbackPolicy.attentionReply,
+			traces: [
+				...traces,
+				trace(
+					state.id,
+					"policy",
+					at,
+					"知识缺失持续观察",
+					`已连续 ${missCount} 次未命中；通知人工关注，但不移交处理权，后续消息继续尝试匹配。`,
+				),
+			],
 		};
 	}
 
@@ -422,6 +438,7 @@ function withDecision(
 		at: string;
 		remainingFollowUps?: number;
 		consecutiveKnowledgeMisses?: number;
+		operatorAttention?: ConversationState["operatorAttention"];
 	},
 ): ConversationState {
 	const stage =
@@ -433,8 +450,8 @@ function withDecision(
 
 	return ConversationStateSchema.parse({
 		...state,
-		scenario: input.knowledge?.title ?? null,
-		matchedKnowledgeId: input.knowledge?.id ?? null,
+		scenario: input.knowledge?.title ?? state.scenario,
+		matchedKnowledgeId: input.knowledge?.id ?? state.matchedKnowledgeId,
 		slots: input.slots ?? state.slots,
 		missingSlots: input.missingSlots ?? [],
 		riskLevel: input.riskLevel,
@@ -444,6 +461,11 @@ function withDecision(
 		remainingFollowUps: input.remainingFollowUps ?? state.remainingFollowUps,
 		consecutiveKnowledgeMisses:
 			input.consecutiveKnowledgeMisses ?? (input.knowledge ? 0 : state.consecutiveKnowledgeMisses),
+		operatorAttention: input.knowledge
+			? null
+			: input.operatorAttention === undefined
+				? state.operatorAttention
+				: input.operatorAttention,
 		updatedAt: input.at,
 	});
 }
@@ -463,12 +485,34 @@ function selectKnowledge(
 		.sort((left, right) => right.score - left.score);
 	if (ranked[0]) return ranked[0];
 
-	const canUseConversationContext =
-		state.stage === "info_gathering" || state.missingSlots.length > 0;
+	const canUseConversationContext = shouldUseConversationContext(message, state);
 	const contextual = canUseConversationContext
 		? released.find((unit) => unit.id === state.matchedKnowledgeId)
 		: undefined;
 	return contextual ? { knowledge: contextual, score: 1, reason: "context" } : null;
+}
+
+function shouldUseConversationContext(message: string, state: ConversationState): boolean {
+	if (!state.matchedKnowledgeId) return false;
+	if (state.nextAction === "ask_followup" || state.missingSlots.length > 0) return true;
+
+	const normalizedMessage = normalizeSearchText(message);
+	if (!normalizedMessage || normalizedMessage.length > 80 || !state.lastReply) return false;
+
+	const lastReplyInvitedFollowUp =
+		/[?？]/u.test(state.lastReply) ||
+		/(请|方便|告诉我|补充|确认|是否|需要|可以继续|想了解)/u.test(state.lastReply);
+	if (!lastReplyInvitedFollowUp) return false;
+
+	const looksLikeFollowUpAnswer =
+		/(^|[，,。\s])(?:是|不是|要|不要|需要|不需要|可以|不可以|有|没有|大概|左右|这个|那个|它|前面|刚才)|(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(
+			message,
+		);
+	if (looksLikeFollowUpAnswer) return true;
+
+	const replyPairs = characterPairs(normalizeSearchText(state.lastReply));
+	const messagePairs = characterPairs(normalizedMessage);
+	return [...messagePairs].filter((pair) => replyPairs.has(pair)).length >= 2;
 }
 
 function bestKnowledgeTermMatch(

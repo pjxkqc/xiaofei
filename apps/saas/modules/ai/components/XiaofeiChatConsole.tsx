@@ -100,7 +100,7 @@ export function XiaofeiChatConsole() {
 				</div>
 				{!admitted && (
 					<p className="text-sm text-amber-700 dark:text-amber-400">
-						当前能力方案未完成审核与 Eval；Chatbot 将按兜底策略澄清，并在达到上限后软性转人工。
+						当前能力方案未完成审核与 Eval；自动回复会被安全准入门禁阻止。
 					</p>
 				)}
 			</CardHeader>

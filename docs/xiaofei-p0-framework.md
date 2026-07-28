@@ -52,7 +52,7 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 ## Implemented P0 path
 
 1. A support operator edits Agent instructions, collection follow-up limits, and the
-   bounded knowledge-miss clarification/soft-handoff policy on
+   bounded knowledge-miss clarification/operator-attention policy on
    `/agent-settings`. The same page can load the enhanced nine-category default
    knowledge into a draft without silently overwriting persisted customization.
    File, webpage, and manual-Q&A sources remain on `/knowledge/entries`.
@@ -77,10 +77,12 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 7. The complete candidate reply is generated before it becomes customer
    visible. The final Guardrail can replace it with a safe fallback and transfer
    ownership to a human.
-8. A knowledge miss first uses the configured deterministic clarification
-   budget while AI retains ownership. Exhausting the budget performs a soft
-   handoff; an explicit human request, complaint, legal/safety risk, or
-   high-risk action request still exits immediately.
+8. A knowledge miss uses the configured deterministic clarification budget,
+   marks the conversation for operator attention, and retains AI ownership.
+   Exhausting the budget changes the safe reply without exiting, so a later
+   reviewed-KU match can recover automatically. An explicit human request,
+   complaint, legal/safety risk, or high-risk action request still exits
+   immediately.
 9. `ownerEpoch` changes on handoff, invalidating stale AI work. Conversation
    state and business-readable traces are stored in Neon.
 10. A no-login customer receives a random conversation token. The public page
