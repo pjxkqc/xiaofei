@@ -475,9 +475,14 @@ function bestKnowledgeTermMatch(
 	normalizedMessage: string,
 	knowledge: KnowledgeUnit,
 ): { score: number; reason: "exact" | "related" } | null {
-	const terms = [...knowledge.scenarioKeywords, ...knowledge.applicableScenarios, knowledge.title]
-		.map(normalizeSearchText)
-		.filter((term) => term.length >= 2);
+	const terms = [
+		...new Set(
+			[...knowledge.scenarioKeywords, ...knowledge.applicableScenarios, knowledge.title]
+				.flatMap(expandKnowledgeSearchTerm)
+				.map(normalizeSearchText)
+				.filter((term) => term.length >= 2),
+		),
+	];
 	let best: { score: number; reason: "exact" | "related" } | null = null;
 
 	for (const term of terms) {
@@ -490,6 +495,11 @@ function bestKnowledgeTermMatch(
 		if (candidate && (!best || candidate.score > best.score)) best = candidate;
 	}
 	return best;
+}
+
+function expandKnowledgeSearchTerm(value: string): string[] {
+	const explicitProductTerms = value.match(/[A-Za-z][A-Za-z0-9]*(?:[- ][A-Za-z0-9]+)*/gu) ?? [];
+	return [value, ...explicitProductTerms.filter((term) => normalizeSearchText(term).length >= 4)];
 }
 
 function relatedTextScore(

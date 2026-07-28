@@ -46,7 +46,7 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 ```text
 message
   → require reviewed capability plan
-  → select only KUs admitted by that plan using exact or bounded related-text matching
+  → select only KUs admitted by that plan using exact product terms or bounded related-text matching
   → update slots and risk
   → choose reply / follow-up / handoff / stop
   → run selected model adapter when permitted
@@ -74,9 +74,11 @@ collect-then-handoff path while preserving required slots for explicit
 aftersales collection flows and hand-authored KUs.
 
 Parsing and matching are deterministic so configuration review and Eval results
-are reproducible. Matching prefers exact phrases and allows only bounded
-character-pair similarity; an unrelated question does not become model input.
-Embeddings and vector stores remain future retrieval-adapter work.
+are reproducible. Matching preserves explicit Latin product phrases such as
+`C-Air`, `Wi-Fi`, and `CADR` inside generated composite fields, prefers exact
+phrases, and allows only bounded character-pair similarity; an unrelated
+question does not become model input. Embeddings and vector stores remain
+future retrieval-adapter work.
 
 Saving knowledge regenerates the capability plan and invalidates its previous
 review and Eval evidence. Review admits the exact KU IDs and field matrices;

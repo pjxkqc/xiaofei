@@ -70,8 +70,10 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
    matching, slot collection, clarification, high-risk handoff, Action, and
    Owner. Saving KU or changing capability review invalidates old Eval evidence.
 6. Chat turns always enter the LangGraph StateGraph. Only reviewed capability
-   KUs are callable. Matching prefers exact configured phrases, then a bounded
-   related-text score, and only the safe reply branch invokes Mastra Agent.
+   KUs are callable. Matching preserves explicit product phrases inside
+   generated composite fields, prefers exact configured phrases, then a
+   bounded related-text score, and only the safe reply branch invokes Mastra
+   Agent.
 7. The complete candidate reply is generated before it becomes customer
    visible. The final Guardrail can replace it with a safe fallback and transfer
    ownership to a human.

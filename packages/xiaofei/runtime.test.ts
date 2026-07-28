@@ -161,6 +161,41 @@ describe("P0 runtime kernel", () => {
 		);
 	});
 
+	it("preserves explicit product terms inside generated composite knowledge fields", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const productUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			title: "澄风 C-Air 常见问答",
+			scenarioKeywords: ["Wi-Fi联网模块", "空气净化器选型"],
+			applicableScenarios: ["用户询问 C-Air Pro 是否适合会议室"],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [productUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [productUnit.id];
+		for (const message of ["C-Air Pro 适合 40 平方米会议室吗？", "Wi-Fi 能否连接会议室网络？"]) {
+			const prepared = prepareTurn({
+				message,
+				state,
+				snapshot,
+				knowledgeWorkspaceBinding,
+				now,
+			});
+
+			expect(prepared).toMatchObject({
+				knowledge: { id: productUnit.id },
+				action: "reply",
+			});
+			expect(prepared.traces).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						title: "命中 KnowledgeUnit",
+						detail: expect.stringContaining("exact"),
+					}),
+				]),
+			);
+		}
+	});
+
 	it("hydrates fallback defaults when reading legacy snapshots and conversation state", async () => {
 		const { snapshot, state } = await setup();
 		const legacySnapshot = JSON.parse(JSON.stringify(snapshot)) as {
