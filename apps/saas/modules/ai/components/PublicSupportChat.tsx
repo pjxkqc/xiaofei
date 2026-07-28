@@ -39,6 +39,9 @@ export function PublicSupportChat() {
 			conversationId,
 		});
 		setConversation((current) => {
+			if (globalThis.localStorage.getItem(STORAGE_KEY) !== updated.id) {
+				return current;
+			}
 			if (
 				current?.id === updated.id &&
 				Date.parse(current.updatedAt) > Date.parse(updated.updatedAt)
