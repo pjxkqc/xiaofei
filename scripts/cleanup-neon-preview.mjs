@@ -16,10 +16,16 @@ export async function cleanupNeonPreview({
 	fetchImpl = fetch,
 	logger = console,
 }) {
-	const normalizedApiKey = requireValue(apiKey, "NEON_API_KEY");
-	const normalizedProjectId = requireValue(projectId, "NEON_PROJECT_ID");
 	const normalizedGitBranch = requireValue(gitBranch, "GITHUB_HEAD_REF");
 	const previewBranchName = `preview/${normalizedGitBranch}`;
+
+	if (normalizedGitBranch === "uat") {
+		logger.log(`Preserved durable Neon branch ${previewBranchName}.`);
+		return { branchName: previewBranchName, status: "preserved" };
+	}
+
+	const normalizedApiKey = requireValue(apiKey, "NEON_API_KEY");
+	const normalizedProjectId = requireValue(projectId, "NEON_PROJECT_ID");
 
 	const branchesUrl = new URL(
 		`${NEON_API_ORIGIN}/projects/${encodeURIComponent(normalizedProjectId)}/branches`,
