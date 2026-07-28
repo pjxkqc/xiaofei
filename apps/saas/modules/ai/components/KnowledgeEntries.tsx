@@ -52,6 +52,7 @@ export function KnowledgeEntries({
 }) {
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [selected, setSelected] = useState<Entry | null>(null);
+	const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [category, setCategory] = useState<"PRESALES" | "POSTSALES">("PRESALES");
 	const [manualPairs, setManualPairs] = useState<ManualPair[]>([emptyManualPair(1)]);
@@ -222,6 +223,24 @@ export function KnowledgeEntries({
 			setBusy(false);
 		}
 	}
+	async function activateSelected() {
+		if (!selectedEntryIds.length) return;
+		setBusy(true);
+		try {
+			await Promise.all(
+				selectedEntryIds.map((id) =>
+					orpcClient.xiaofei.updateKnowledgeEntry({ id, status: "active" }),
+				),
+			);
+			setSelectedEntryIds([]);
+			await refresh();
+			toastSuccess("已启用所选条目", "现在可在知识单元页面选择这些当前条目。 ");
+		} catch (error) {
+			toastError("批量启用失败", message(error));
+		} finally {
+			setBusy(false);
+		}
+	}
 	return (
 		<div className="gap-6 flex flex-col">
 			<div className="gap-4 lg:grid-cols-3 grid">
@@ -373,23 +392,57 @@ export function KnowledgeEntries({
 				<Card>
 					<CardHeader>
 						<CardTitle>知识条目</CardTitle>
-						<CardDescription>{entries.length} 个当前租户条目</CardDescription>
+						<CardDescription>
+							{entries.length} 个当前租户条目；按来源分组，可批量启用复核后的条目。
+						</CardDescription>
 					</CardHeader>
 					<CardContent className="gap-2 flex max-h-[600px] flex-col overflow-auto">
-						{entries.map((entry) => (
-							<button
-								key={entry.id}
-								type="button"
-								className="p-3 rounded-md text-left hover:bg-muted"
-								onClick={() => void openEntry(entry.id)}
-								disabled={busy}
-							>
-								<p className="font-medium line-clamp-2">{entry.question}</p>
-								<p className="text-xs text-muted-foreground">
-									{entry.eligible ? "可用" : "需复核"} · {entry.status}
+						{Object.entries(groupEntriesBySource(entries)).map(([sourceId, sourceEntries]) => (
+							<div key={sourceId} className="gap-1 flex flex-col">
+								<p className="px-3 pt-2 text-xs font-medium text-muted-foreground">
+									来源：{sourceId}（{sourceEntries.length} 项）
 								</p>
-							</button>
+								{sourceEntries.map((entry) => (
+									<div
+										key={entry.id}
+										className="gap-2 p-3 flex items-start rounded-md hover:bg-muted"
+									>
+										<input
+											aria-label={`选择 ${entry.question}`}
+											type="checkbox"
+											checked={selectedEntryIds.includes(entry.id)}
+											onChange={() =>
+												setSelectedEntryIds((current) =>
+													current.includes(entry.id)
+														? current.filter((id) => id !== entry.id)
+														: [...current, entry.id],
+												)
+											}
+											disabled={busy}
+										/>
+										<button
+											type="button"
+											className="flex-1 text-left"
+											onClick={() => void openEntry(entry.id)}
+											disabled={busy}
+										>
+											<p className="font-medium line-clamp-2">{entry.question}</p>
+											<p className="text-xs text-muted-foreground">
+												{entry.eligible ? "可用" : "需复核"} · {entry.status}
+											</p>
+										</button>
+									</div>
+								))}
+							</div>
 						))}
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => void activateSelected()}
+							disabled={busy || !selectedEntryIds.length}
+						>
+							启用所选条目（{selectedEntryIds.length}）
+						</Button>
 					</CardContent>
 				</Card>
 				<Card>
@@ -515,6 +568,13 @@ function split(value: string) {
 		.split(",")
 		.map((part) => part.trim())
 		.filter(Boolean);
+}
+function groupEntriesBySource(entries: Entry[]) {
+	return entries.reduce<Record<string, Entry[]>>((groups, entry) => {
+		const key = entry.sourceId ?? "手动录入";
+		(groups[key] ??= []).push(entry);
+		return groups;
+	}, {});
 }
 function emptyManualPair(id: number): ManualPair {
 	return { id, question: "", answer: "", similar: "", tags: "" };

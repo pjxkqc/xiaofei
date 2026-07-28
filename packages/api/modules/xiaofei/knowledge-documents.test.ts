@@ -87,6 +87,7 @@ import {
 	getKnowledgeDocument,
 	getKnowledgeTenantKey,
 	listKnowledgeDocuments,
+	splitKnowledgeSource,
 	updateKnowledgeDocumentForTenant,
 	updateKnowledgeEntryForTenant,
 	transitionKnowledgeUnitForTenant,
@@ -234,7 +235,7 @@ describe("knowledge document application boundary", () => {
 		);
 	});
 
-	it("uses the provider only for remote files and persists a normalized entry", async () => {
+	it("uses the provider only for remote files and persists bounded normalized entries", async () => {
 		vi.mocked(createKnowledgeContentParser).mockReturnValue({
 			parseFile: vi.fn().mockResolvedValue({
 				markdown: "# Parsed PDF",
@@ -260,8 +261,69 @@ describe("knowledge document application boundary", () => {
 			}),
 		);
 		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
-			expect.objectContaining({ sourceId: "document-1", answer: "# Parsed PDF" }),
+			expect.objectContaining({
+				sourceId: "document-1",
+				question: "guide.pdf — Parsed PDF",
+				answer: "# Parsed PDF",
+				tags: ["source", "Parsed PDF"],
+			}),
 		);
+	});
+
+	it("splits headings and practical Markdown table rows while merging tiny fragments", () => {
+		const entries = splitKnowledgeSource(
+			"matrix.xlsx",
+			[
+				"# Models",
+				"",
+				"| Model | Room |",
+				"| --- | --- |",
+				"| Mini | 8-20㎡ |",
+				"| Pro | 35-70㎡ |",
+				"",
+				"## Warranty",
+				"",
+				"The motor has a 36 month warranty. It applies from delivery and excludes consumable filters and accidental damage.",
+			].join("\n"),
+		);
+
+		expect(entries).toEqual([
+			expect.objectContaining({
+				provenance: "Models row 1",
+				question: "matrix.xlsx — Models row 1",
+			}),
+			expect.objectContaining({
+				provenance: "Models row 2",
+				question: "matrix.xlsx — Models row 2",
+			}),
+			expect.objectContaining({
+				provenance: "Warranty",
+				answer:
+					"The motor has a 36 month warranty. It applies from delivery and excludes consumable filters and accidental damage.",
+			}),
+		]);
+	});
+
+	it("caps generated entries at twenty", () => {
+		const source = Array.from(
+			{ length: 25 },
+			(_, index) => `## FAQ ${index + 1}\n\n${"Answer ".repeat(20)}`,
+		).join("\n\n");
+		expect(splitKnowledgeSource("faq.md", source)).toHaveLength(20);
+	});
+
+	it("recognizes explicit FAQ pairs without requiring Markdown headings", () => {
+		const entries = splitKnowledgeSource(
+			"faq.txt",
+			"Q: Can I return it?\nA: Returns are accepted within 30 days.\n\nQ: Is shipping included?\nA: Standard shipping is included.",
+		);
+		expect(entries).toEqual([
+			expect.objectContaining({
+				provenance: "Can I return it?",
+				answer: "Q: Can I return it?\nA: Returns are accepted within 30 days.",
+			}),
+			expect.objectContaining({ provenance: "Is shipping included?" }),
+		]);
 	});
 
 	it("creates manual entries without invoking Firecrawl and records web lineage through the provider", async () => {

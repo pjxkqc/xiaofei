@@ -46,7 +46,9 @@ import {
 
 export const MAX_KNOWLEDGE_FILE_BYTES = 4 * 1024 * 1024;
 export const MAX_KNOWLEDGE_BODY_CHARACTERS = 500_000;
+export const MAX_GENERATED_ENTRIES_PER_SOURCE = 20;
 const MAX_DOCX_XML_BYTES = 4 * 1024 * 1024;
+const MIN_GENERATED_ENTRY_CHARACTERS = 80;
 
 const FILE_RULES = {
 	".docx": {
@@ -164,7 +166,7 @@ export async function createKnowledgeFile(
 			bodyText: parsed.markdown,
 			fetchedAt: parsed.provider ? new Date() : undefined,
 		});
-		await createEntryForSource(
+		await createEntriesForSource(
 			workspace.id,
 			source.id,
 			input.originalFileName,
@@ -200,7 +202,13 @@ export async function createKnowledgeWeb(
 			category: XiaofeiKnowledgeDocumentCategory[input.category],
 			bodyText: parsed.markdown,
 		});
-		await createEntryForSource(workspace.id, source.id, input.url, parsed.markdown, input.category);
+		await createEntriesForSource(
+			workspace.id,
+			source.id,
+			input.url,
+			parsed.markdown,
+			input.category,
+		);
 		return source;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
@@ -550,22 +558,138 @@ async function parseFile(
 	}
 }
 
-async function createEntryForSource(
+async function createEntriesForSource(
 	workspaceId: string,
 	sourceId: string,
 	title: string,
-	answer: string,
+	bodyText: string,
 	category: "PRESALES" | "POSTSALES",
 ) {
-	return await createXiaofeiKnowledgeEntry({
-		workspaceId,
-		sourceId,
-		question: title,
-		answer,
-		category,
-		similarQueries: [],
-		tags: [],
+	return await Promise.all(
+		splitKnowledgeSource(title, bodyText).map((entry) =>
+			createXiaofeiKnowledgeEntry({
+				workspaceId,
+				sourceId,
+				question: entry.question,
+				answer: entry.answer,
+				category,
+				similarQueries: [],
+				tags: ["source", entry.provenance],
+			}),
+		),
+	);
+}
+
+interface SplitKnowledgeEntry {
+	question: string;
+	answer: string;
+	provenance: string;
+}
+
+/** Deterministically creates bounded, reviewable slices without using a model. */
+export function splitKnowledgeSource(title: string, bodyText: string): SplitKnowledgeEntry[] {
+	const normalized = bodyText.replace(/\r\n?/g, "\n").trim();
+	const sections = splitFaqPairs(normalized);
+	const sourceSections = sections.length ? sections : splitMarkdownSections(normalized);
+	const candidates = sourceSections.flatMap((section) =>
+		splitTableRows(section).length ? splitTableRows(section) : [section],
+	);
+	const merged = mergeTinyFragments(candidates);
+	const entries = merged.slice(0, MAX_GENERATED_ENTRIES_PER_SOURCE).map((entry, index) => {
+		const provenance = (entry.heading || `section ${index + 1}`).slice(0, 100);
+		return {
+			question: `${title} — ${provenance}`.slice(0, 10_000),
+			answer: entry.body,
+			provenance,
+		};
 	});
+	return entries.length ? entries : [{ question: title, answer: normalized, provenance: "source" }];
+}
+
+interface SourceFragment {
+	heading: string;
+	body: string;
+	atomic?: boolean;
+}
+
+function splitFaqPairs(bodyText: string): SourceFragment[] {
+	const pairs: SourceFragment[] = [];
+	const expression =
+		/(?:^|\n)\s*(?:Q(?:uestion)?|问)\s*[:：]\s*(.+?)\s*\n\s*(?:A(?:nswer)?|答)\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:Q(?:uestion)?|问)\s*[:：]|$)/giu;
+	for (const match of bodyText.matchAll(expression)) {
+		const question = match[1].trim();
+		const answer = match[2].trim();
+		if (question && answer)
+			pairs.push({ heading: question, body: `Q: ${question}\nA: ${answer}`, atomic: true });
+	}
+	return pairs;
+}
+
+function splitMarkdownSections(bodyText: string): SourceFragment[] {
+	const lines = bodyText.split("\n");
+	const sections: SourceFragment[] = [];
+	let heading = "";
+	let content: string[] = [];
+	const push = () => {
+		const body = content.join("\n").trim();
+		if (body) sections.push({ heading, body });
+		content = [];
+	};
+	for (const line of lines) {
+		const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+		if (match) {
+			push();
+			heading = match[2].trim();
+			continue;
+		}
+		content.push(line);
+	}
+	push();
+	if (sections.length) return sections;
+	const titleMatch = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(lines[0] ?? "");
+	return [{ heading: titleMatch?.[2].trim() ?? "", body: bodyText }];
+}
+
+function splitTableRows(section: SourceFragment): SourceFragment[] {
+	const lines = section.body.split("\n");
+	const tableStart = lines.findIndex(
+		(line, index) =>
+			index + 1 < lines.length &&
+			isMarkdownTableRow(line) &&
+			isMarkdownTableDivider(lines[index + 1]),
+	);
+	if (tableStart < 0) return [];
+	const header = lines[tableStart];
+	const rows = lines.slice(tableStart + 2).filter(isMarkdownTableRow);
+	if (!rows.length) return [];
+	return rows.map((row, index) => ({
+		heading: `${section.heading || "table"} row ${index + 1}`,
+		body: `${section.heading ? `## ${section.heading}\n\n` : ""}${header}\n${lines[tableStart + 1]}\n${row}`,
+	}));
+}
+
+function isMarkdownTableRow(line: string) {
+	return /^\s*\|.+\|\s*$/.test(line);
+}
+function isMarkdownTableDivider(line: string) {
+	return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function mergeTinyFragments(fragments: SourceFragment[]): SourceFragment[] {
+	return fragments.reduce<SourceFragment[]>((result, fragment) => {
+		const previous = result[result.length - 1];
+		if (
+			previous &&
+			fragment.body.length < MIN_GENERATED_ENTRY_CHARACTERS &&
+			!fragment.atomic &&
+			!/\brow \d+$/u.test(fragment.heading)
+		) {
+			previous.body = `${previous.body}\n\n${fragment.heading ? `## ${fragment.heading}\n` : ""}${fragment.body}`;
+			return result;
+		}
+		result.push({ ...fragment });
+		return result;
+	}, []);
 }
 
 function throwKnowledgeParseError(error: unknown): never {
