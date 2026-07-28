@@ -76,9 +76,9 @@ Office-document and webpage ingestion is prepared behind the server-only
 `KnowledgeContentParser` contract. Its Firecrawl adapter uses
 `FIRECRAWL_API_KEY` only in the API process and returns normalized Markdown;
 provider failures are mapped to safe, user-facing errors. Live provider smoke
-evidence remains credential-gated. The persistence extension needed to retain
-webpage lineage and PDF/XLSX source types is owned separately from this API
-increment.
+evidence remains credential-gated. One ingested source and its bounded derived
+entries are committed atomically so a failed batch cannot leave a partial
+source or serialize many competing workspace-lock transactions.
 
 Literal IP URLs are classified with `ipaddr.js`, including IPv4-mapped IPv6
 forms, before Firecrawl is called. Hostname DNS resolution and rebinding remain

@@ -12,6 +12,7 @@ const queryMocks = vi.hoisted(() => {
 		},
 		xiaofeiKnowledgeEntry: {
 			create: vi.fn(),
+			createManyAndReturn: vi.fn(),
 			deleteMany: vi.fn(),
 			findUnique: vi.fn(),
 			update: vi.fn(),
@@ -38,6 +39,7 @@ const queryMocks = vi.hoisted(() => {
 		updateDocument: vi.fn(),
 		updateDocumentInTransaction: transactionClient.xiaofeiKnowledgeDocument.update,
 		createEntry: transactionClient.xiaofeiKnowledgeEntry.create,
+		createEntries: transactionClient.xiaofeiKnowledgeEntry.createManyAndReturn,
 		deleteEntries: transactionClient.xiaofeiKnowledgeEntry.deleteMany,
 		findEntry: vi.fn(),
 		findEntryInTransaction: transactionClient.xiaofeiKnowledgeEntry.findUnique,
@@ -71,6 +73,7 @@ vi.mock("../client", () => ({
 
 import {
 	createXiaofeiKnowledgeDocument,
+	createXiaofeiKnowledgeDocumentWithEntries,
 	createXiaofeiKnowledgeEntry,
 	createXiaofeiKnowledgeUnit,
 	deleteXiaofeiKnowledgeEntry,
@@ -96,7 +99,10 @@ describe("Xiaofei knowledge document queries", () => {
 			mimeType: "text/markdown",
 			fileType: "MARKDOWN",
 			sourceUrl: null,
+			contentHash: "document-hash",
+			sourceVersion: 1,
 		});
+		queryMocks.createEntries.mockResolvedValue([]);
 		queryMocks.queryRaw.mockResolvedValue([
 			{
 				documentCount: BigInt(0),
@@ -135,6 +141,52 @@ describe("Xiaofei knowledge document queries", () => {
 		expect(queryMocks.createDocument).toHaveBeenCalledWith({
 			data: expect.objectContaining(input),
 		});
+	});
+
+	it("atomically creates one source and all derived entries under one workspace lock", async () => {
+		queryMocks.createEntries.mockResolvedValueOnce([{ id: "entry-1" }, { id: "entry-2" }]);
+		queryMocks.queryRaw
+			.mockResolvedValueOnce([{ count: BigInt(2), bodyBytes: BigInt(100) }])
+			.mockResolvedValueOnce([{ count: BigInt(3), bodyBytes: BigInt(200) }]);
+
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: "workspace-a",
+				originalFileName: "guide.md",
+				mimeType: "text/markdown",
+				fileType: "MARKDOWN",
+				category: "PRESALES",
+				bodyText: "# Guide",
+			},
+			entries: [
+				{ question: "Question 1", answer: "Answer 1", tags: ["source"] },
+				{ question: "Question 2", answer: "Answer 2", tags: ["source"] },
+			],
+		});
+
+		expect(queryMocks.transaction).toHaveBeenCalledOnce();
+		expect(queryMocks.executeRaw).toHaveBeenCalledOnce();
+		expect(queryMocks.queryRaw).toHaveBeenCalledTimes(2);
+		expect(queryMocks.createDocument).toHaveBeenCalledOnce();
+		expect(queryMocks.createEntries).toHaveBeenCalledWith({
+			data: [
+				expect.objectContaining({
+					workspaceId: "workspace-a",
+					sourceId: "document-1",
+					sourceContentHash: "document-hash",
+					sourceVersion: 1,
+					question: "Question 1",
+				}),
+				expect.objectContaining({
+					workspaceId: "workspace-a",
+					sourceId: "document-1",
+					sourceContentHash: "document-hash",
+					sourceVersion: 1,
+					question: "Question 2",
+				}),
+			],
+		});
+		expect(result.entries).toEqual([{ id: "entry-1" }, { id: "entry-2" }]);
 	});
 
 	it("rejects creates above the fixed workspace document count", async () => {

@@ -58,6 +58,11 @@ export interface CreateXiaofeiKnowledgeEntryInput {
 	status?: string;
 }
 
+export interface CreateXiaofeiKnowledgeDocumentWithEntriesInput {
+	document: CreateXiaofeiKnowledgeDocumentInput;
+	entries: Omit<CreateXiaofeiKnowledgeEntryInput, "workspaceId" | "sourceId">[];
+}
+
 export interface UpdateXiaofeiKnowledgeEntryInput {
 	sourceId?: string;
 	question?: string;
@@ -254,6 +259,42 @@ export function createXiaofeiKnowledgeDocument(input: CreateXiaofeiKnowledgeDocu
 			data: { ...input, contentHash: hashContent(input.bodyText) },
 		});
 		return withLegacyKnowledgeDocumentMetadata(document);
+	});
+}
+
+export function createXiaofeiKnowledgeDocumentWithEntries(
+	input: CreateXiaofeiKnowledgeDocumentWithEntriesInput,
+) {
+	return db.$transaction(async (transaction) => {
+		await lockXiaofeiKnowledgeWorkspace(transaction, input.document.workspaceId);
+		const [documentUsage, entryUsage] = await Promise.all([
+			getKnowledgeDocumentUsage(transaction, input.document.workspaceId),
+			getKnowledgeEntryUsage(transaction, input.document.workspaceId),
+		]);
+		assertDocumentQuota(
+			Number(documentUsage.count) + 1,
+			Number(documentUsage.bodyBytes) + Buffer.byteLength(input.document.bodyText, "utf8"),
+		);
+		assertEntryQuota(
+			Number(entryUsage.count) + input.entries.length,
+			Number(entryUsage.bodyBytes) +
+				input.entries.reduce((total, entry) => total + entryBodyBytes(entry), 0),
+		);
+		const document = await transaction.xiaofeiKnowledgeDocument.create({
+			data: { ...input.document, contentHash: hashContent(input.document.bodyText) },
+		});
+		const entries = input.entries.length
+			? await transaction.xiaofeiKnowledgeEntry.createManyAndReturn({
+					data: input.entries.map((entry) => ({
+						...entry,
+						workspaceId: input.document.workspaceId,
+						sourceId: document.id,
+						sourceContentHash: document.contentHash,
+						sourceVersion: document.sourceVersion,
+					})),
+				})
+			: [];
+		return { document: withLegacyKnowledgeDocumentMetadata(document), entries };
 	});
 }
 

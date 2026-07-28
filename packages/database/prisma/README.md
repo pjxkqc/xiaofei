@@ -94,7 +94,11 @@ The query boundary also enforces fixed per-workspace ceilings:
 Source and entry create, update, and delete acquire the same PostgreSQL
 transaction-scoped advisory lock derived from `workspaceId`. Quota usage and
 the write therefore execute atomically for one workspace even when requests
-arrive concurrently. A rejected create/update throws
+arrive concurrently. Multi-entry ingestion uses
+`createXiaofeiKnowledgeDocumentWithEntries` to validate both quotas and create
+the source plus all derived entries in one transaction and one bulk insert; it
+must not fan out workspace-locked writes with `Promise.all`. A rejected
+create/update throws
 `XiaofeiKnowledgeDocumentQuotaError` with `quota` set to `document_count` or
 `stored_body_bytes` and a numeric `limit`; callers should map that typed error
 to their transport contract without exposing database errors.

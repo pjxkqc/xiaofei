@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
 	createXiaofeiKnowledgeDocument: vi.fn(),
-	createXiaofeiKnowledgeEntry: vi.fn(),
+	createXiaofeiKnowledgeDocumentWithEntries: vi.fn(),
 	createXiaofeiKnowledgeUnit: vi.fn(),
 	deleteXiaofeiKnowledgeDocument: vi.fn(),
 	deleteXiaofeiKnowledgeEntry: vi.fn(),
@@ -62,7 +62,7 @@ vi.mock("./knowledge-content-parser", () => ({
 
 import {
 	createXiaofeiKnowledgeDocument,
-	createXiaofeiKnowledgeEntry,
+	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeDocument,
 	getXiaofeiKnowledgeEntry,
@@ -154,7 +154,13 @@ describe("knowledge document application boundary", () => {
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
 		} as never);
-		vi.mocked(createXiaofeiKnowledgeEntry).mockResolvedValue({ id: "entry-1" } as never);
+		vi.mocked(createXiaofeiKnowledgeDocumentWithEntries).mockImplementation(
+			async (input) =>
+				({
+					document: { id: "document-1" },
+					entries: input.entries.map((_, index) => ({ id: `entry-${index + 1}` })),
+				}) as never,
+		);
 	});
 
 	it("uses a verified active organization, then the authenticated user, as the tenant", async () => {
@@ -252,35 +258,26 @@ describe("knowledge document application boundary", () => {
 		});
 
 		expect(createKnowledgeContentParser).toHaveBeenCalled();
-		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledWith(
 			expect.objectContaining({
-				sourceType: "FILE",
-				fileType: "PDF",
-				provider: "firecrawl",
-				bodyText: "# Parsed PDF",
-			}),
-		);
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
-			expect.objectContaining({
-				sourceId: "document-1",
-				question: "guide.pdf — Parsed PDF",
-				answer: "# Parsed PDF",
-				tags: ["source", "Parsed PDF"],
+				document: expect.objectContaining({
+					sourceType: "FILE",
+					fileType: "PDF",
+					provider: "firecrawl",
+					bodyText: "# Parsed PDF",
+				}),
+				entries: [
+					expect.objectContaining({
+						question: "guide.pdf — Parsed PDF",
+						answer: "# Parsed PDF",
+						tags: ["source", "Parsed PDF"],
+					}),
+				],
 			}),
 		);
 	});
 
-	it("creates derived entries serially so workspace-locked writes do not time out", async () => {
-		let concurrentWrites = 0;
-		let maximumConcurrentWrites = 0;
-		vi.mocked(createXiaofeiKnowledgeEntry).mockImplementation(async () => {
-			concurrentWrites += 1;
-			maximumConcurrentWrites = Math.max(maximumConcurrentWrites, concurrentWrites);
-			await Promise.resolve();
-			concurrentWrites -= 1;
-			return { id: `entry-${maximumConcurrentWrites}` } as never;
-		});
-
+	it("persists all derived entries through one atomic database call", async () => {
 		await createKnowledgeFile(USER_CONTEXT, {
 			originalFileName: "faq.md",
 			mimeType: "text/markdown",
@@ -297,8 +294,10 @@ describe("knowledge document application boundary", () => {
 			).toString("base64"),
 		});
 
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledTimes(3);
-		expect(maximumConcurrentWrites).toBe(1);
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledOnce();
+		expect(
+			vi.mocked(createXiaofeiKnowledgeDocumentWithEntries).mock.calls[0][0].entries,
+		).toHaveLength(3);
 	});
 
 	it("splits headings and practical Markdown table rows while merging tiny fragments", () => {
@@ -428,10 +427,16 @@ describe("knowledge document application boundary", () => {
 			pairs: [{ question: "How do I reset?", answer: "Use the reset link.", tags: ["account"] }],
 		});
 		expect(createKnowledgeContentParser).not.toHaveBeenCalled();
-		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
-			expect.objectContaining({ question: "How do I reset?", sourceId: "document-1" }),
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledWith(
+			expect.objectContaining({
+				document: expect.objectContaining({ sourceType: "MANUAL" }),
+				entries: [
+					expect.objectContaining({ question: "How do I reset?", answer: "Use the reset link." }),
+				],
+			}),
 		);
 
+		vi.mocked(createXiaofeiKnowledgeDocumentWithEntries).mockClear();
 		vi.mocked(createKnowledgeContentParser).mockReturnValue({
 			scrapeUrl: vi.fn().mockResolvedValue({
 				markdown: "# Web help",
@@ -444,11 +449,13 @@ describe("knowledge document application boundary", () => {
 			category: "PRESALES",
 		});
 		expect(validatePublicHttpUrl).toHaveBeenCalledWith("https://example.com/help");
-		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
+		expect(createXiaofeiKnowledgeDocumentWithEntries).toHaveBeenCalledWith(
 			expect.objectContaining({
-				sourceType: "WEB",
-				sourceUrl: "https://example.com/help",
-				provider: "firecrawl",
+				document: expect.objectContaining({
+					sourceType: "WEB",
+					sourceUrl: "https://example.com/help",
+					provider: "firecrawl",
+				}),
 			}),
 		);
 	});

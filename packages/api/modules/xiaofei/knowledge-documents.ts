@@ -3,7 +3,7 @@ import { generateKnowledgeUnitDrafts } from "@repo/ai";
 import {
 	createXiaofeiKnowledgeUnit,
 	createXiaofeiKnowledgeDocument,
-	createXiaofeiKnowledgeEntry,
+	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
 	deleteXiaofeiKnowledgeEntry,
 	deleteXiaofeiKnowledgeUnit,
@@ -153,27 +153,23 @@ export async function createKnowledgeFile(
 		? { markdown: decodeLocalFile(file), provider: undefined, parserVersion: undefined }
 		: await parseFile(file, input);
 	try {
-		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id,
-			sourceType: XiaofeiKnowledgeDocumentSourceType.FILE,
-			originalFileName: input.originalFileName,
-			mimeType: input.mimeType,
-			fileType: file.fileType,
-			fileSizeBytes: file.bytes.byteLength,
-			provider: parsed.provider,
-			parserVersion: parsed.parserVersion,
-			category: XiaofeiKnowledgeDocumentCategory[input.category],
-			bodyText: parsed.markdown,
-			fetchedAt: parsed.provider ? new Date() : undefined,
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: workspace.id,
+				sourceType: XiaofeiKnowledgeDocumentSourceType.FILE,
+				originalFileName: input.originalFileName,
+				mimeType: input.mimeType,
+				fileType: file.fileType,
+				fileSizeBytes: file.bytes.byteLength,
+				provider: parsed.provider,
+				parserVersion: parsed.parserVersion,
+				category: XiaofeiKnowledgeDocumentCategory[input.category],
+				bodyText: parsed.markdown,
+				fetchedAt: parsed.provider ? new Date() : undefined,
+			},
+			entries: buildEntriesForSource(input.originalFileName, parsed.markdown, input.category),
 		});
-		await createEntriesForSource(
-			workspace.id,
-			source.id,
-			input.originalFileName,
-			parsed.markdown,
-			input.category,
-		);
-		return source;
+		return result.document;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -192,24 +188,20 @@ export async function createKnowledgeWeb(
 		throwKnowledgeParseError(error);
 	}
 	try {
-		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id,
-			sourceType: XiaofeiKnowledgeDocumentSourceType.WEB,
-			sourceUrl: input.url,
-			provider: parsed.provider,
-			parserVersion: parsed.parserVersion,
-			fetchedAt: new Date(),
-			category: XiaofeiKnowledgeDocumentCategory[input.category],
-			bodyText: parsed.markdown,
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: workspace.id,
+				sourceType: XiaofeiKnowledgeDocumentSourceType.WEB,
+				sourceUrl: input.url,
+				provider: parsed.provider,
+				parserVersion: parsed.parserVersion,
+				fetchedAt: new Date(),
+				category: XiaofeiKnowledgeDocumentCategory[input.category],
+				bodyText: parsed.markdown,
+			},
+			entries: buildEntriesForSource(input.url, parsed.markdown, input.category),
 		});
-		await createEntriesForSource(
-			workspace.id,
-			source.id,
-			input.url,
-			parsed.markdown,
-			input.category,
-		);
-		return source;
+		return result.document;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -222,27 +214,22 @@ export async function createManualKnowledgeEntries(
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const bodyText = input.pairs.map((pair) => `Q: ${pair.question}\nA: ${pair.answer}`).join("\n\n");
 	try {
-		const source = await createXiaofeiKnowledgeDocument({
-			workspaceId: workspace.id,
-			sourceType: XiaofeiKnowledgeDocumentSourceType.MANUAL,
-			category: XiaofeiKnowledgeDocumentCategory[input.category],
-			bodyText,
+		const result = await createXiaofeiKnowledgeDocumentWithEntries({
+			document: {
+				workspaceId: workspace.id,
+				sourceType: XiaofeiKnowledgeDocumentSourceType.MANUAL,
+				category: XiaofeiKnowledgeDocumentCategory[input.category],
+				bodyText,
+			},
+			entries: input.pairs.map((pair) => ({
+				question: pair.question,
+				answer: pair.answer,
+				similarQueries: pair.similarQueries ?? [],
+				tags: pair.tags ?? [],
+				category: input.category,
+			})),
 		});
-		const entries = [];
-		for (const pair of input.pairs) {
-			entries.push(
-				await createXiaofeiKnowledgeEntry({
-					workspaceId: workspace.id,
-					sourceId: source.id,
-					question: pair.question,
-					answer: pair.answer,
-					similarQueries: pair.similarQueries ?? [],
-					tags: pair.tags ?? [],
-					category: input.category,
-				}),
-			);
-		}
-		return entries;
+		return result.entries;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -567,28 +554,18 @@ async function parseFile(
 	}
 }
 
-async function createEntriesForSource(
-	workspaceId: string,
-	sourceId: string,
+function buildEntriesForSource(
 	title: string,
 	bodyText: string,
 	category: "PRESALES" | "POSTSALES",
 ) {
-	const entries = [];
-	for (const entry of splitKnowledgeSource(title, bodyText)) {
-		entries.push(
-			await createXiaofeiKnowledgeEntry({
-				workspaceId,
-				sourceId,
-				question: entry.question,
-				answer: entry.answer,
-				category,
-				similarQueries: [],
-				tags: ["source", entry.provenance],
-			}),
-		);
-	}
-	return entries;
+	return splitKnowledgeSource(title, bodyText).map((entry) => ({
+		question: entry.question,
+		answer: entry.answer,
+		category,
+		similarQueries: [],
+		tags: ["source", entry.provenance],
+	}));
 }
 
 interface SplitKnowledgeEntry {
