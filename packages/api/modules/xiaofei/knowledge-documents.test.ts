@@ -307,9 +307,11 @@ describe("knowledge document application boundary", () => {
 	it("caps generated entries at twenty", () => {
 		const source = Array.from(
 			{ length: 25 },
-			(_, index) => `## FAQ ${index + 1}\n\n${"Answer ".repeat(20)}`,
+			(_, index) => `## FAQ ${index + 1}\n\nAnchor ${index + 1}. ${"Answer ".repeat(20)}`,
 		).join("\n\n");
-		expect(splitKnowledgeSource("faq.md", source)).toHaveLength(20);
+		const entries = splitKnowledgeSource("faq.md", source);
+		expect(entries).toHaveLength(20);
+		expect(entries[entries.length - 1]?.answer).toContain("Anchor 25.");
 	});
 
 	it("recognizes explicit FAQ pairs without requiring Markdown headings", () => {
@@ -324,6 +326,69 @@ describe("knowledge document application boundary", () => {
 			}),
 			expect.objectContaining({ provenance: "Is shipping included?" }),
 		]);
+	});
+
+	it("preserves ordinary content around explicit FAQ pairs", () => {
+		const entries = splitKnowledgeSource(
+			"mixed.md",
+			[
+				"# Support",
+				"",
+				"Intro anchor explains the support scope before the frequently asked questions.",
+				"",
+				"Q: Can I return it?",
+				"A: Return anchor says returns are accepted within 30 days.",
+				"",
+				"Trailing anchor explains that damaged items need a support review.",
+			].join("\n"),
+		);
+		const answers = entries.map((entry) => entry.answer).join("\n");
+
+		expect(answers).toContain("Intro anchor");
+		expect(answers).toContain("Return anchor");
+		expect(answers).toContain("Trailing anchor");
+		expect(answers.match(/Q: Can I return it\?/g)).toHaveLength(1);
+	});
+
+	it("preserves prose around every Markdown table and keeps table rows in source order", () => {
+		const entries = splitKnowledgeSource(
+			"tables.md",
+			[
+				"# Product",
+				"",
+				"Intro anchor before the first table contains enough product context for review.",
+				"",
+				"| Model | Room |",
+				"| --- | --- |",
+				"| Mini | 8-20㎡ |",
+				"",
+				"Middle anchor between the two tables explains how customers choose a model.",
+				"",
+				"| Plan | Response |",
+				"| --- | --- |",
+				"| Standard | 24 hours |",
+				"",
+				"Final anchor after the second table explains escalation and warranty coverage.",
+			].join("\n"),
+		);
+		const answers = entries.map((entry) => entry.answer);
+		const joined = answers.join("\n");
+
+		for (const anchor of ["Intro anchor", "Mini", "Middle anchor", "Standard", "Final anchor"]) {
+			expect(joined).toContain(anchor);
+		}
+		expect(answers.findIndex((answer) => answer.includes("Intro anchor"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Mini")),
+		);
+		expect(answers.findIndex((answer) => answer.includes("Mini"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Middle anchor")),
+		);
+		expect(answers.findIndex((answer) => answer.includes("Middle anchor"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Standard")),
+		);
+		expect(answers.findIndex((answer) => answer.includes("Standard"))).toBeLessThan(
+			answers.findIndex((answer) => answer.includes("Final anchor")),
+		);
 	});
 
 	it("creates manual entries without invoking Firecrawl and records web lineage through the provider", async () => {
@@ -517,7 +582,7 @@ describe("knowledge document application boundary", () => {
 	it("returns the refreshed entry with computed eligibility after an update", async () => {
 		const refreshed = { id: "entry-1", status: "active", eligible: true };
 		vi.mocked(getXiaofeiKnowledgeEntry)
-			.mockResolvedValueOnce({ id: "entry-1" } as never)
+			.mockResolvedValueOnce({ id: "entry-1", eligible: true } as never)
 			.mockResolvedValueOnce(refreshed as never);
 		vi.mocked(updateXiaofeiKnowledgeEntry).mockResolvedValueOnce({ id: "entry-1" } as never);
 
@@ -528,6 +593,21 @@ describe("knowledge document application boundary", () => {
 			status: "active",
 		});
 		expect(getXiaofeiKnowledgeEntry).toHaveBeenLastCalledWith("workspace-user", "entry-1");
+	});
+
+	it("refuses to activate an entry whose source is no longer current", async () => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValueOnce({
+			id: "entry-1",
+			eligible: false,
+		} as never);
+
+		await expect(
+			updateKnowledgeEntryForTenant(USER_CONTEXT, "entry-1", { status: "active" }),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: expect.stringContaining("current knowledge entries"),
+		});
+		expect(updateXiaofeiKnowledgeEntry).not.toHaveBeenCalled();
 	});
 
 	it("rebuilds the runtime snapshot after a publish so only current eligible KUs are admitted", async () => {

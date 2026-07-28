@@ -265,8 +265,13 @@ export async function updateKnowledgeEntryForTenant(
 	input: UpdateKnowledgeEntryInput,
 ) {
 	const { workspace } = await getKnowledgeWorkspace(context);
-	if (!(await getXiaofeiKnowledgeEntry(workspace.id, id)))
-		throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	const existing = await getXiaofeiKnowledgeEntry(workspace.id, id);
+	if (!existing) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
+	if (input.status === "active" && existing.eligible !== true) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Only current knowledge entries can be activated.",
+		});
+	}
 	try {
 		await clearKnowledgeAdmission(context);
 		await updateXiaofeiKnowledgeEntry(workspace.id, id, input);
@@ -589,13 +594,11 @@ interface SplitKnowledgeEntry {
 /** Deterministically creates bounded, reviewable slices without using a model. */
 export function splitKnowledgeSource(title: string, bodyText: string): SplitKnowledgeEntry[] {
 	const normalized = bodyText.replace(/\r\n?/g, "\n").trim();
-	const sections = splitFaqPairs(normalized);
-	const sourceSections = sections.length ? sections : splitMarkdownSections(normalized);
-	const candidates = sourceSections.flatMap((section) =>
-		splitTableRows(section).length ? splitTableRows(section) : [section],
-	);
-	const merged = mergeTinyFragments(candidates);
-	const entries = merged.slice(0, MAX_GENERATED_ENTRIES_PER_SOURCE).map((entry, index) => {
+	const candidates = splitMarkdownSections(normalized)
+		.flatMap(splitFaqPairs)
+		.flatMap(splitTableRows);
+	const bounded = boundFragments(mergeTinyFragments(candidates));
+	const entries = bounded.map((entry, index) => {
 		const provenance = (entry.heading || `section ${index + 1}`).slice(0, 100);
 		return {
 			question: `${title} — ${provenance}`.slice(0, 10_000),
@@ -612,17 +615,30 @@ interface SourceFragment {
 	atomic?: boolean;
 }
 
-function splitFaqPairs(bodyText: string): SourceFragment[] {
-	const pairs: SourceFragment[] = [];
+function splitFaqPairs(section: SourceFragment): SourceFragment[] {
+	const fragments: SourceFragment[] = [];
 	const expression =
 		/(?:^|\n)\s*(?:Q(?:uestion)?|问)\s*[:：]\s*(.+?)\s*\n\s*(?:A(?:nswer)?|答)\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:Q(?:uestion)?|问)\s*[:：]|$)/giu;
-	for (const match of bodyText.matchAll(expression)) {
+	let cursor = 0;
+	for (const match of section.body.matchAll(expression)) {
+		const matchStart = match.index ?? 0;
+		const prefix = section.body.slice(cursor, matchStart).trim();
+		if (prefix) fragments.push({ heading: section.heading, body: prefix });
 		const question = match[1].trim();
 		const answer = match[2].trim();
-		if (question && answer)
-			pairs.push({ heading: question, body: `Q: ${question}\nA: ${answer}`, atomic: true });
+		if (question && answer) {
+			fragments.push({
+				heading: question,
+				body: `Q: ${question}\nA: ${answer}`,
+				atomic: true,
+			});
+		}
+		cursor = matchStart + match[0].length;
 	}
-	return pairs;
+	if (!fragments.length) return [section];
+	const suffix = section.body.slice(cursor).trim();
+	if (suffix) fragments.push({ heading: section.heading, body: suffix });
+	return fragments;
 }
 
 function splitMarkdownSections(bodyText: string): SourceFragment[] {
@@ -651,21 +667,43 @@ function splitMarkdownSections(bodyText: string): SourceFragment[] {
 }
 
 function splitTableRows(section: SourceFragment): SourceFragment[] {
+	if (section.atomic) return [section];
 	const lines = section.body.split("\n");
-	const tableStart = lines.findIndex(
-		(line, index) =>
-			index + 1 < lines.length &&
-			isMarkdownTableRow(line) &&
-			isMarkdownTableDivider(lines[index + 1]),
-	);
-	if (tableStart < 0) return [];
-	const header = lines[tableStart];
-	const rows = lines.slice(tableStart + 2).filter(isMarkdownTableRow);
-	if (!rows.length) return [];
-	return rows.map((row, index) => ({
-		heading: `${section.heading || "table"} row ${index + 1}`,
-		body: `${section.heading ? `## ${section.heading}\n\n` : ""}${header}\n${lines[tableStart + 1]}\n${row}`,
-	}));
+	const fragments: SourceFragment[] = [];
+	let proseStart = 0;
+	let lineIndex = 0;
+	let tableIndex = 0;
+	while (lineIndex + 1 < lines.length) {
+		if (!isMarkdownTableRow(lines[lineIndex]) || !isMarkdownTableDivider(lines[lineIndex + 1])) {
+			lineIndex += 1;
+			continue;
+		}
+		let tableEnd = lineIndex + 2;
+		while (tableEnd < lines.length && isMarkdownTableRow(lines[tableEnd])) tableEnd += 1;
+		if (tableEnd === lineIndex + 2) {
+			lineIndex += 2;
+			continue;
+		}
+		pushProseFragment(fragments, section.heading, lines.slice(proseStart, lineIndex));
+		tableIndex += 1;
+		const tableLabel = `${section.heading || "table"}${tableIndex > 1 ? ` table ${tableIndex}` : ""}`;
+		for (let rowIndex = lineIndex + 2; rowIndex < tableEnd; rowIndex += 1) {
+			fragments.push({
+				heading: `${tableLabel} row ${rowIndex - lineIndex - 1}`,
+				body: `${section.heading ? `## ${section.heading}\n\n` : ""}${lines[lineIndex]}\n${lines[lineIndex + 1]}\n${lines[rowIndex]}`,
+				atomic: true,
+			});
+		}
+		proseStart = tableEnd;
+		lineIndex = tableEnd;
+	}
+	pushProseFragment(fragments, section.heading, lines.slice(proseStart));
+	return fragments.length ? fragments : [section];
+}
+
+function pushProseFragment(result: SourceFragment[], heading: string, lines: string[]) {
+	const body = lines.join("\n").trim();
+	if (body) result.push({ heading, body });
 }
 
 function isMarkdownTableRow(line: string) {
@@ -680,6 +718,7 @@ function mergeTinyFragments(fragments: SourceFragment[]): SourceFragment[] {
 		const previous = result[result.length - 1];
 		if (
 			previous &&
+			!previous.atomic &&
 			fragment.body.length < MIN_GENERATED_ENTRY_CHARACTERS &&
 			!fragment.atomic &&
 			!/\brow \d+$/u.test(fragment.heading)
@@ -690,6 +729,24 @@ function mergeTinyFragments(fragments: SourceFragment[]): SourceFragment[] {
 		result.push({ ...fragment });
 		return result;
 	}, []);
+}
+
+function boundFragments(fragments: SourceFragment[]): SourceFragment[] {
+	if (fragments.length <= MAX_GENERATED_ENTRIES_PER_SOURCE) return fragments;
+	const retained = fragments.slice(0, MAX_GENERATED_ENTRIES_PER_SOURCE - 1);
+	const overflow = fragments.slice(MAX_GENERATED_ENTRIES_PER_SOURCE - 1);
+	const first = overflow[0];
+	retained.push({
+		heading: first.heading,
+		body: overflow
+			.map((fragment, index) =>
+				index === 0
+					? fragment.body
+					: `${fragment.heading ? `## ${fragment.heading}\n\n` : ""}${fragment.body}`,
+			)
+			.join("\n\n"),
+	});
+	return retained;
 }
 
 function throwKnowledgeParseError(error: unknown): never {
