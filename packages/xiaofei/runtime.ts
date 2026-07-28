@@ -504,6 +504,10 @@ function shouldUseConversationContext(message: string, state: ConversationState)
 		/(请|方便|告诉我|补充|确认|是否|需要|可以继续|想了解)/u.test(state.lastReply);
 	if (!lastReplyInvitedFollowUp) return false;
 
+	const hasStrongContextField =
+		/(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(message);
+	if (state.operatorAttention) return hasStrongContextField;
+
 	const looksLikeFollowUpAnswer =
 		/(^|[，,。\s])(?:是|不是|要|不要|需要|不需要|可以|不可以|有|没有|大概|左右|这个|那个|它|前面|刚才)|(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(
 			message,

@@ -270,12 +270,30 @@ describe("P0 runtime kernel", () => {
 			knowledgeWorkspaceBinding,
 			now,
 		});
+		const unrelated = await finalizeTurn({
+			prepared: unrelatedPrepared,
+			snapshot,
+			message: "你们火星门店几点关门？",
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+		const repeatedUnknownPrepared = prepareTurn({
+			message: "没有更多信息，就是营业时间",
+			state: unrelated.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
 
 		expect(secondPrepared).toMatchObject({
 			action: "reply",
 			knowledge: { id: productUnit.id },
 		});
 		expect(unrelatedPrepared).toMatchObject({
+			action: "clarify",
+			knowledge: null,
+		});
+		expect(repeatedUnknownPrepared).toMatchObject({
 			action: "clarify",
 			knowledge: null,
 		});
