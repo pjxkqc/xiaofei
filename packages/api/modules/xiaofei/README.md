@@ -39,7 +39,10 @@ emits customer-visible text only after final authorization.
 
 The current Flyranking validation slice uses one stable
 `channel:public-support` workspace so the no-login customer page, support
-inbox, and knowledge governance operate on the same state.
+inbox, Agent settings, capability review, deterministic Eval, and authenticated
+validation Chatbot operate on the same state. This prevents an operator from
+approving one tenant snapshot while the public customer channel continues to
+run against an unreviewed default snapshot.
 
 Customers receive a random UUID conversation token; they cannot list
 conversations or choose a workspace. Inbox and governance procedures use

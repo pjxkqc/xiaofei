@@ -12,7 +12,7 @@ vi.mock("../organizations/lib/membership", () => ({
 	verifyOrganizationMembership: vi.fn(),
 }));
 
-import { getXiaofeiWorkspace } from "@repo/database";
+import { getXiaofeiWorkspace, upsertXiaofeiWorkspace } from "@repo/database";
 import { createDefaultWorkspaceSnapshot } from "@repo/xiaofei";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
@@ -20,6 +20,8 @@ import {
 	createKnowledgeWorkspaceBinding,
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	getXiaofeiTenantKey,
+	PUBLIC_SUPPORT_TENANT_KEY,
+	savePublicXiaofeiSnapshot,
 } from "./service";
 
 describe("authenticated Xiaofei workspace binding", () => {
@@ -98,5 +100,27 @@ describe("authenticated Xiaofei workspace binding", () => {
 			maxClarifications: 2,
 			clarificationReply: expect.stringContaining("先不急着转人工"),
 		});
+	});
+
+	it("persists operator-reviewed configuration to the shared public support workspace", async () => {
+		const snapshot = createDefaultWorkspaceSnapshot(PUBLIC_SUPPORT_TENANT_KEY);
+
+		await savePublicXiaofeiSnapshot(snapshot);
+
+		expect(upsertXiaofeiWorkspace).toHaveBeenCalledWith(
+			PUBLIC_SUPPORT_TENANT_KEY,
+			expect.objectContaining({
+				agent: expect.objectContaining({ tenantId: PUBLIC_SUPPORT_TENANT_KEY }),
+			}),
+		);
+	});
+
+	it("rejects a snapshot from another tenant before writing the public workspace", async () => {
+		const snapshot = createDefaultWorkspaceSnapshot("user:other");
+
+		await expect(savePublicXiaofeiSnapshot(snapshot)).rejects.toThrow(
+			"does not belong to the selected workspace",
+		);
+		expect(upsertXiaofeiWorkspace).not.toHaveBeenCalled();
 	});
 });

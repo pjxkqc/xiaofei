@@ -110,7 +110,23 @@ export async function saveXiaofeiSnapshot(
 	snapshot: XiaofeiWorkspaceSnapshot,
 ) {
 	const tenantKey = await getXiaofeiTenantKey(context);
+	return await saveXiaofeiSnapshotByTenantKey(tenantKey, snapshot);
+}
+
+export async function savePublicXiaofeiSnapshot(snapshot: XiaofeiWorkspaceSnapshot) {
+	return await saveXiaofeiSnapshotByTenantKey(PUBLIC_SUPPORT_TENANT_KEY, snapshot);
+}
+
+async function saveXiaofeiSnapshotByTenantKey(
+	tenantKey: string,
+	snapshot: XiaofeiWorkspaceSnapshot,
+) {
 	const parsed = XiaofeiWorkspaceSnapshotSchema.parse(snapshot);
+	if (parsed.agent.tenantId !== tenantKey) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "The Xiaofei snapshot does not belong to the selected workspace.",
+		});
+	}
 	await upsertXiaofeiWorkspace(tenantKey, toJson(parsed));
 	return parsed;
 }
@@ -218,6 +234,11 @@ export async function saveConversation(input: {
 
 export async function resetConversation(context: XiaofeiAuthContext, externalId: string) {
 	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
+	await deleteXiaofeiConversation(workspace.id, externalId);
+}
+
+export async function resetPublicConversation(externalId: string) {
+	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
 	await deleteXiaofeiConversation(workspace.id, externalId);
 }
 

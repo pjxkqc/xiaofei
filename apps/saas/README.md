@@ -80,12 +80,13 @@ configuration / eval
   XiaofeiAgentSettings
     → same-origin /api/rpc
     → protected xiaofei.* procedure
-    → tenant snapshot in PostgreSQL / Neon
+    → shared P0 `channel:public-support` snapshot in PostgreSQL / Neon
 
 conversation
   AiChat
     → same-origin /api/rpc
     → protected ai.stream procedure
+    → shared P0 `channel:public-support` snapshot
     → LangGraph state orchestration
     → Mastra Agent generation when the graph permits it
     → final UI message only after Guardrail authorization

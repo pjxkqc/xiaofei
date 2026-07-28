@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { protectedProcedure } from "../../../orpc/procedures";
-import { resetConversation } from "../service";
+import { resetPublicConversation } from "../service";
 
 export const resetXiaofeiConversation = protectedProcedure
 	.route({
@@ -15,7 +15,7 @@ export const resetXiaofeiConversation = protectedProcedure
 			conversationId: z.string().min(1).max(128),
 		}),
 	)
-	.handler(async ({ context, input }) => {
-		await resetConversation(context, input.conversationId);
+	.handler(async ({ input }) => {
+		await resetPublicConversation(input.conversationId);
 		return { success: true };
 	});

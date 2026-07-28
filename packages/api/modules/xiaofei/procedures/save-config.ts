@@ -3,7 +3,7 @@ import { rebuildWorkspaceSnapshot } from "@repo/xiaofei";
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import { getOrCreateXiaofeiWorkspace, saveXiaofeiSnapshot } from "../service";
+import { getOrCreatePublicXiaofeiWorkspace, savePublicXiaofeiSnapshot } from "../service";
 
 export const saveXiaofeiConfig = supportProcedure
 	.route({
@@ -26,12 +26,12 @@ export const saveXiaofeiConfig = supportProcedure
 			knowledgeMarkdown: z.string().min(50).max(50_000),
 		}),
 	)
-	.handler(async ({ context, input }) => {
-		const { snapshot } = await getOrCreateXiaofeiWorkspace(context);
+	.handler(async ({ input }) => {
+		const { snapshot } = await getOrCreatePublicXiaofeiWorkspace();
 		const rebuilt = rebuildWorkspaceSnapshot({
 			previous: snapshot,
 			...input,
 		});
 		const governed = await runMastraGovernance(rebuilt);
-		return await saveXiaofeiSnapshot(context, governed);
+		return await savePublicXiaofeiSnapshot(governed);
 	});
