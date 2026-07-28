@@ -241,11 +241,17 @@ export function KnowledgeEntries({
 		}
 		setBusy(true);
 		try {
-			const results = await Promise.allSettled(
-				selectableIds.map((id) =>
-					orpcClient.xiaofei.updateKnowledgeEntry({ id, status: "active" }),
-				),
-			);
+			const results: PromiseSettledResult<unknown>[] = [];
+			for (const id of selectableIds) {
+				try {
+					results.push({
+						status: "fulfilled",
+						value: await orpcClient.xiaofei.updateKnowledgeEntry({ id, status: "active" }),
+					});
+				} catch (reason) {
+					results.push({ status: "rejected", reason });
+				}
+			}
 			setSelectedEntryIds([]);
 			await refresh();
 			const failedCount = results.filter((result) => result.status === "rejected").length;

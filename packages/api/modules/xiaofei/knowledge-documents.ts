@@ -228,9 +228,10 @@ export async function createManualKnowledgeEntries(
 			category: XiaofeiKnowledgeDocumentCategory[input.category],
 			bodyText,
 		});
-		return await Promise.all(
-			input.pairs.map((pair) =>
-				createXiaofeiKnowledgeEntry({
+		const entries = [];
+		for (const pair of input.pairs) {
+			entries.push(
+				await createXiaofeiKnowledgeEntry({
 					workspaceId: workspace.id,
 					sourceId: source.id,
 					question: pair.question,
@@ -239,8 +240,9 @@ export async function createManualKnowledgeEntries(
 					tags: pair.tags ?? [],
 					category: input.category,
 				}),
-			),
-		);
+			);
+		}
+		return entries;
 	} catch (error) {
 		throwKnowledgeWriteError(error);
 	}
@@ -328,9 +330,10 @@ export async function generateKnowledgeUnitsForTenant(
 				}),
 			),
 		});
-		return await Promise.all(
-			drafts.map((draft) =>
-				createXiaofeiKnowledgeUnit({
+		const units = [];
+		for (const draft of drafts) {
+			units.push(
+				await createXiaofeiKnowledgeUnit({
 					workspaceId: workspace.id,
 					entryId: draft.lineage.entryId,
 					title: draft.title,
@@ -338,8 +341,9 @@ export async function generateKnowledgeUnitsForTenant(
 					status: "draft",
 					eligibility: "ineligible",
 				}),
-			),
-		);
+			);
+		}
+		return units;
 	} catch (error) {
 		if (error instanceof ORPCError) throw error;
 		throw new ORPCError("BAD_REQUEST", {
@@ -570,9 +574,10 @@ async function createEntriesForSource(
 	bodyText: string,
 	category: "PRESALES" | "POSTSALES",
 ) {
-	return await Promise.all(
-		splitKnowledgeSource(title, bodyText).map((entry) =>
-			createXiaofeiKnowledgeEntry({
+	const entries = [];
+	for (const entry of splitKnowledgeSource(title, bodyText)) {
+		entries.push(
+			await createXiaofeiKnowledgeEntry({
 				workspaceId,
 				sourceId,
 				question: entry.question,
@@ -581,8 +586,9 @@ async function createEntriesForSource(
 				similarQueries: [],
 				tags: ["source", entry.provenance],
 			}),
-		),
-	);
+		);
+	}
+	return entries;
 }
 
 interface SplitKnowledgeEntry {

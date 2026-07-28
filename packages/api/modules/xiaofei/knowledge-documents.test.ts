@@ -270,6 +270,37 @@ describe("knowledge document application boundary", () => {
 		);
 	});
 
+	it("creates derived entries serially so workspace-locked writes do not time out", async () => {
+		let concurrentWrites = 0;
+		let maximumConcurrentWrites = 0;
+		vi.mocked(createXiaofeiKnowledgeEntry).mockImplementation(async () => {
+			concurrentWrites += 1;
+			maximumConcurrentWrites = Math.max(maximumConcurrentWrites, concurrentWrites);
+			await Promise.resolve();
+			concurrentWrites -= 1;
+			return { id: `entry-${maximumConcurrentWrites}` } as never;
+		});
+
+		await createKnowledgeFile(USER_CONTEXT, {
+			originalFileName: "faq.md",
+			mimeType: "text/markdown",
+			category: "PRESALES",
+			contentBase64: Buffer.from(
+				[
+					"Q: First question?",
+					`A: ${"First answer. ".repeat(10)}`,
+					"Q: Second question?",
+					`A: ${"Second answer. ".repeat(10)}`,
+					"Q: Third question?",
+					`A: ${"Third answer. ".repeat(10)}`,
+				].join("\n"),
+			).toString("base64"),
+		});
+
+		expect(createXiaofeiKnowledgeEntry).toHaveBeenCalledTimes(3);
+		expect(maximumConcurrentWrites).toBe(1);
+	});
+
 	it("splits headings and practical Markdown table rows while merging tiny fragments", () => {
 		const entries = splitKnowledgeSource(
 			"matrix.xlsx",
