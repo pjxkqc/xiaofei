@@ -68,7 +68,9 @@ disabled even if the flag is present.
 The long-lived `uat` Git branch is also a Vercel Preview deployment, so it uses
 this same one-click login contract. Its stable branch alias and Neon
 `preview/uat` database are the shared UAT environment; short-lived feature
-Previews remain disposable.
+Previews remain disposable. Redeploy UAT with a Git push to `uat` so the Vercel
+integration reasserts the Neon branch credentials; do not manually redeploy an
+old Preview deployment as the UAT release path.
 
 ## Request paths
 
