@@ -48,6 +48,8 @@ describe("KU structured generation", () => {
 			eligibility: "ineligible",
 			lineage: { workspaceId: entry.workspaceId, entryId: entry.id },
 		});
+		expect(drafts[0]?.standardReplyPolicy).toContain(entry.answer);
+		expect(drafts[0]?.standardReplyPolicy).toContain("回复口径：\n仅收集信息，不承诺处理结果。");
 	});
 
 	it("redacts malformed structured output", async () => {
@@ -60,6 +62,17 @@ describe("KU structured generation", () => {
 		expect(() =>
 			KnowledgeUnitGenerationCandidatesSchema.parse([{ ...candidate(), title: "" }]),
 		).toThrow();
+	});
+
+	it("bounds grounded source facts to the editable KU policy limit", async () => {
+		const longEntry = { ...entry, answer: "已审核事实。".repeat(4_000) };
+		const drafts = await generateKnowledgeUnitDrafts(
+			{ workspaceId: longEntry.workspaceId, entries: [longEntry] },
+			async () => [candidate()],
+		);
+
+		expect(drafts[0]?.standardReplyPolicy.length).toBeLessThanOrEqual(20_000);
+		expect(drafts[0]?.standardReplyPolicy).toContain("回复口径：");
 	});
 
 	it("redacts candidates that fail the server-owned entry lineage gate", async () => {
