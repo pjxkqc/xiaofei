@@ -9,6 +9,7 @@ import {
 	isKnowledgeUnitEligible,
 	parseKnowledgeMarkdown,
 	setCapabilityPlanReview,
+	updateAgentSettingsSnapshot,
 } from "./index";
 
 describe("KnowledgeUnit markdown parser", () => {
@@ -156,6 +157,44 @@ describe("KnowledgeUnit markdown parser", () => {
 				expect.objectContaining({ id: "eval", status: "warning" }),
 			]),
 		);
+	});
+
+	it("updates Agent behavior without rebuilding knowledge or capability review", () => {
+		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", () => "2026-07-24T00:00:00Z");
+		const reviewed = setCapabilityPlanReview(snapshot, true, () => "2026-07-24T00:01:00Z");
+		const updated = updateAgentSettingsSnapshot({
+			previous: {
+				...reviewed,
+				evalSuite: {
+					...reviewed.evalSuite,
+					status: "passed",
+					passed: 1,
+					cases: [],
+					capabilityPlanVersion: reviewed.capabilityPlan.version,
+				},
+			},
+			instructions: "更新后的客服指令，应继续严格遵守已审核知识和安全边界。",
+			maxFollowUps: 4,
+			fallbackPolicy: {
+				...reviewed.agent.fallbackPolicy,
+				maxClarifications: 3,
+			},
+			now: () => "2026-07-24T00:02:00Z",
+		});
+
+		expect(updated.agent).toMatchObject({
+			instructions: "更新后的客服指令，应继续严格遵守已审核知识和安全边界。",
+			maxFollowUps: 4,
+			fallbackPolicy: { maxClarifications: 3 },
+		});
+		expect(updated.knowledgeUnits).toEqual(reviewed.knowledgeUnits);
+		expect(updated.capabilityPlan).toEqual(reviewed.capabilityPlan);
+		expect(updated.evalSuite).toMatchObject({
+			status: "warning",
+			passed: 0,
+			failed: 0,
+			capabilityPlanVersion: null,
+		});
 	});
 
 	it("invalidates capability review and Eval evidence with stale lineage", () => {

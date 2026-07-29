@@ -13,8 +13,10 @@ Minimal SaaS surface
   │    └─ customer messages ↔ Xiaofei or human owner
   ├─ /inbox (support role)
   │    └─ online state + takeover + human reply
-  ├─ /agent-settings
-  │    └─ Agent + Markdown KU → capability review → P0 Eval
+  ├─ /agent-settings/{general,fallback,status}
+  │    └─ Agent behavior + read-only release status
+  ├─ /knowledge/{entries,units,capabilities}
+  │    └─ source → KU → capability review + P0 Eval
   └─ /chatbot
        └─ governed conversation + business traces
           │
@@ -51,11 +53,12 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 
 ## Implemented P0 path
 
-1. A support operator edits Agent instructions, collection follow-up limits, and the
-   bounded knowledge-miss clarification/operator-attention policy on
-   `/agent-settings`. The same page can load the enhanced nine-category default
-   knowledge into a draft without silently overwriting persisted customization.
-   File, webpage, and manual-Q&A sources remain on `/knowledge/entries`.
+1. A support operator edits Agent instructions and collection follow-up limits
+   on `/agent-settings/general`, and the bounded knowledge-miss
+   clarification/operator-attention policy on `/agent-settings/fallback`.
+   `/agent-settings/status` summarizes release gates without duplicating
+   knowledge governance actions. File, webpage, and manual-Q&A sources remain
+   on `/knowledge/entries`.
 2. MD/TXT content is normalized locally; PDF/DOCX/XLSX and one public webpage
    are parsed through the server-side Firecrawl provider. Operators generate,
    review, and publish source-backed `KnowledgeUnit`s on `/knowledge/units`.

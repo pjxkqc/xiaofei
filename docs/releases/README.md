@@ -75,17 +75,19 @@ available in UAT until that PR is merged.
 
 Use the stable PR #22 branch alias for the current demo:
 
-| Surface                     | URL                                                                                                                                    | Access                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| Public customer support     | [`/support`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/support)                               | No login                 |
-| Login                       | [`/login`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/login)                                   | Preview one-click button |
-| Sources and entries         | [`/knowledge/entries`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/entries)           | Authenticated            |
-| Knowledge Units             | [`/knowledge/units`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/units)               | Authenticated            |
-| Capability review and Eval  | [`/knowledge/capabilities`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/capabilities) | Authenticated            |
-| Conversation validation     | [`/chatbot`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/chatbot)                               | Authenticated            |
-| Support inbox               | [`/inbox`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/inbox)                                   | Authenticated            |
-| Agent and fallback settings | [`/agent-settings`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings)                 | Authenticated            |
-| API communication demo      | [`/api-demo`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/api-demo)                             | Authenticated            |
+| Surface                     | URL                                                                                                                                      | Access                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Public customer support     | [`/support`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/support)                                 | No login                 |
+| Login                       | [`/login`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/login)                                     | Preview one-click button |
+| Sources and entries         | [`/knowledge/entries`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/entries)             | Authenticated            |
+| Knowledge Units             | [`/knowledge/units`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/units)                 | Authenticated            |
+| Capability review and Eval  | [`/knowledge/capabilities`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/capabilities)   | Authenticated            |
+| Conversation validation     | [`/chatbot`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/chatbot)                                 | Authenticated            |
+| Support inbox               | [`/inbox`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/inbox)                                     | Authenticated            |
+| Agent general settings      | [`/agent-settings/general`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings/general)   | Authenticated            |
+| Fallback and handoff policy | [`/agent-settings/fallback`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings/fallback) | Authenticated            |
+| Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings/status)     | Authenticated            |
+| API communication demo      | [`/api-demo`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/api-demo)                               | Authenticated            |
 
 The same paths apply to the UAT and Production base URLs. Immutable Vercel
 deployment URLs belong in PR acceptance evidence, not in this maintained page,

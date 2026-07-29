@@ -290,6 +290,20 @@ export function NavBar() {
 		];
 
 		const orgSettingsPrefix = `${basePath}/settings`;
+		const agentSettingsSubItems: NavSubItem[] = [
+			{
+				label: t("app.menu.agentSettingsGeneral"),
+				href: "/agent-settings/general",
+			},
+			{
+				label: t("app.menu.agentSettingsFallback"),
+				href: "/agent-settings/fallback",
+			},
+			{
+				label: t("app.menu.agentSettingsStatus"),
+				href: "/agent-settings/status",
+			},
+		];
 		const knowledgeSubItems: NavSubItem[] = [
 			{
 				label: t("app.menu.knowledgeEntries"),
@@ -345,9 +359,10 @@ export function NavBar() {
 			},
 			{
 				label: t("app.menu.agentSettings"),
-				href: "/agent-settings",
+				href: "/agent-settings/general",
 				icon: Settings2Icon,
 				isActive: pathname.startsWith("/agent-settings"),
+				subItems: agentSettingsSubItems,
 			},
 			{
 				label: t("app.menu.apiDemo"),

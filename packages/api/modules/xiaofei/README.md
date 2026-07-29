@@ -10,7 +10,8 @@ persistence.
 | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract   |
 | `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                          |
-| `saveConfig`                               | `PUT /xiaofei/config`                               | Persist Agent/fallback policy and reconcile built-in/source KUs       |
+| `saveAgentSettings`                        | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence         |
+| `saveConfig`                               | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation      |
 | `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs        |
 | `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates              |
 | `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                        |
@@ -67,8 +68,10 @@ must parse successfully before use. Older JSON snapshots that predate fallback
 policy and consecutive knowledge-miss fields receive domain-owned defaults
 during schema parsing; no database migration or destructive rewrite is needed.
 
-`saveConfig` accepts the Agent's collection follow-up limit plus a bounded
-fallback policy: zero to ten knowledge-miss clarification turns, a
+`saveAgentSettings` accepts one explicit page section per request, so a stale
+fallback tab cannot overwrite newer general settings (or the reverse). The
+general section contains Agent instructions and the collection follow-up limit.
+The fallback section contains zero to ten knowledge-miss clarification turns, a
 clarification reply, an operator-attention reply, and a true handoff reply. A
 knowledge miss is projected into the support conversation summary so `/inbox`
 can prioritize it without transferring ownership. The API only validates and
@@ -76,12 +79,15 @@ persists these values; matching, risk classification, Owner transitions, and
 Guardrail decisions remain in `@repo/xiaofei`.
 
 Built-in Markdown KUs and source-managed database KUs coexist in the runtime
-snapshot. Saving Agent settings re-synchronizes the managed KUs instead of
-silently replacing product-specific knowledge with only the built-in template.
-Knowledge changes keep the built-in KUs visible while revoking capability
-admission, then merge the current managed rows, regenerate the capability plan,
-and clear stale Eval evidence. The API refuses to run Eval before the current
-capability plan is reviewed.
+snapshot. Saving Agent settings preserves both KU collections and the reviewed
+capability plan, but clears Eval evidence because instructions or fallback
+behavior can change conversation results. Knowledge changes keep built-in KUs
+visible while revoking capability admission, then merge current managed rows,
+regenerate the capability plan, and clear stale Eval evidence. The legacy
+`saveConfig` Markdown rebuild remains available for compatibility and also
+re-synchronizes managed KUs instead of silently replacing product-specific
+knowledge. The API refuses to run Eval before the current capability plan is
+reviewed.
 
 P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on

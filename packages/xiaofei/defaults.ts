@@ -229,6 +229,49 @@ export function rebuildWorkspaceSnapshot(input: {
 	});
 }
 
+/**
+ * Update Agent behavior without rebuilding the knowledge graph.
+ *
+ * The reviewed capability plan remains valid because its KU inputs did not
+ * change, while Eval evidence is revoked because Agent instructions or
+ * fallback behavior can change the observable conversation result.
+ */
+export function updateAgentSettingsSnapshot(input: {
+	previous: XiaofeiWorkspaceSnapshot;
+	instructions: string;
+	maxFollowUps: number;
+	fallbackPolicy: XiaofeiWorkspaceSnapshot["agent"]["fallbackPolicy"];
+	now?: () => string;
+}): XiaofeiWorkspaceSnapshot {
+	const now = input.now ?? (() => new Date().toISOString());
+	const updatedAt = now();
+
+	return XiaofeiWorkspaceSnapshotSchema.parse({
+		...input.previous,
+		agent: {
+			...input.previous.agent,
+			instructions: input.instructions,
+			maxFollowUps: input.maxFollowUps,
+			fallbackPolicy: input.fallbackPolicy,
+		},
+		evalSuite: {
+			status: "warning",
+			passed: 0,
+			failed: 0,
+			cases: [],
+			updatedAt,
+			capabilityPlanVersion: null,
+		},
+		gates: deriveReleaseGates(
+			input.previous.knowledgeUnits,
+			input.previous.capabilityPlan,
+			"warning",
+			input.previous.tools,
+		),
+		updatedAt,
+	});
+}
+
 export function deriveCapabilityPlan(
 	knowledgeUnits: KnowledgeUnit[],
 	generatedAt: string = new Date().toISOString(),

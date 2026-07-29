@@ -21,6 +21,7 @@ import {
 import { resetXiaofeiConversation } from "./procedures/reset-conversation";
 import { reviewXiaofeiCapability } from "./procedures/review-capability";
 import { runXiaofeiEval } from "./procedures/run-eval";
+import { saveXiaofeiAgentSettings } from "./procedures/save-agent-settings";
 import { saveXiaofeiConfig } from "./procedures/save-config";
 import {
 	getAgentConversation,
@@ -35,6 +36,7 @@ import {
 export const xiaofeiRouter = {
 	status: getXiaofeiStatus,
 	getConfig: getXiaofeiConfig,
+	saveAgentSettings: saveXiaofeiAgentSettings,
 	saveConfig: saveXiaofeiConfig,
 	reviewCapability: reviewXiaofeiCapability,
 	resetConversation: resetXiaofeiConversation,

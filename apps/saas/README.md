@@ -13,8 +13,10 @@ The product surface is deliberately kept to small, focused pages:
   takeover, and human replies;
 - `/chatbot` renders `XiaofeiChatConsole.tsx` for conversation and trace
   validation;
-- `/agent-settings` renders `XiaofeiAgentSettings.tsx` for Agent, Knowledge
-  Unit, release-gate, and Eval configuration;
+- `/agent-settings/general`, `/agent-settings/fallback`, and
+  `/agent-settings/status` separate Agent instructions, knowledge-miss/handoff
+  policy, and read-only release status. `/agent-settings` redirects to the
+  general page;
 - `/api-demo` is an authenticated comparison of the public OpenAPI status route
   and the typed browser oRPC client;
 - `/knowledge/entries` adds and manages normalized entries for the shared
@@ -35,10 +37,7 @@ The pages can:
 
 - edit Agent instructions, collection follow-up limits, and the bounded
   knowledge-miss clarification/operator-attention policy;
-- load the enhanced nine-category default knowledge into the current draft, or
-  import/edit Markdown knowledge without silently overwriting persisted tenant
-  customization;
-- save configuration through the protected Xiaofei oRPC module;
+- save Agent behavior without rebuilding or replacing source-managed KUs;
 - review the capability plan derived from released KUs;
 - run deterministic KU-match, Action, and Owner release assertions;
 - stream guarded replies through the existing `ai.stream` procedure;
@@ -87,7 +86,7 @@ Previews remain disposable.
 
 ```text
 configuration / eval
-  XiaofeiAgentSettings
+  AgentGeneralSettings / FallbackSettings / AgentStatus
     → same-origin /api/rpc
     → protected xiaofei.* procedure
     → shared P0 `channel:public-support` snapshot in PostgreSQL / Neon
@@ -136,8 +135,9 @@ pnpm --filter saas dev
 
 The app listens on `http://localhost:3000`. Use `/support` without logging in.
 Create a password user, complete onboarding, then use `/inbox` and
-`/agent-settings` as the support role. Use the four-step navigation beginning
-at `/knowledge/entries` to add a UTF-8
+`/agent-settings/general` as the support role. Use the three Agent settings
+pages for behavior and status, and the four-step navigation beginning at
+`/knowledge/entries` to add a UTF-8
 `.md`/`.txt` file, a provider-parsed PDF/DOCX/XLSX, one public webpage, or a
 manual Q&A entry. Provider-only formats and webpages require server-side
 Firecrawl configuration; manual Q&A and MD/TXT do not.
