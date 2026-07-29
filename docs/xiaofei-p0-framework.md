@@ -13,8 +13,10 @@ Minimal SaaS surface
   │    └─ customer messages ↔ Xiaofei or human owner
   ├─ /inbox (support role)
   │    └─ online state + takeover + human reply
-  ├─ /agent-settings
-  │    └─ Agent + Markdown KU → capability review → P0 Eval
+  ├─ /agent-settings/{general,fallback,status}
+  │    └─ Agent behavior + read-only release status
+  ├─ /knowledge/{entries,units,capabilities}
+  │    └─ source → KU → capability review + P0 Eval
   └─ /chatbot
        └─ governed conversation + business traces
           │
@@ -51,30 +53,45 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
 
 ## Implemented P0 path
 
-1. The tenant edits Agent instructions and a follow-up limit on
-   `/agent-settings`, then manages file, webpage, or manual-Q&A sources on
-   `/knowledge/entries`.
+1. A support operator edits Agent instructions and collection follow-up limits
+   on `/agent-settings/general`, and the bounded knowledge-miss
+   clarification/operator-attention policy on `/agent-settings/fallback`.
+   `/agent-settings/status` summarizes release gates without duplicating
+   knowledge governance actions. File, webpage, and manual-Q&A sources remain
+   on `/knowledge/entries`.
 2. MD/TXT content is normalized locally; PDF/DOCX/XLSX and one public webpage
    are parsed through the server-side Firecrawl provider. Operators generate,
    review, and publish source-backed `KnowledgeUnit`s on `/knowledge/units`.
+   Generated presales context fields remain optional so ordinary FAQ and model
+   recommendations cannot accidentally enter the collect-then-handoff path.
 3. The domain derives a capability plan from released KUs: callable KU IDs,
    takeover/reject boundaries, field matrices, action boundaries, and Eval
    suggestions. A human must review it before automatic handling is admitted.
 4. A Mastra Workflow checks the knowledge and policy boundary.
-5. The tenant can run four deterministic business assertions covering KU
-   matching, slot collection, high-risk handoff, knowledge missing, Action, and
+5. The support operator can run deterministic business assertions for every currently
+   admitted KU plus fixed high-risk and knowledge-miss cases. They cover
+   matching, slot collection, clarification, high-risk handoff, Action, and
    Owner. Saving KU or changing capability review invalidates old Eval evidence.
 6. Chat turns always enter the LangGraph StateGraph. Only reviewed capability
-   KUs are callable, and only the safe reply branch invokes Mastra Agent.
+   KUs are callable. Matching preserves explicit product phrases inside
+   generated composite fields, prefers exact configured phrases, then a
+   bounded related-text score, and only the safe reply branch invokes Mastra
+   Agent.
 7. The complete candidate reply is generated before it becomes customer
    visible. The final Guardrail can replace it with a safe fallback and transfer
    ownership to a human.
-8. `ownerEpoch` changes on handoff, invalidating stale AI work. Conversation
+8. A knowledge miss uses the configured deterministic clarification budget,
+   marks the conversation for operator attention, and retains AI ownership.
+   Exhausting the budget changes the safe reply without exiting, so a later
+   reviewed-KU match can recover automatically. An explicit human request,
+   complaint, legal/safety risk, or high-risk action request still exits
+   immediately.
+9. `ownerEpoch` changes on handoff, invalidating stale AI work. Conversation
    state and business-readable traces are stored in Neon.
-9. A no-login customer receives a random conversation token. The public page
-   polls messages and online presence; authenticated support users see the same
-   conversation in `/inbox`, can take ownership, reply, and return it to
-   Xiaofei.
+10. A no-login customer receives a random conversation token. The public page
+    polls messages and online presence; authenticated support users see the same
+    conversation in `/inbox`, can take ownership, reply, and return it to
+    Xiaofei.
 
 ## Tool and adapter boundary
 
@@ -89,6 +106,14 @@ recursive crawl. Manual Q&A (up to 20 pairs per submission) bypasses Firecrawl.
 Provider configuration failures are safe errors, so manual Q&A and MD/TXT
 remain available without a provider key. See the [API module guide](../packages/api/modules/xiaofei/README.md)
 for the protected procedure boundary.
+
+For P0, all knowledge sources, entries, KUs, capability admission, Chatbot
+validation, and public conversations map server-side to
+`channel:public-support`. Operator authentication authorizes governance but
+does not select a per-user or per-organization knowledge workspace. The UI
+exposes the demo path as four linked steps: ingestion, KU review, capability
+review/Eval, and conversation testing. Multi-channel tenant mapping remains a
+future Flyranking/LoopDesk adapter concern.
 
 The initial registry deliberately exposes only the boundary:
 
@@ -113,8 +138,8 @@ This is a framework slice, not a production-complete Agent Center:
 - MD/TXT parsing is local and deterministic; PDF/DOCX/XLSX and single-page web
   ingestion use Firecrawl. OCR, image-derived knowledge, Feishu ingestion, and
   recursive site crawling are deferred;
-- KU matching is keyword/state based; embeddings, vector search and reranking
-  are deferred;
+- KU matching is deterministic exact plus bounded character-pair similarity;
+  semantic embeddings, vector search and reranking are deferred;
 - capability plans are deterministically derived and reviewed as part of the
   workspace snapshot; LLM planning, version history, and rollback are deferred;
 - the LangGraph graph uses Neon as the product persistence boundary rather than
@@ -131,7 +156,7 @@ The complete slice has been exercised in an isolated Vercel + Neon Preview:
 
 - password signup continued to onboarding without email verification;
 - configuration save executed the Mastra governance Workflow;
-- all four deterministic P0 assertions passed;
+- every admitted KU assertion plus the fixed risk/fallback assertions passed;
 - LangGraph collected an order ID and damage-photo reference across separate
   turns, then transferred ownership to a human;
 - the LangGraph safe-reply path asked Mastra Agent for a real model response

@@ -47,11 +47,8 @@ vi.mock("@repo/database", () => ({
 vi.mock("./service", () => ({
 	clearKnowledgeWorkspaceAdmission: vi.fn(),
 	getOrCreateXiaofeiWorkspaceByTenantKey: vi.fn(),
+	PUBLIC_SUPPORT_TENANT_KEY: "channel:public-support",
 	synchronizeKnowledgeWorkspaceSnapshot: vi.fn(),
-}));
-
-vi.mock("../organizations/lib/membership", () => ({
-	verifyOrganizationMembership: vi.fn(),
 }));
 
 vi.mock("./knowledge-content-parser", () => ({
@@ -77,7 +74,6 @@ import {
 	XiaofeiKnowledgeEntryEligibilityError,
 } from "@repo/database";
 
-import { verifyOrganizationMembership } from "../organizations/lib/membership";
 import { createKnowledgeContentParser, validatePublicHttpUrl } from "./knowledge-content-parser";
 import { knowledgeDocumentListInputSchema } from "./knowledge-document-input";
 import {
@@ -97,6 +93,7 @@ import {
 } from "./knowledge-documents";
 import {
 	getOrCreateXiaofeiWorkspaceByTenantKey,
+	PUBLIC_SUPPORT_TENANT_KEY,
 	synchronizeKnowledgeWorkspaceSnapshot,
 } from "./service";
 
@@ -125,7 +122,7 @@ function knowledgeUnit(status: string, eligibility = "ineligible") {
 			sourceSection: "Returns entry",
 			quality: { status: "warning", blockers: [], warnings: [] },
 			lineage: {
-				workspaceId: "workspace-user",
+				workspaceId: "workspace-public",
 				sourceId: "source-1",
 				sourceContentHash: "hash",
 				sourceVersion: 1,
@@ -141,18 +138,14 @@ describe("knowledge document application boundary", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.mocked(getOrCreateXiaofeiWorkspaceByTenantKey).mockImplementation(
-			async (tenantKey) =>
+			async () =>
 				({
 					workspace: {
-						id: tenantKey === "organization:org-a" ? "workspace-a" : "workspace-user",
+						id: "workspace-public",
 					},
 					snapshot: {},
 				}) as never,
 		);
-		vi.mocked(verifyOrganizationMembership).mockResolvedValue({
-			organization: { id: "org-a" },
-			role: "member",
-		} as never);
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
 		} as never);
@@ -165,25 +158,19 @@ describe("knowledge document application boundary", () => {
 		);
 	});
 
-	it("uses a verified active organization, then the authenticated user, as the tenant", async () => {
+	it("keeps knowledge governance on the public support workspace for every operator context", async () => {
 		await expect(
 			getKnowledgeTenantKey({
 				session: { activeOrganizationId: "org-a" },
 				user: { id: "user-1" },
 			}),
-		).resolves.toBe("organization:org-a");
-		await expect(getKnowledgeTenantKey(USER_CONTEXT)).resolves.toBe("user:user-1");
-		expect(verifyOrganizationMembership).toHaveBeenCalledWith("org-a", "user-1");
-	});
-
-	it("rejects a stale active organization without current membership", async () => {
-		vi.mocked(verifyOrganizationMembership).mockResolvedValueOnce(null);
+		).resolves.toBe(PUBLIC_SUPPORT_TENANT_KEY);
 		await expect(
 			getKnowledgeTenantKey({
-				session: { activeOrganizationId: "org-a" },
-				user: { id: "user-1" },
+				session: { activeOrganizationId: null },
+				user: { id: "another-user" },
 			}),
-		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		).resolves.toBe(PUBLIC_SUPPORT_TENANT_KEY);
 	});
 
 	it.each([
@@ -209,7 +196,7 @@ describe("knowledge document application boundary", () => {
 
 		expect(createXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
 			expect.objectContaining({
-				workspaceId: "workspace-user",
+				workspaceId: "workspace-public",
 				fileType: example.fileType,
 				bodyText: example.body,
 			}),
@@ -556,7 +543,7 @@ describe("knowledge document application boundary", () => {
 		);
 	});
 
-	it("scopes document reads to the resolved workspace and hides cross-tenant rows", async () => {
+	it("scopes document reads to the server-selected public workspace", async () => {
 		vi.mocked(getXiaofeiKnowledgeDocument).mockResolvedValueOnce(null);
 		const context = {
 			session: { activeOrganizationId: "org-a" },
@@ -566,14 +553,14 @@ describe("knowledge document application boundary", () => {
 		await expect(getKnowledgeDocument(context, "other-tenant-document")).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
-		expect(getOrCreateXiaofeiWorkspaceByTenantKey).toHaveBeenCalledWith("organization:org-a");
+		expect(getOrCreateXiaofeiWorkspaceByTenantKey).toHaveBeenCalledWith(PUBLIC_SUPPORT_TENANT_KEY);
 		expect(getXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
-			"workspace-a",
+			"workspace-public",
 			"other-tenant-document",
 		);
 	});
 
-	it("scopes list, update, and delete operations to the resolved workspace", async () => {
+	it("scopes list, update, and delete operations to the public workspace", async () => {
 		const context = {
 			session: { activeOrganizationId: "org-a" },
 			user: { id: "user-1" },
@@ -594,14 +581,14 @@ describe("knowledge document application boundary", () => {
 		await updateKnowledgeDocumentForTenant(context, "document-1", { status: "active" });
 		await deleteKnowledgeDocumentForTenant(context, "document-1");
 
-		expect(listXiaofeiKnowledgeDocuments).toHaveBeenCalledWith("workspace-a", {
+		expect(listXiaofeiKnowledgeDocuments).toHaveBeenCalledWith("workspace-public", {
 			cursor: "document-cursor",
 			limit: 10,
 		});
-		expect(updateXiaofeiKnowledgeDocument).toHaveBeenCalledWith("workspace-a", "document-1", {
+		expect(updateXiaofeiKnowledgeDocument).toHaveBeenCalledWith("workspace-public", "document-1", {
 			status: "active",
 		});
-		expect(deleteXiaofeiKnowledgeDocument).toHaveBeenCalledWith("workspace-a", "document-1");
+		expect(deleteXiaofeiKnowledgeDocument).toHaveBeenCalledWith("workspace-public", "document-1");
 	});
 
 	it("does not run a cross-tenant update when the scoped preflight cannot find the row", async () => {
@@ -629,10 +616,10 @@ describe("knowledge document application boundary", () => {
 		await expect(
 			updateKnowledgeEntryForTenant(USER_CONTEXT, "entry-1", { status: "active" }),
 		).resolves.toEqual(refreshed);
-		expect(updateXiaofeiKnowledgeEntry).toHaveBeenCalledWith("workspace-user", "entry-1", {
+		expect(updateXiaofeiKnowledgeEntry).toHaveBeenCalledWith("workspace-public", "entry-1", {
 			status: "active",
 		});
-		expect(getXiaofeiKnowledgeEntry).toHaveBeenLastCalledWith("workspace-user", "entry-1");
+		expect(getXiaofeiKnowledgeEntry).toHaveBeenLastCalledWith("workspace-public", "entry-1");
 	});
 
 	it("refuses to activate an entry whose source is no longer current", async () => {
@@ -682,7 +669,7 @@ describe("knowledge document application boundary", () => {
 
 		expect(synchronizeKnowledgeWorkspaceSnapshot).toHaveBeenCalledWith(
 			expect.objectContaining({
-				tenantKey: "user:user-1",
+				tenantKey: PUBLIC_SUPPORT_TENANT_KEY,
 				units: [expect.objectContaining({ eligibility: "eligible" })],
 			}),
 		);
@@ -693,7 +680,7 @@ describe("knowledge document application boundary", () => {
 		await expect(
 			transitionKnowledgeUnitForTenant(USER_CONTEXT, "other-tenant-unit", "review"),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
-		expect(getXiaofeiKnowledgeUnit).toHaveBeenCalledWith("workspace-user", "other-tenant-unit");
+		expect(getXiaofeiKnowledgeUnit).toHaveBeenCalledWith("workspace-public", "other-tenant-unit");
 		expect(updateXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
 	});
 
@@ -730,7 +717,7 @@ describe("knowledge document application boundary", () => {
 			knowledgeUnit("released", "eligible") as never,
 		);
 		await transitionKnowledgeUnitForTenant(USER_CONTEXT, "unit-1", "publish");
-		expect(updateXiaofeiKnowledgeUnit).toHaveBeenCalledWith("workspace-user", "unit-1", {
+		expect(updateXiaofeiKnowledgeUnit).toHaveBeenCalledWith("workspace-public", "unit-1", {
 			status: "released",
 			eligibility: "eligible",
 		});
@@ -745,7 +732,7 @@ describe("knowledge document application boundary", () => {
 			standardReplyPolicy: "Updated policy.",
 		});
 		expect(updateXiaofeiKnowledgeUnit).toHaveBeenCalledWith(
-			"workspace-user",
+			"workspace-public",
 			"unit-1",
 			expect.objectContaining({
 				status: "draft",

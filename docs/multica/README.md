@@ -20,7 +20,10 @@ An importer must read these files before creating or updating anything:
    identifiers;
 4. [`agents.md`](./agents.md) — exact role instructions;
 5. [`collaboration.md`](./collaboration.md) — issue routing, handoff, PR, and
-   Preview protocol.
+   Preview protocol;
+6. [`skills/xiaofei-pr-delivery/SKILL.md`](./skills/xiaofei-pr-delivery/SKILL.md)
+   — reusable UAT branch, Draft PR, exact-head, Preview, cleanup, and promotion
+   workflow.
 
 The importer should reconcile by project title, Agent slug, and squad name. It
 must update matching objects instead of creating duplicates.
@@ -66,7 +69,27 @@ Do not add model-provider, database, Vercel, Neon, or GitHub credentials as
 Agent `custom_env` during import. Credential design is a separate,
 least-privilege operation.
 
-### 3. Create the squad
+### 3. Create the delivery Skill
+
+Create or reconcile `xiaofei-pr-delivery` from its versioned `SKILL.md`, then
+assign it to all five Xiaofei Agents. Keep the live Skill content synchronized
+with this repository copy:
+
+```bash
+multica skill create \
+  --name xiaofei-pr-delivery \
+  --description "Deliver Xiaofei changes safely through UAT" \
+  --content-file docs/multica/skills/xiaofei-pr-delivery/SKILL.md
+multica skill files upsert <skill-id> \
+  --path agents/openai.yaml \
+  --content-file docs/multica/skills/xiaofei-pr-delivery/agents/openai.yaml
+multica agent skills add <agent-id> --skill-ids <skill-id>
+```
+
+Existing installations should use `multica skill update` rather than creating
+a duplicate.
+
+### 4. Create the squad
 
 Create one stable routing target led by `xiaofei-lead`:
 
@@ -90,13 +113,15 @@ Put the collaboration rules into the squad instructions. Assign ambiguous or
 cross-boundary issues to the squad; assign already scoped issues directly to
 the owning Agent.
 
-### 4. Verify the import
+### 5. Verify the import
 
 - The project has exactly one `github_repo` resource:
   `https://github.com/pjxkqc/xiaofei`.
 - All five Agent slugs exist once and use a Codex runtime.
 - `xiaofei-lead` is the squad leader and the other four Agents are members.
 - Every Agent instruction tells it to read root `AGENTS.md`.
+- Every Agent has `xiaofei-pr-delivery`; ordinary repository checkout uses
+  `--ref uat` and an ordinary Draft PR targets `uat`.
 - No secret was copied from the repository, browser, shell, or deployment
   provider into Multica.
 - A dry-run issue can be routed without allowing two Agents to edit the same

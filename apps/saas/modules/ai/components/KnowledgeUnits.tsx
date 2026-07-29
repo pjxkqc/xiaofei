@@ -14,6 +14,7 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import { orpcClient } from "@shared/lib/orpc-client";
 import { LoaderCircleIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 interface Entry {
@@ -125,6 +126,14 @@ export function KnowledgeUnits() {
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="gap-3 flex flex-col">
+					{!entries.some((entry) => entry.eligible && entry.status === "active") && (
+						<div className="gap-2 p-3 text-sm flex flex-col rounded-md border border-dashed text-muted-foreground">
+							<p>还没有可生成 KU 的启用条目。请先完成第 1 步。</p>
+							<Button variant="outline" size="sm" asChild>
+								<Link href="/knowledge/entries">返回录入并启用条目</Link>
+							</Button>
+						</div>
+					)}
 					{entries
 						.filter((entry) => entry.eligible && entry.status === "active")
 						.map((entry) => (
@@ -157,9 +166,14 @@ export function KnowledgeUnits() {
 				<Card>
 					<CardHeader>
 						<CardTitle>知识单元</CardTitle>
-						<CardDescription>{units.length} 个当前租户单元</CardDescription>
+						<CardDescription>{units.length} 个公共客服单元</CardDescription>
 					</CardHeader>
 					<CardContent className="gap-2 flex max-h-[600px] flex-col overflow-auto">
+						{units.length === 0 && (
+							<p className="p-3 text-sm text-muted-foreground">
+								还没有 KU。选择上方已启用条目生成草稿。
+							</p>
+						)}
 						{units.map((unit) => (
 							<button
 								key={unit.id}

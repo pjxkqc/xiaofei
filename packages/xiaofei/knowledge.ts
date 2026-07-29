@@ -17,6 +17,8 @@ const FIELD_LABELS = {
 	standardReplyPolicy: "标准口径",
 	fallbackReply: "兜底话术",
 } as const;
+const MAX_STANDARD_REPLY_POLICY_CHARACTERS = 20_000;
+const MAX_GENERATED_POLICY_CHARACTERS = 4_000;
 
 export function parseKnowledgeMarkdown(markdown: string): KnowledgeUnit[] {
 	return markdown
@@ -42,9 +44,15 @@ export function createKnowledgeUnitDrafts(input: {
 		if (!entry || entry.workspaceId !== input.workspaceId || entry.status !== "active") {
 			throw new Error("Draft KU candidate references an ineligible knowledge entry.");
 		}
+		const requiredSlots =
+			entry.category === "PRESALES"
+				? parsed.requiredSlots.map((slot) => ({ ...slot, required: false }))
+				: parsed.requiredSlots;
 
 		return KnowledgeUnitDraftSchema.parse({
 			...parsed,
+			requiredSlots,
+			standardReplyPolicy: buildGroundedReplyPolicy(entry.answer, parsed.standardReplyPolicy),
 			id: `${entry.id}-draft-${index + 1}`,
 			status: "draft",
 			sourceSection: entry.question,
@@ -60,6 +68,14 @@ export function createKnowledgeUnitDrafts(input: {
 			eligibility: "ineligible",
 		});
 	});
+}
+
+function buildGroundedReplyPolicy(answer: string, generatedPolicy: string): string {
+	const prefix = "已审核来源事实（回复必须以此为准，不得扩展）：\n";
+	const policy = generatedPolicy.trim().slice(0, MAX_GENERATED_POLICY_CHARACTERS);
+	const suffix = `\n\n回复口径：\n${policy}`;
+	const evidenceBudget = MAX_STANDARD_REPLY_POLICY_CHARACTERS - prefix.length - suffix.length;
+	return `${prefix}${answer.trim().slice(0, evidenceBudget)}${suffix}`;
 }
 
 export function invalidateKnowledgeUnitsForLineage(

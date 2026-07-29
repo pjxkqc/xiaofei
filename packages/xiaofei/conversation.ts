@@ -167,6 +167,7 @@ export function requestHumanHandoff(
 		riskLevel: request.riskLevel,
 		nextAction: "stop",
 		handoffPackage,
+		operatorAttention: null,
 		sendBlockedReasons: [...state.sendBlockedReasons, request.reason],
 		updatedAt: now(),
 	});

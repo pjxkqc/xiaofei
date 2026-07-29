@@ -9,6 +9,7 @@ import {
 	isKnowledgeUnitEligible,
 	parseKnowledgeMarkdown,
 	setCapabilityPlanReview,
+	updateAgentSettingsSnapshot,
 } from "./index";
 
 describe("KnowledgeUnit markdown parser", () => {
@@ -68,6 +69,37 @@ describe("KnowledgeUnit markdown parser", () => {
 		).toThrow();
 	});
 
+	it("keeps generated presales Q&A slots optional without changing postsales collection", () => {
+		const candidate = {
+			...validCandidate(),
+			requiredSlots: [
+				{
+					key: "room_area",
+					label: "使用空间面积",
+					askText: "请补充使用空间面积。",
+					required: true,
+				},
+			],
+		};
+		const [presalesDraft] = createKnowledgeUnitDrafts({
+			workspaceId: "workspace-1",
+			entries: [{ ...activeEntry, category: "PRESALES" }],
+			candidates: [candidate],
+		});
+		const [postsalesDraft] = createKnowledgeUnitDrafts({
+			workspaceId: "workspace-1",
+			entries: [activeEntry],
+			candidates: [candidate],
+		});
+
+		expect(presalesDraft?.requiredSlots).toEqual([
+			expect.objectContaining({ key: "room_area", required: false }),
+		]);
+		expect(postsalesDraft?.requiredSlots).toEqual([
+			expect.objectContaining({ key: "room_area", required: true }),
+		]);
+	});
+
 	it("rejects candidates from another workspace and invalidates all dependent lineage", () => {
 		expect(() =>
 			createKnowledgeUnitDrafts({
@@ -101,13 +133,13 @@ describe("KnowledgeUnit markdown parser", () => {
 	it("builds released, source-traceable KnowledgeUnits from the P0 template", () => {
 		const units = parseKnowledgeMarkdown(DEFAULT_KNOWLEDGE_MARKDOWN);
 
-		expect(units).toHaveLength(2);
-		expect(units[0]).toMatchObject({
-			title: "商品破损资料收集",
+		expect(units).toHaveLength(9);
+		expect(units[2]).toMatchObject({
+			title: "收货破损、错发或缺件",
 			status: "released",
 			requiredSlots: [
 				{ key: "order_id", label: "订单号" },
-				{ key: "damage_photo", label: "破损照片" },
+				{ key: "damage_photo", label: "问题照片" },
 			],
 			quality: { status: "passed", blockers: [] },
 		});
@@ -125,6 +157,44 @@ describe("KnowledgeUnit markdown parser", () => {
 				expect.objectContaining({ id: "eval", status: "warning" }),
 			]),
 		);
+	});
+
+	it("updates Agent behavior without rebuilding knowledge or capability review", () => {
+		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", () => "2026-07-24T00:00:00Z");
+		const reviewed = setCapabilityPlanReview(snapshot, true, () => "2026-07-24T00:01:00Z");
+		const updated = updateAgentSettingsSnapshot({
+			previous: {
+				...reviewed,
+				evalSuite: {
+					...reviewed.evalSuite,
+					status: "passed",
+					passed: 1,
+					cases: [],
+					capabilityPlanVersion: reviewed.capabilityPlan.version,
+				},
+			},
+			instructions: "更新后的客服指令，应继续严格遵守已审核知识和安全边界。",
+			maxFollowUps: 4,
+			fallbackPolicy: {
+				...reviewed.agent.fallbackPolicy,
+				maxClarifications: 3,
+			},
+			now: () => "2026-07-24T00:02:00Z",
+		});
+
+		expect(updated.agent).toMatchObject({
+			instructions: "更新后的客服指令，应继续严格遵守已审核知识和安全边界。",
+			maxFollowUps: 4,
+			fallbackPolicy: { maxClarifications: 3 },
+		});
+		expect(updated.knowledgeUnits).toEqual(reviewed.knowledgeUnits);
+		expect(updated.capabilityPlan).toEqual(reviewed.capabilityPlan);
+		expect(updated.evalSuite).toMatchObject({
+			status: "warning",
+			passed: 0,
+			failed: 0,
+			capabilityPlanVersion: null,
+		});
 	});
 
 	it("invalidates capability review and Eval evidence with stale lineage", () => {
@@ -169,19 +239,18 @@ describe("KnowledgeUnit markdown parser", () => {
 		expect(snapshot.capabilityPlan).toMatchObject({
 			status: "review_ready",
 			reviewed: false,
-			knowledgeUnitIds: ["商品破损资料收集", "服务范围说明"],
-			fieldMatrix: [
-				{
-					knowledgeId: "商品破损资料收集",
-					fields: ["订单号", "破损照片"],
+			knowledgeUnitIds: expect.arrayContaining([
+				"收货破损-错发或缺件",
+				"退换货与退款规则咨询",
+				"服务范围-寒暄与问题引导",
+			]),
+			fieldMatrix: expect.arrayContaining([
+				expect.objectContaining({
+					knowledgeId: "收货破损-错发或缺件",
+					fields: ["订单号", "问题照片"],
 					exitWhen: "必问字段齐全后转人工核实",
-				},
-				{
-					knowledgeId: "服务范围说明",
-					fields: [],
-					exitWhen: "低风险回复完成或触发转人工条件",
-				},
-			],
+				}),
+			]),
 		});
 		expect(snapshot.gates).toEqual(
 			expect.arrayContaining([

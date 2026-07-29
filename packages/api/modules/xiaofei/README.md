@@ -10,7 +10,8 @@ persistence.
 | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract   |
 | `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                          |
-| `saveConfig`                               | `PUT /xiaofei/config`                               | Rebuild Markdown KU, run Mastra governance, and persist the snapshot  |
+| `saveAgentSettings`                        | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence         |
+| `saveConfig`                               | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation      |
 | `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs        |
 | `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates              |
 | `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                        |
@@ -20,14 +21,14 @@ persistence.
 | `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role           |
 | `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                  |
 | `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                         |
-| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a tenant source document               |
-| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only source document summaries                  |
-| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one tenant-scoped source document                                |
+| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document       |
+| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only public-channel source summaries            |
+| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one public-channel source document                               |
 | `updateKnowledgeDocument`                  | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status           |
-| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one tenant-scoped source document                              |
+| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one public-channel source document                             |
 | `createKnowledgeWeb`                       | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry  |
 | `createManualKnowledgeEntries`             | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                 |
-| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage tenant-scoped normalized entries and eligibility               |
+| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage public-channel normalized entries and eligibility              |
 | `generate/list/update/deleteKnowledgeUnit` | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
@@ -39,7 +40,10 @@ emits customer-visible text only after final authorization.
 
 The current Flyranking validation slice uses one stable
 `channel:public-support` workspace so the no-login customer page, support
-inbox, and knowledge governance operate on the same state.
+inbox, Agent settings, capability review, deterministic Eval, and authenticated
+validation Chatbot operate on the same state. This prevents an operator from
+approving one tenant snapshot while the public customer channel continues to
+run against an unreviewed default snapshot.
 
 Customers receive a random UUID conversation token; they cannot list
 conversations or choose a workspace. Inbox and governance procedures use
@@ -47,20 +51,43 @@ conversations or choose a workspace. Inbox and governance procedures use
 future `support` role, or `admin`. Flyranking/LoopDesk tenant and channel
 mapping remains a future adapter concern.
 
-Knowledge documents use a separate authenticated operator tenant key: the
-active organization ID when present, otherwise the authenticated user ID.
-Every document query receives the resolved workspace ID; a caller cannot choose
-a workspace ID, and cross-tenant reads or mutations return not found.
+Knowledge sources, normalized entries, generated KUs, capability review, Eval,
+authenticated Chatbot validation, and public conversations all use that same
+server-selected public workspace. Changing the active organization or support
+user does not silently switch the governed knowledge behind the customer
+channel. Every knowledge procedure still starts with `supportProcedure`; the
+browser cannot choose a workspace ID, and row reads or mutations remain scoped
+to the server-resolved workspace.
 
 ## Persistence boundary
 
 The service validates JSON snapshots with schemas from `@repo/xiaofei` before
 and after persistence. New workspaces start from the domain default. New
 conversations start from `createConversationState`; existing state and traces
-must parse successfully before use.
+must parse successfully before use. Older JSON snapshots that predate fallback
+policy and consecutive knowledge-miss fields receive domain-owned defaults
+during schema parsing; no database migration or destructive rewrite is needed.
 
-Knowledge changes regenerate the capability plan and clear stale Eval evidence.
-The API refuses to run Eval before the current capability plan is reviewed.
+`saveAgentSettings` accepts one explicit page section per request, so a stale
+fallback tab cannot overwrite newer general settings (or the reverse). The
+general section contains Agent instructions and the collection follow-up limit.
+The fallback section contains zero to ten knowledge-miss clarification turns, a
+clarification reply, an operator-attention reply, and a true handoff reply. A
+knowledge miss is projected into the support conversation summary so `/inbox`
+can prioritize it without transferring ownership. The API only validates and
+persists these values; matching, risk classification, Owner transitions, and
+Guardrail decisions remain in `@repo/xiaofei`.
+
+Built-in Markdown KUs and source-managed database KUs coexist in the runtime
+snapshot. Saving Agent settings preserves both KU collections and the reviewed
+capability plan, but clears Eval evidence because instructions or fallback
+behavior can change conversation results. Knowledge changes keep built-in KUs
+visible while revoking capability admission, then merge current managed rows,
+regenerate the capability plan, and clear stale Eval evidence. The legacy
+`saveConfig` Markdown rebuild remains available for compatibility and also
+re-synchronizes managed KUs instead of silently replacing product-specific
+knowledge. The API refuses to run Eval before the current capability plan is
+reviewed.
 
 P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on

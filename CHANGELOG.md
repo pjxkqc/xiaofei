@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.1.0 — 2026-07-29
+
+### Changed
+
+- Released the Xiaofei P0 demo to Production and UAT with separate persistent
+  Neon data boundaries.
+- Added a canonical Release status page for the current Production, UAT, and
+  PR Preview revisions, stable URLs, feature differences, and safe test access.
+- Added the Release page and GitHub Release/tag steps to the Multica production
+  promotion workflow.
+- Preserved the last admitted KU for bounded contextual follow-ups such as room
+  size and networking answers.
+- Replaced automatic handoff after repeated knowledge misses with an
+  operator-visible attention state while Xiaofei keeps handling later messages.
+- Preserved source-managed product KUs when Agent settings or built-in knowledge
+  are saved, so explicit models such as C-Air are not shadowed by generic
+  presales knowledge.
+- Grounded generated KU reply policies in normalized source facts instead of
+  relying on generated policy text alone.
+- Preferred direct scenario evidence such as `保修期限` when overlapping product
+  terms would otherwise tie two Knowledge Units.
+- Verified a clean UAT data set with 11 eligible KUs, Eval `13/13`, a complete
+  greeting-to-closing product conversation, and recovery from unsupported
+  questions to a grounded warranty answer.
+
+## 2026-07-28
+
+### Changed
+
+- Expanded the Xiaofei P0 default knowledge from two to nine presales and
+  aftersales categories.
+- Added bounded related-text KU matching and separated informational refund
+  questions from explicit high-risk action requests.
+- Added configurable knowledge-miss clarification and soft-handoff behavior to
+  the existing Agent settings page.
+
 ## 2026-07-23
 
 ### Changed

@@ -1,3 +1,4 @@
+import { KnowledgeFlowNav } from "@ai/components/KnowledgeFlowNav";
 import { XiaofeiChatConsole } from "@ai/components/XiaofeiChatConsole";
 import { PageHeader } from "@shared/components/PageHeader";
 
@@ -11,6 +12,7 @@ export default async function AiDemoPage() {
 			/>
 
 			<div className="max-w-5xl mx-auto">
+				<KnowledgeFlowNav current="conversation" />
 				<XiaofeiChatConsole />
 			</div>
 		</>
