@@ -225,6 +225,59 @@ describe("P0 runtime kernel", () => {
 		});
 	});
 
+	it("does not let broad generated keywords swallow unknown or high-risk requests", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const generatedAftersalesUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "c-air-generated-aftersales",
+			title: "澄风 C-Air 滤芯、供电、保修与故障处理",
+			scenarioKeywords: ["滤芯型号", "保修", "E07", "人工客服"],
+			applicableScenarios: [
+				"用户询问 C-Air Mini、C-Air S、C-Air Pro 分别使用什么滤芯",
+				"用户询问整机和电机的保修期限与范围",
+			],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [...snapshot.knowledgeUnits, generatedAftersalesUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [
+			...snapshot.capabilityPlan.knowledgeUnitIds,
+			generatedAftersalesUnit.id,
+		];
+
+		const unknownPolicy = prepareTurn({
+			message: "请告诉我火星门店的保修政策",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const anchoredWarranty = prepareTurn({
+			message: "C-Air Mini 的保修期限是多久？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const humanRequest = prepareTurn({
+			message: "我要投诉并要求人工客服处理",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(unknownPolicy).toMatchObject({ knowledge: null, action: "clarify" });
+		expect(anchoredWarranty).toMatchObject({
+			knowledge: { id: generatedAftersalesUnit.id },
+			action: "reply",
+		});
+		expect(humanRequest).toMatchObject({
+			knowledge: null,
+			action: "handoff",
+			riskLevel: "high",
+		});
+	});
+
 	it("routes a complete greeting, product consultation, follow-up, and closing conversation", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const genericProductUnit = snapshot.knowledgeUnits[0]!;
