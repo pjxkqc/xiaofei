@@ -107,14 +107,48 @@ function deriveCurrentKnowledgeCases(snapshot: XiaofeiWorkspaceSnapshot) {
 	const admitted = new Set(snapshot.capabilityPlan.knowledgeUnitIds);
 	return snapshot.knowledgeUnits
 		.filter((unit) => admitted.has(unit.id) && isKnowledgeUnitEligible(unit))
-		.map((unit) => ({
-			id: `current-knowledge:${unit.id}`,
-			title: `当前能力 KU 可安全执行：${unit.title}`,
-			message: unit.scenarioKeywords[0] ?? unit.title,
-			expectedAction: unit.requiredSlots.some((slot) => slot.required)
+		.map((unit) => {
+			const expectedAction = unit.requiredSlots.some((slot) => slot.required)
 				? ("ask_followup" as const)
-				: ("reply" as const),
-			expectedOwner: "ai" as const,
-			expectedKnowledgeId: unit.id,
-		}));
+				: ("reply" as const);
+			const candidates = [...unit.scenarioKeywords, ...unit.applicableScenarios, unit.title];
+			const message =
+				candidates.find((candidate) => evalMessageSelectsUnit(snapshot, unit.id, candidate)) ??
+				candidates[0] ??
+				unit.title;
+			return {
+				id: `current-knowledge:${unit.id}`,
+				title: `当前能力 KU 可安全执行：${unit.title}`,
+				message,
+				expectedAction,
+				expectedOwner: "ai" as const,
+				expectedKnowledgeId: unit.id,
+			};
+		});
+}
+
+function evalMessageSelectsUnit(
+	snapshot: XiaofeiWorkspaceSnapshot,
+	knowledgeId: string,
+	message: string,
+): boolean {
+	const state = createConversationState({
+		id: `eval:selection:${knowledgeId}`,
+		tenantId: snapshot.agent.tenantId,
+		agentId: snapshot.agent.id,
+		maxFollowUps: snapshot.agent.maxFollowUps,
+	});
+	return (
+		prepareEvalTurn({
+			message,
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding: {
+				tenantId: snapshot.agent.tenantId,
+				conversationId: state.id,
+				channelId: "eval",
+				knowledgeWorkspaceId: snapshot.knowledgeWorkspaceId,
+			},
+		}).knowledge?.id === knowledgeId
+	);
 }

@@ -714,6 +714,38 @@ describe("P0 runtime kernel", () => {
 		);
 	});
 
+	it("chooses a discriminating Eval sample when generated KUs share a product term", async () => {
+		const { snapshot } = await setup();
+		const presales = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "c-air-presales",
+			title: "C-Air 选型与房间面积",
+			scenarioKeywords: ["C-Air Mini", "房间面积"],
+			applicableScenarios: ["客户询问 C-Air Mini 适合多大的房间"],
+			requiredSlots: [],
+		};
+		const aftersales = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "c-air-aftersales",
+			title: "C-Air 滤芯与保修",
+			scenarioKeywords: ["滤芯型号", "保修期限"],
+			applicableScenarios: ["客户询问 C-Air Mini / S / Pro 分别使用哪种滤芯"],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [presales, aftersales];
+		snapshot.capabilityPlan.knowledgeUnitIds = [presales.id, aftersales.id];
+
+		const suite = await runP0EvalSuite(snapshot, now);
+
+		expect(suite.status).toBe("passed");
+		expect(suite.cases).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ expectedKnowledgeId: presales.id, passed: true }),
+				expect.objectContaining({ expectedKnowledgeId: aftersales.id, passed: true }),
+			]),
+		);
+	});
+
 	it("allows optional-only KU slots to reply and keeps Eval expectations aligned", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const optionalOnly = {
