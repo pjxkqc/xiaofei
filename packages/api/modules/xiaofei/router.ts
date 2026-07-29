@@ -1,6 +1,11 @@
 import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
 import {
+	getIntegrationEventProcedure,
+	listIntegrationEventsProcedure,
+	simulateIntegrationEventProcedure,
+} from "./procedures/integration-events";
+import {
 	createKnowledgeDocumentProcedure,
 	createKnowledgeWebProcedure,
 	createManualKnowledgeEntriesProcedure,
@@ -35,6 +40,9 @@ import {
 
 export const xiaofeiRouter = {
 	status: getXiaofeiStatus,
+	listIntegrationEvents: listIntegrationEventsProcedure,
+	getIntegrationEvent: getIntegrationEventProcedure,
+	simulateIntegrationEvent: simulateIntegrationEventProcedure,
 	getConfig: getXiaofeiConfig,
 	saveAgentSettings: saveXiaofeiAgentSettings,
 	saveConfig: saveXiaofeiConfig,

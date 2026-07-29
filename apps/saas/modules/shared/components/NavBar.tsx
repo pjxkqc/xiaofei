@@ -31,6 +31,7 @@ import {
 	BookOpenTextIcon,
 	BotMessageSquareIcon,
 	BracesIcon,
+	CableIcon,
 	ChevronRightIcon,
 	HomeIcon,
 	MenuIcon,
@@ -369,6 +370,12 @@ export function NavBar() {
 				href: "/api-demo",
 				icon: BracesIcon,
 				isActive: pathname.startsWith("/api-demo"),
+			},
+			{
+				label: "Integrations",
+				href: "/integrations/events",
+				icon: CableIcon,
+				isActive: pathname.startsWith("/integrations/events"),
 			},
 			{
 				label: t("app.menu.knowledgeGovernance"),

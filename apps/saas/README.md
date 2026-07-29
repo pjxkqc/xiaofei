@@ -19,6 +19,9 @@ The product surface is deliberately kept to small, focused pages:
   general page;
 - `/api-demo` is an authenticated comparison of the public OpenAPI status route
   and the typed browser oRPC client;
+- `/integrations/events` is an authenticated monitor for durable S2S ingress. It
+  shows metadata by default, loads raw JSON only for a selected event, and its
+  Preview simulator uses a protected server procedure rather than an ingest key.
 - `/knowledge/entries` adds and manages normalized entries for the shared
   public-support workspace from a file, one public webpage, or manual Q&A.
   `/knowledge/documents` remains the source-document view with bounded metadata
