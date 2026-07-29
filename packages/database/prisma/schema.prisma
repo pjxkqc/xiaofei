@@ -253,6 +253,7 @@ model XiaofeiWorkspace {
   knowledgeDocuments XiaofeiKnowledgeDocument[]
   knowledgeEntries   XiaofeiKnowledgeEntry[]
   knowledgeUnits     XiaofeiKnowledgeUnit[]
+  inboundEvents      XiaofeiInboundEvent[]
 
   @@map("xiaofei_workspace")
 }
@@ -278,6 +279,41 @@ model XiaofeiConversation {
   @@index([workspaceId])
   @@index([workspaceId, updatedAt])
   @@map("xiaofei_conversation")
+}
+
+model XiaofeiInboundEvent {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  workspace       XiaofeiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  source          String
+  eventId         String
+  schemaVersion   String
+  transportKind   String
+  topic           String?
+  partition       Int?
+  offset          String?
+  messageKey      String?
+  eventType       String
+  occurredAt      DateTime
+  payload         Json
+  payloadHash     String
+  safeHeaders     Json             @default("{}")
+  status          String           @default("accepted")
+  deliveryCount   Int              @default(1)
+  firstReceivedAt DateTime         @default(now())
+  lastReceivedAt  DateTime         @default(now())
+  processedAt     DateTime?
+  lastError       String?          @db.Text
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([workspaceId, source, eventId])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, source, createdAt, id])
+  @@index([workspaceId, status, createdAt, id])
+  @@index([workspaceId, topic, createdAt, id])
+  @@map("xiaofei_inbound_event")
 }
 
 enum XiaofeiKnowledgeDocumentFileType {

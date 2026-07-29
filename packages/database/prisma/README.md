@@ -47,6 +47,16 @@ are not retained; `bodyText` is the durable extracted content.
 - conversation lookup and upsert by workspace/external ID;
 - scoped conversation reset;
 - document create, list, get, update, and delete by workspace.
+- inbound event acceptance, workspace-scoped metadata lists, and full detail reads.
+
+`acceptInboundEvent(workspaceId, input)` is the Inbox write boundary. The authenticated
+caller supplies `workspaceId` separately; event input cannot select a tenant. It creates a
+record for a new `(workspaceId, source, eventId)`, increments only `deliveryCount` and
+`lastReceivedAt` for a canonical-payload replay, and throws
+`XiaofeiInboundEventConflictError` for the same ID with a different payload hash. Payload
+and redacted error details are returned only from `getInboundEvent`; `listInboundEvents`
+uses a stable `(createdAt, id)` cursor and never selects payload, safe headers, or last error.
+Kafka offsets are persisted as strings to avoid JavaScript integer loss.
 
 Source and entry reads and mutations require `workspaceId`. The compound
 `workspaceId_id` selector makes a record from another workspace indistinguishable

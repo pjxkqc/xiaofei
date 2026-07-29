@@ -4,6 +4,11 @@ const queryMocks = vi.hoisted(() => {
 	const transactionClient = {
 		$executeRaw: vi.fn(),
 		$queryRaw: vi.fn(),
+		xiaofeiInboundEvent: {
+			create: vi.fn(),
+			findUnique: vi.fn(),
+			update: vi.fn(),
+		},
 		xiaofeiKnowledgeDocument: {
 			create: vi.fn(),
 			deleteMany: vi.fn(),
@@ -49,6 +54,11 @@ const queryMocks = vi.hoisted(() => {
 		findUnit: vi.fn(),
 		listUnits: vi.fn(),
 		invalidateUnits: transactionClient.xiaofeiKnowledgeUnit.updateMany,
+		createInboundEvent: transactionClient.xiaofeiInboundEvent.create,
+		findInboundEventInTransaction: transactionClient.xiaofeiInboundEvent.findUnique,
+		updateInboundEvent: transactionClient.xiaofeiInboundEvent.update,
+		listInboundEvents: vi.fn(),
+		getInboundEvent: vi.fn(),
 	};
 });
 
@@ -67,6 +77,10 @@ vi.mock("../client", () => ({
 		xiaofeiKnowledgeUnit: {
 			findMany: queryMocks.listUnits,
 			findUnique: queryMocks.findUnit,
+		},
+		xiaofeiInboundEvent: {
+			findMany: queryMocks.listInboundEvents,
+			findUnique: queryMocks.getInboundEvent,
 		},
 	},
 }));
@@ -88,6 +102,10 @@ import {
 	updateXiaofeiKnowledgeDocument,
 	updateXiaofeiKnowledgeEntry,
 	XiaofeiKnowledgeEntryEligibilityError,
+	acceptInboundEvent,
+	getInboundEvent,
+	listInboundEvents,
+	XiaofeiInboundEventConflictError,
 } from "./xiaofei";
 
 describe("Xiaofei knowledge document queries", () => {
@@ -624,6 +642,122 @@ describe("Xiaofei knowledge document queries", () => {
 				sourceVersion: 2,
 				entryVersion: 3,
 			}),
+		});
+	});
+});
+
+describe("Xiaofei inbound event queries", () => {
+	const input = {
+		source: "kafka",
+		eventId: "event-1",
+		schemaVersion: "1",
+		transportKind: "kafka",
+		topic: "support.events",
+		partition: 2,
+		offset: "9007199254740993",
+		eventType: "ticket.created",
+		occurredAt: new Date("2026-07-29T00:00:00.000Z"),
+		payload: { ticket: { id: "ticket-1" }, tags: ["new"] },
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		queryMocks.createInboundEvent.mockResolvedValue({ id: "inbound-1", ...input });
+	});
+
+	it("creates a workspace-bound event and hashes canonical JSON without logging its payload", async () => {
+		const result = await acceptInboundEvent("workspace-a", input);
+
+		expect(result.kind).toBe("created");
+		expect(queryMocks.createInboundEvent).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				workspaceId: "workspace-a",
+				offset: "9007199254740993",
+				payload: input.payload,
+				payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+			}),
+		});
+	});
+
+	it("treats a concurrent unique replay with the same payload as a duplicate", async () => {
+		queryMocks.createInboundEvent.mockRejectedValueOnce({ code: "P2002" });
+		queryMocks.findInboundEventInTransaction.mockResolvedValueOnce({
+			id: "inbound-1",
+			payloadHash: "45fd78b4f47df8dba9db2824c0aca23921a1288451c9a3a2745b971150b4652c",
+		});
+		queryMocks.updateInboundEvent.mockResolvedValueOnce({ id: "inbound-1", deliveryCount: 2 });
+
+		const result = await acceptInboundEvent("workspace-a", input);
+
+		expect(result.kind).toBe("duplicate");
+		expect(queryMocks.updateInboundEvent).toHaveBeenCalledWith({
+			where: {
+				workspaceId_source_eventId: {
+					workspaceId: "workspace-a",
+					source: "kafka",
+					eventId: "event-1",
+				},
+			},
+			data: { deliveryCount: { increment: 1 }, lastReceivedAt: expect.any(Date) },
+		});
+	});
+
+	it("rejects same-ID payload conflicts while preserving the existing row", async () => {
+		queryMocks.createInboundEvent.mockRejectedValueOnce({ code: "P2002" });
+		queryMocks.findInboundEventInTransaction.mockResolvedValueOnce({
+			id: "inbound-1",
+			payloadHash: "different-hash",
+		});
+
+		await expect(acceptInboundEvent("workspace-a", input)).rejects.toBeInstanceOf(
+			XiaofeiInboundEventConflictError,
+		);
+		expect(queryMocks.updateInboundEvent).not.toHaveBeenCalled();
+	});
+
+	it("isolates same event IDs across workspaces", async () => {
+		await acceptInboundEvent("workspace-b", input);
+		expect(queryMocks.createInboundEvent).toHaveBeenCalledWith({
+			data: expect.objectContaining({ workspaceId: "workspace-b", eventId: "event-1" }),
+		});
+	});
+
+	it("returns stable filtered metadata pages and reserves payload for the scoped detail query", async () => {
+		queryMocks.listInboundEvents.mockResolvedValueOnce([
+			{ id: "inbound-3" },
+			{ id: "inbound-2" },
+			{ id: "inbound-1" },
+		]);
+		const page = await listInboundEvents("workspace-a", {
+			cursor: "inbound-4",
+			limit: 2,
+			source: "kafka",
+			status: "accepted",
+			topic: "support.events",
+		});
+		expect(page).toEqual({
+			items: [{ id: "inbound-3" }, { id: "inbound-2" }],
+			nextCursor: "inbound-2",
+		});
+		expect(queryMocks.listInboundEvents).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					workspaceId: "workspace-a",
+					source: "kafka",
+					status: "accepted",
+					topic: "support.events",
+				},
+				orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+				take: 3,
+				cursor: { workspaceId_id: { workspaceId: "workspace-a", id: "inbound-4" } },
+				skip: 1,
+				select: expect.not.objectContaining({ payload: true }),
+			}),
+		);
+
+		await getInboundEvent("workspace-a", "inbound-1");
+		expect(queryMocks.getInboundEvent).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "inbound-1" } },
 		});
 	});
 });
