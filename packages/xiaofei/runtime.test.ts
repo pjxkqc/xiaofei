@@ -278,6 +278,52 @@ describe("P0 runtime kernel", () => {
 		});
 	});
 
+	it("prefers the KU supported by both product and scenario evidence", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const presalesUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "c-air-generated-presales",
+			title: "C-Air 适用面积、联网能力与选型建议 FAQ",
+			scenarioKeywords: ["适用面积", "房间大小", "联网模块", "Wi-Fi"],
+			applicableScenarios: [
+				"用户询问 C-Air Mini 的 CADR、噪音或联网能力",
+				"用户提供会议室面积、预算和 Wi-Fi 需求，希望获得型号推荐",
+			],
+			requiredSlots: [],
+		};
+		const aftersalesUnit = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "c-air-generated-aftersales",
+			title: "C-Air 滤芯、供电、保修与 E07 故障 FAQ",
+			scenarioKeywords: ["滤芯型号", "保修期限", "E07故障"],
+			applicableScenarios: [
+				"用户询问 C-Air Mini / S / Pro 对应滤芯型号与建议更换周期",
+				"用户询问整机、电机保修时长与保修范围",
+			],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [presalesUnit, aftersalesUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [presalesUnit.id, aftersalesUnit.id];
+
+		const warranty = prepareTurn({
+			message: "C-Air Mini 的保修期限是多久？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const roomSize = prepareTurn({
+			message: "C-Air Mini 适合多大的房间？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(warranty).toMatchObject({ knowledge: { id: aftersalesUnit.id }, action: "reply" });
+		expect(roomSize).toMatchObject({ knowledge: { id: presalesUnit.id }, action: "reply" });
+	});
+
 	it("routes a complete greeting, product consultation, follow-up, and closing conversation", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const genericProductUnit = snapshot.knowledgeUnits[0]!;
