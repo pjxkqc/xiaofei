@@ -16,78 +16,81 @@ page records what a reviewer can use now.
 | GitHub Release + `vX.Y.Z` tag        | Immutable history for a version that has actually been promoted to Production      |
 | Multica issue                        | Owner, acceptance criteria, validation evidence, and the work needed for a release |
 
-There is no tagged Xiaofei GitHub Release yet. The current P0 demo is still a
-candidate in [PR #22](https://github.com/pjxkqc/xiaofei/pull/22), so publishing
-it as a Production release would be misleading. The first GitHub Release should
-be created only after an explicitly authorized UAT-to-Production promotion.
+There is no tagged Xiaofei GitHub Release yet. The current P0 demo is accepted
+in UAT at [merge commit
+`fda5406`](https://github.com/pjxkqc/xiaofei/commit/fda54061feb3de8b81b1503360c578857ab8bc83),
+but has not been promoted to Production. The first GitHub Release should be
+created only after an explicitly authorized UAT-to-Production promotion.
 
 ## Current candidate
 
-**P0 demo candidate — FLY-77 / FLY-85**
+**Accepted UAT candidate — FLY-77 / FLY-85**
 
-- Status: Draft PR, ready for human review; not yet in UAT or Production.
-- Source: [PR #22](https://github.com/pjxkqc/xiaofei/pull/22),
-  `agent/fly-77-fallback-capability → uat`.
-- Stable branch Preview:
-  [xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app).
-- Validation: use the checks and current head shown on PR #22; every push
-  replaces the branch alias target and invalidates older exact-head evidence.
-- Intended next step: merge to `uat` after human acceptance, verify durable UAT,
-  then prepare a separately authorized promotion PR when Production release is
-  desired.
+- Status: [PR #22](https://github.com/pjxkqc/xiaofei/pull/22) is merged and the
+  candidate is available in UAT; Production remains unchanged.
+- Source: `uat@fda54061feb3de8b81b1503360c578857ab8bc83`.
+- Stable UAT URL:
+  [xiaofei-preview-git-uat-flyranking16.vercel.app](https://xiaofei-preview-git-uat-flyranking16.vercel.app).
+- Validation: the PR exact head, merge commit Quality run, durable UAT alias,
+  Preview cleanup, and persisted UAT data were verified.
+- UAT data note: the existing public-support workspace intentionally preserved
+  its 2 reviewed KUs instead of overwriting tenant data with the new
+  nine-category defaults. Its Agent and fallback follow-up limits are 5, and
+  the post-merge Eval passed 4/4.
+- Intended next step: prepare a separately authorized `promote/uat-* → main`
+  PR when Production release is desired.
 
 ## Environments
 
-| Environment       | Source and current revision                                                                                | Stable base URL                                                                                              | Data boundary                                     | Login and lifecycle                                                                                             |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Production        | [`main@eb0b275`](https://github.com/pjxkqc/xiaofei/commit/eb0b2759cd3614409985f6892418f90709d34795)        | [xiaofei-preview.vercel.app](https://xiaofei-preview.vercel.app)                                             | Neon `main`                                       | Normal login/signup only; persistent. Preview one-click login is disabled.                                      |
-| UAT               | [`uat@6b8cce7`](https://github.com/pjxkqc/xiaofei/commit/6b8cce7f2d1d69c9a638a43a0da38d299ccda302)         | [xiaofei-preview-git-uat-flyranking16.vercel.app](https://xiaofei-preview-git-uat-flyranking16.vercel.app)   | Neon `preview/uat`                                | Preview one-click login; durable shared test data. Do not delete or force-push the `uat` branch.                |
-| PR #22 candidate  | [current PR head](https://github.com/pjxkqc/xiaofei/pull/22/commits) on `agent/fly-77-fallback-capability` | [stable PR branch alias](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app) | Neon `preview/agent/fly-77-fallback-capability`   | Preview one-click login; disposable. The database branch is removed after the PR closes and its branch is gone. |
-| Local development | Current checkout                                                                                           | [localhost:3000](http://localhost:3000)                                                                      | Developer-selected PostgreSQL/Docker or test Neon | Create a local user. Preview one-click login is disabled outside Vercel Preview.                                |
+| Environment       | Source and current revision                                                                         | Stable base URL                                                                                            | Data boundary                                     | Login and lifecycle                                                                              |
+| ----------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Production        | [`main@eb0b275`](https://github.com/pjxkqc/xiaofei/commit/eb0b2759cd3614409985f6892418f90709d34795) | [xiaofei-preview.vercel.app](https://xiaofei-preview.vercel.app)                                           | Neon `main`                                       | Normal login/signup only; persistent. Preview one-click login is disabled.                       |
+| UAT               | [`uat@fda5406`](https://github.com/pjxkqc/xiaofei/commit/fda54061feb3de8b81b1503360c578857ab8bc83)  | [xiaofei-preview-git-uat-flyranking16.vercel.app](https://xiaofei-preview-git-uat-flyranking16.vercel.app) | Neon `preview/uat`                                | Preview one-click login; durable shared test data. Do not delete or force-push the `uat` branch. |
+| Local development | Current checkout                                                                                    | [localhost:3000](http://localhost:3000)                                                                    | Developer-selected PostgreSQL/Docker or test Neon | Create a local user. Preview one-click login is disabled outside Vercel Preview.                 |
 
 Production and UAT are currently built by Vercel with Node.js 24.x. GitHub
 quality runs Node.js 22, and the repository declares Node.js 22 or newer.
 
 ### What differs today
 
-| Capability                                                                                    | Production | UAT | PR #22 candidate |
-| --------------------------------------------------------------------------------------------- | ---------- | --- | ---------------- |
-| Supastarter auth, signup, organizations, account surfaces                                     | Yes        | Yes | Yes              |
-| Public `/support` customer page and authenticated `/inbox`                                    | Yes        | Yes | Yes              |
-| Mastra generation, LangGraph state, Guardrail, ownership, and Neon persistence                | Yes        | Yes | Yes              |
-| MD/TXT, PDF/DOCX/XLSX, one-page web, and manual-Q&A ingestion                                 | Yes        | Yes | Yes              |
-| Entry CRUD, KU generation/review/publish, capability review, and deterministic Eval           | Yes        | Yes | Yes              |
-| Preview fixture selectors and one-click operator                                              | Hidden     | Yes | Yes              |
-| Flyranking/LoopDesk target architecture documentation                                         | No         | Yes | Yes              |
-| Reusable Multica `xiaofei-pr-delivery` skill                                                  | No         | Yes | Yes              |
-| Nine-category default knowledge, bounded clarification, and explicit-risk handoff             | No         | No  | Yes              |
-| Shared public-support governance workspace and four-step knowledge-to-conversation navigation | No         | No  | Yes              |
-| Presales slots kept non-blocking and generated `C-Air`/`Wi-Fi` product terms preserved        | No         | No  | Yes              |
-| Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | No         | No  | Yes              |
-| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | No         | No  | Yes              |
+| Capability                                                                                    | Production | UAT |
+| --------------------------------------------------------------------------------------------- | ---------- | --- |
+| Supastarter auth, signup, organizations, account surfaces                                     | Yes        | Yes |
+| Public `/support` customer page and authenticated `/inbox`                                    | Yes        | Yes |
+| Mastra generation, LangGraph state, Guardrail, ownership, and Neon persistence                | Yes        | Yes |
+| MD/TXT, PDF/DOCX/XLSX, one-page web, and manual-Q&A ingestion                                 | Yes        | Yes |
+| Entry CRUD, KU generation/review/publish, capability review, and deterministic Eval           | Yes        | Yes |
+| Preview fixture selectors and one-click operator                                              | Hidden     | Yes |
+| Flyranking/LoopDesk target architecture documentation                                         | No         | Yes |
+| Reusable Multica `xiaofei-pr-delivery` skill                                                  | No         | Yes |
+| Nine-category default knowledge, bounded clarification, and explicit-risk handoff             | No         | Yes |
+| Shared public-support governance workspace and four-step knowledge-to-conversation navigation | No         | Yes |
+| Presales slots kept non-blocking and generated `C-Air`/`Wi-Fi` product terms preserved        | No         | Yes |
+| Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | No         | Yes |
+| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | No         | Yes |
+| Split Agent general, fallback/handoff, and runtime-status settings pages                      | No         | Yes |
 
 The table describes deployed revisions, not merely code that exists somewhere
-in the repository. UAT currently adds delivery and target-architecture
-documentation to the Production baseline; the PR #22 runtime delta is not
-available in UAT until that PR is merged.
+in the repository. UAT includes the accepted PR #22 runtime and Agent-settings
+delta; Production remains on the earlier baseline.
 
 ## Demo URLs
 
-Use the stable PR #22 branch alias for the current demo:
+Use the stable UAT alias for the current demo:
 
-| Surface                     | URL                                                                                                                                      | Access                   |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| Public customer support     | [`/support`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/support)                                 | No login                 |
-| Login                       | [`/login`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/login)                                     | Preview one-click button |
-| Sources and entries         | [`/knowledge/entries`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/entries)             | Authenticated            |
-| Knowledge Units             | [`/knowledge/units`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/units)                 | Authenticated            |
-| Capability review and Eval  | [`/knowledge/capabilities`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/knowledge/capabilities)   | Authenticated            |
-| Conversation validation     | [`/chatbot`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/chatbot)                                 | Authenticated            |
-| Support inbox               | [`/inbox`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/inbox)                                     | Authenticated            |
-| Agent general settings      | [`/agent-settings/general`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings/general)   | Authenticated            |
-| Fallback and handoff policy | [`/agent-settings/fallback`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings/fallback) | Authenticated            |
-| Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/agent-settings/status)     | Authenticated            |
-| API communication demo      | [`/api-demo`](https://xiaofei-preview-git-agent-fly-77-fallback-c-8af6c1-flyranking16.vercel.app/api-demo)                               | Authenticated            |
+| Surface                     | URL                                                                                                           | Access                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Public customer support     | [`/support`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/support)                                 | No login                 |
+| Login                       | [`/login`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/login)                                     | Preview one-click button |
+| Sources and entries         | [`/knowledge/entries`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/entries)             | Authenticated            |
+| Knowledge Units             | [`/knowledge/units`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/units)                 | Authenticated            |
+| Capability review and Eval  | [`/knowledge/capabilities`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/capabilities)   | Authenticated            |
+| Conversation validation     | [`/chatbot`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/chatbot)                                 | Authenticated            |
+| Support inbox               | [`/inbox`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/inbox)                                     | Authenticated            |
+| Agent general settings      | [`/agent-settings/general`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/general)   | Authenticated            |
+| Fallback and handoff policy | [`/agent-settings/fallback`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/fallback) | Authenticated            |
+| Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/status)     | Authenticated            |
+| API communication demo      | [`/api-demo`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/api-demo)                               | Authenticated            |
 
 The same paths apply to the UAT and Production base URLs. Immutable Vercel
 deployment URLs belong in PR acceptance evidence, not in this maintained page,
@@ -110,7 +113,7 @@ authorization header to this page, a GitHub Release, or a Multica issue.
 
 ## Recommended demo path
 
-1. Open the PR Preview `/login` and continue as the Preview operator.
+1. Open the UAT `/login` and continue as the Preview operator.
 2. Open `/knowledge/entries`, select one of the fictional Preview fixtures, and
    create or review normalized entries.
 3. Continue through `/knowledge/units` and `/knowledge/capabilities`; publish
