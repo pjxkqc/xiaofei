@@ -118,7 +118,8 @@ non-secret `NEON_PROJECT_ID` as an Actions variable.
 - Production URL: `https://xiaofei-preview.vercel.app`
 - Git repository: private `pjxkqc/xiaofei`
 - Root Directory: `apps/saas`
-- Node.js: 22
+- Vercel build runtime: Node.js 24.x
+- GitHub quality runtime: Node.js 22; repository minimum: Node.js 22
 - System environment variables: enabled
 
 Do not set a fixed `NEXT_PUBLIC_SAAS_URL` for Preview. Better Auth builds an

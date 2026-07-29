@@ -110,7 +110,23 @@ export async function saveXiaofeiSnapshot(
 	snapshot: XiaofeiWorkspaceSnapshot,
 ) {
 	const tenantKey = await getXiaofeiTenantKey(context);
+	return await saveXiaofeiSnapshotByTenantKey(tenantKey, snapshot);
+}
+
+export async function savePublicXiaofeiSnapshot(snapshot: XiaofeiWorkspaceSnapshot) {
+	return await saveXiaofeiSnapshotByTenantKey(PUBLIC_SUPPORT_TENANT_KEY, snapshot);
+}
+
+async function saveXiaofeiSnapshotByTenantKey(
+	tenantKey: string,
+	snapshot: XiaofeiWorkspaceSnapshot,
+) {
 	const parsed = XiaofeiWorkspaceSnapshotSchema.parse(snapshot);
+	if (parsed.agent.tenantId !== tenantKey) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "The Xiaofei snapshot does not belong to the selected workspace.",
+		});
+	}
 	await upsertXiaofeiWorkspace(tenantKey, toJson(parsed));
 	return parsed;
 }
@@ -118,15 +134,27 @@ export async function saveXiaofeiSnapshot(
 /** Rebuild runtime admission from persisted KU truth after every KU/source lineage mutation. */
 export async function synchronizeKnowledgeWorkspaceSnapshot(input: {
 	tenantKey: string;
-	units: Array<{
-		content: unknown;
-		status: string;
-		eligibility: string;
-		staleReason: string | null;
-	}>;
+	units: ManagedKnowledgeUnitRecord[];
 }) {
 	const current = await getOrCreateXiaofeiWorkspaceByTenantKey(input.tenantKey);
-	const knowledgeUnits = input.units.map((unit) =>
+	const snapshot = mergeManagedKnowledgeUnitsIntoSnapshot(current.snapshot, input.units);
+	await upsertXiaofeiWorkspace(input.tenantKey, toJson(snapshot));
+	return snapshot;
+}
+
+export interface ManagedKnowledgeUnitRecord {
+	content: unknown;
+	status: string;
+	eligibility: string;
+	staleReason: string | null;
+}
+
+export function mergeManagedKnowledgeUnitsIntoSnapshot(
+	snapshot: XiaofeiWorkspaceSnapshot,
+	units: ManagedKnowledgeUnitRecord[],
+	now: () => string = () => new Date().toISOString(),
+) {
+	const managedKnowledgeUnits = units.map((unit) =>
 		KnowledgeUnitSchema.parse({
 			...KnowledgeUnitSchema.parse(unit.content),
 			status: unit.status,
@@ -134,10 +162,15 @@ export async function synchronizeKnowledgeWorkspaceSnapshot(input: {
 			staleReason: unit.staleReason ?? undefined,
 		}),
 	);
-	const updatedAt = new Date().toISOString();
+	const managedIds = new Set(managedKnowledgeUnits.map((unit) => unit.id));
+	const builtInKnowledgeUnits = snapshot.knowledgeUnits.filter(
+		(unit) => unit.lineage === undefined && !managedIds.has(unit.id),
+	);
+	const knowledgeUnits = [...managedKnowledgeUnits, ...builtInKnowledgeUnits];
+	const updatedAt = now();
 	const capabilityPlan = deriveCapabilityPlan(knowledgeUnits, updatedAt);
-	const snapshot = XiaofeiWorkspaceSnapshotSchema.parse({
-		...current.snapshot,
+	return XiaofeiWorkspaceSnapshotSchema.parse({
+		...snapshot,
 		knowledgeUnits,
 		capabilityPlan,
 		evalSuite: {
@@ -148,11 +181,9 @@ export async function synchronizeKnowledgeWorkspaceSnapshot(input: {
 			updatedAt,
 			capabilityPlanVersion: null,
 		},
-		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, "warning", current.snapshot.tools),
+		gates: deriveReleaseGates(knowledgeUnits, capabilityPlan, "warning", snapshot.tools),
 		updatedAt,
 	});
-	await upsertXiaofeiWorkspace(input.tenantKey, toJson(snapshot));
-	return snapshot;
 }
 
 /** Persist the fail-closed state before a separate knowledge-store mutation starts. */
@@ -162,7 +193,6 @@ export async function clearKnowledgeWorkspaceAdmission(tenantKey: string) {
 	const capabilityPlan = deriveCapabilityPlan([], updatedAt);
 	const snapshot = XiaofeiWorkspaceSnapshotSchema.parse({
 		...current.snapshot,
-		knowledgeUnits: [],
 		capabilityPlan,
 		evalSuite: {
 			status: "warning",
@@ -172,7 +202,12 @@ export async function clearKnowledgeWorkspaceAdmission(tenantKey: string) {
 			updatedAt,
 			capabilityPlanVersion: null,
 		},
-		gates: deriveReleaseGates([], capabilityPlan, "warning", current.snapshot.tools),
+		gates: deriveReleaseGates(
+			current.snapshot.knowledgeUnits,
+			capabilityPlan,
+			"warning",
+			current.snapshot.tools,
+		),
 		updatedAt,
 	});
 	await upsertXiaofeiWorkspace(tenantKey, toJson(snapshot));
@@ -218,6 +253,11 @@ export async function saveConversation(input: {
 
 export async function resetConversation(context: XiaofeiAuthContext, externalId: string) {
 	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
+	await deleteXiaofeiConversation(workspace.id, externalId);
+}
+
+export async function resetPublicConversation(externalId: string) {
+	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
 	await deleteXiaofeiConversation(workspace.id, externalId);
 }
 

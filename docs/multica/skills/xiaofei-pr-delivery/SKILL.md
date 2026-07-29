@@ -80,10 +80,15 @@ Only after explicit human authorization:
 
 1. Record the exact accepted `uat` SHA and its passing evidence.
 2. Create `promote/uat-YYYYMMDD-<slug>` from that SHA.
-3. Open a Draft PR from the temporary branch to `main`.
-4. Re-run all gates for the promotion head and require human merge approval.
-5. After merge, fast-forward `uat` to the released `main` head and re-verify the
-   stable UAT environment.
+3. Choose the SemVer version and update `docs/releases/README.md` plus
+   `CHANGELOG.md` on the temporary branch.
+4. Open a Draft PR from the temporary branch to `main`.
+5. Re-run all gates for the promotion head and require human merge approval.
+6. After merge and Production verification, create a GitHub Release whose
+   `vX.Y.Z` tag targets the exact released `main` SHA.
+7. Fast-forward `uat` to the released `main` head, re-verify the stable UAT
+   environment, and update the Release status page if its recorded revision
+   changed.
 
 Do not change Vercel Production settings, Neon `main`, secrets, branch
 protection, or deployment access controls unless the issue separately and
@@ -95,3 +100,7 @@ Return the issue and PR links, base/head refs, exact head SHA, commands and
 results, GitHub/Vercel/Neon state, cleanup status, residual risks, and the next
 human decision. Redact credentials and never copy connection strings, tokens,
 session cookies, or production data.
+
+Use [`../../../releases/README.md`](../../../releases/README.md) as the current
+environment and test-access record. GitHub Releases remain the immutable
+Production history; Multica issues contain coordination and evidence.

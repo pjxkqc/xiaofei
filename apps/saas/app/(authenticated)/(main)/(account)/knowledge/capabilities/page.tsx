@@ -1,4 +1,5 @@
 import { KnowledgeCapabilities } from "@ai/components/KnowledgeCapabilities";
+import { KnowledgeFlowNav } from "@ai/components/KnowledgeFlowNav";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default function KnowledgeCapabilitiesPage() {
@@ -10,6 +11,7 @@ export default function KnowledgeCapabilitiesPage() {
 				className="max-w-7xl mx-auto"
 			/>
 			<div className="max-w-7xl mx-auto">
+				<KnowledgeFlowNav current="capabilities" />
 				<KnowledgeCapabilities />
 			</div>
 		</>

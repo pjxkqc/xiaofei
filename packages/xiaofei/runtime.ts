@@ -115,23 +115,26 @@ function prepareTurnInternal(
 		);
 	}
 
-	const risk = detectRisk(input.message, input.snapshot);
 	const callableKnowledgeIds = new Set(input.snapshot.capabilityPlan.knowledgeUnitIds);
-	const knowledge = selectKnowledge(
+	const selection = selectKnowledge(
 		input.message,
 		state,
 		input.snapshot.knowledgeUnits.filter(
 			(unit) => callableKnowledgeIds.has(unit.id) && isKnowledgeUnitEligible(unit),
 		),
 	);
+	const knowledge = selection?.knowledge ?? null;
+	const risk = detectRisk(input.message, input.snapshot);
 	traces.push(
 		trace(
 			state.id,
 			"knowledge",
 			at,
 			knowledge ? "命中 KnowledgeUnit" : "知识缺失",
-			knowledge?.title ?? "没有可安全调用的已发布知识。",
-			{ knowledgeId: knowledge?.id },
+			knowledge
+				? `${knowledge.title}（${selection?.reason ?? "deterministic"}）`
+				: "没有可安全调用的已发布知识。",
+			{ knowledgeId: knowledge?.id, matchScore: selection?.score },
 		),
 	);
 
@@ -147,27 +150,69 @@ function prepareTurnInternal(
 			knowledge,
 			action: "handoff",
 			riskLevel: "high",
-			reply: "这个问题需要人工客服处理。我已经记录您的诉求，并会转交人工继续核实。",
+			reply: input.snapshot.agent.fallbackPolicy.handoffReply,
 			handoffReason: risk.reason,
 			traces,
 		};
 	}
 
 	if (!knowledge) {
+		const missCount = state.consecutiveKnowledgeMisses + 1;
+		const operatorAttention = {
+			reason: "knowledge_missing" as const,
+			since: state.operatorAttention?.since ?? at,
+			latestAt: at,
+			missCount,
+		};
+		if (state.consecutiveKnowledgeMisses < input.snapshot.agent.fallbackPolicy.maxClarifications) {
+			return {
+				state: withDecision(state, {
+					knowledge: null,
+					riskLevel: "low",
+					action: "clarify",
+					at,
+					consecutiveKnowledgeMisses: missCount,
+					operatorAttention,
+				}),
+				knowledge: null,
+				action: "clarify",
+				riskLevel: "low",
+				reply: input.snapshot.agent.fallbackPolicy.clarificationReply,
+				traces: [
+					...traces,
+					trace(
+						state.id,
+						"policy",
+						at,
+						"知识缺失，等待人工关注",
+						`第 ${missCount}/${input.snapshot.agent.fallbackPolicy.maxClarifications} 次澄清；已标记待关注，继续由 AI 托管。`,
+					),
+				],
+			};
+		}
 		return {
 			state: withDecision(state, {
 				knowledge: null,
-				riskLevel: "medium",
-				action: "handoff",
-				handoffReason: "knowledge_missing",
+				riskLevel: "low",
+				action: "fallback",
 				at,
+				consecutiveKnowledgeMisses: missCount,
+				operatorAttention,
 			}),
 			knowledge: null,
-			action: "handoff",
-			riskLevel: "medium",
-			reply: "现有知识不足以安全回答，我会把问题转交人工客服核实。",
-			handoffReason: "knowledge_missing",
-			traces,
+			action: "fallback",
+			riskLevel: "low",
+			reply: input.snapshot.agent.fallbackPolicy.attentionReply,
+			traces: [
+				...traces,
+				trace(
+					state.id,
+					"policy",
+					at,
+					"知识缺失持续观察",
+					`已连续 ${missCount} 次未命中；通知人工关注，但不移交处理权，后续消息继续尝试匹配。`,
+				),
+			],
 		};
 	}
 
@@ -310,8 +355,7 @@ export async function finalizeTurn(input: {
 		input.prepared.action === "reply",
 	);
 	if (blockedReasons.length > 0) {
-		reply =
-			input.prepared.knowledge?.fallbackReply ?? "这个问题需要人工客服核实，我会转交人工继续处理。";
+		reply = input.snapshot.agent.fallbackPolicy.handoffReply;
 	}
 	traces.push(
 		trace(
@@ -393,19 +437,21 @@ function withDecision(
 		handoffReason?: string;
 		at: string;
 		remainingFollowUps?: number;
+		consecutiveKnowledgeMisses?: number;
+		operatorAttention?: ConversationState["operatorAttention"];
 	},
 ): ConversationState {
 	const stage =
 		input.action === "handoff"
 			? "ready_for_human"
-			: input.action === "ask_followup"
+			: input.action === "ask_followup" || input.action === "clarify"
 				? "info_gathering"
 				: "admission";
 
 	return ConversationStateSchema.parse({
 		...state,
-		scenario: input.knowledge?.title ?? null,
-		matchedKnowledgeId: input.knowledge?.id ?? null,
+		scenario: input.knowledge?.title ?? state.scenario,
+		matchedKnowledgeId: input.knowledge?.id ?? state.matchedKnowledgeId,
 		slots: input.slots ?? state.slots,
 		missingSlots: input.missingSlots ?? [],
 		riskLevel: input.riskLevel,
@@ -413,6 +459,13 @@ function withDecision(
 		stage,
 		handoffReason: input.handoffReason,
 		remainingFollowUps: input.remainingFollowUps ?? state.remainingFollowUps,
+		consecutiveKnowledgeMisses:
+			input.consecutiveKnowledgeMisses ?? (input.knowledge ? 0 : state.consecutiveKnowledgeMisses),
+		operatorAttention: input.knowledge
+			? null
+			: input.operatorAttention === undefined
+				? state.operatorAttention
+				: input.operatorAttention,
 		updatedAt: input.at,
 	});
 }
@@ -421,16 +474,110 @@ function selectKnowledge(
 	message: string,
 	state: ConversationState,
 	units: KnowledgeUnit[],
-): KnowledgeUnit | null {
+): { knowledge: KnowledgeUnit; score: number; reason: "exact" | "related" | "context" } | null {
 	const released = units.filter(isKnowledgeUnitEligible);
-	const normalizedMessage = message.toLocaleLowerCase();
-	const explicit = released.find((unit) =>
-		unit.scenarioKeywords.some((keyword) =>
-			normalizedMessage.includes(keyword.toLocaleLowerCase()),
+	const normalizedMessage = normalizeSearchText(message);
+	const ranked = released
+		.flatMap((knowledge) => {
+			const match = bestKnowledgeTermMatch(normalizedMessage, knowledge);
+			return match ? [{ knowledge, ...match }] : [];
+		})
+		.sort((left, right) => right.score - left.score);
+	if (ranked[0]) return ranked[0];
+
+	const canUseConversationContext = shouldUseConversationContext(message, state);
+	const contextual = canUseConversationContext
+		? released.find((unit) => unit.id === state.matchedKnowledgeId)
+		: undefined;
+	return contextual ? { knowledge: contextual, score: 1, reason: "context" } : null;
+}
+
+function shouldUseConversationContext(message: string, state: ConversationState): boolean {
+	if (!state.matchedKnowledgeId) return false;
+	if (state.nextAction === "ask_followup" || state.missingSlots.length > 0) return true;
+
+	const normalizedMessage = normalizeSearchText(message);
+	if (!normalizedMessage || normalizedMessage.length > 80 || !state.lastReply) return false;
+
+	const hasStrongContextField =
+		/(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(message);
+	if (hasStrongContextField) return true;
+
+	const lastReplyInvitedFollowUp =
+		/[?？]/u.test(state.lastReply) ||
+		/(请|方便|告诉我|补充|确认|是否|需要|可以继续|想了解)/u.test(state.lastReply);
+	if (!lastReplyInvitedFollowUp) return false;
+
+	if (state.operatorAttention) return false;
+
+	const looksLikeFollowUpAnswer =
+		/(^|[，,。\s])(?:是|不是|要|不要|需要|不需要|可以|不可以|有|没有|大概|左右|这个|那个|它|前面|刚才)|(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(
+			message,
+		);
+	if (looksLikeFollowUpAnswer) return true;
+
+	const replyPairs = characterPairs(normalizeSearchText(state.lastReply));
+	const messagePairs = characterPairs(normalizedMessage);
+	return [...messagePairs].filter((pair) => replyPairs.has(pair)).length >= 2;
+}
+
+function bestKnowledgeTermMatch(
+	normalizedMessage: string,
+	knowledge: KnowledgeUnit,
+): { score: number; reason: "exact" | "related" } | null {
+	const terms = [
+		...new Set(
+			[...knowledge.scenarioKeywords, ...knowledge.applicableScenarios, knowledge.title]
+				.flatMap(expandKnowledgeSearchTerm)
+				.map(normalizeSearchText)
+				.filter((term) => term.length >= 2),
 		),
-	);
-	if (explicit) return explicit;
-	return released.find((unit) => unit.id === state.matchedKnowledgeId) ?? null;
+	];
+	let best: { score: number; reason: "exact" | "related" } | null = null;
+
+	for (const term of terms) {
+		const exact =
+			normalizedMessage.includes(term) ||
+			(normalizedMessage.length >= 4 && term.includes(normalizedMessage));
+		const candidate = exact
+			? { score: 100 + Math.min(term.length, 30), reason: "exact" as const }
+			: relatedTextScore(normalizedMessage, term);
+		if (candidate && (!best || candidate.score > best.score)) best = candidate;
+	}
+	return best;
+}
+
+function expandKnowledgeSearchTerm(value: string): string[] {
+	const explicitProductTerms = value.match(/[A-Za-z][A-Za-z0-9]*(?:[- ][A-Za-z0-9]+)*/gu) ?? [];
+	return [value, ...explicitProductTerms.filter((term) => normalizeSearchText(term).length >= 4)];
+}
+
+function relatedTextScore(
+	message: string,
+	term: string,
+): { score: number; reason: "related" } | null {
+	if (message.length < 4 || term.length < 4) return null;
+	const messagePairs = characterPairs(message);
+	const termPairs = characterPairs(term);
+	const overlap = [...messagePairs].filter((pair) => termPairs.has(pair)).length;
+	if (overlap < 2) return null;
+	const similarity = (2 * overlap) / (messagePairs.size + termPairs.size);
+	return similarity >= 0.45 ? { score: Math.round(similarity * 80), reason: "related" } : null;
+}
+
+function characterPairs(value: string): Set<string> {
+	const pairs = new Set<string>();
+	for (let index = 0; index < value.length - 1; index += 1) {
+		pairs.add(value.slice(index, index + 2));
+	}
+	return pairs;
+}
+
+function normalizeSearchText(value: string): string {
+	return value
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(/[^\p{Letter}\p{Number}]+/gu, "");
 }
 
 function hasCurrentAdmissionEvidence(
@@ -541,12 +688,41 @@ function detectRisk(
 	message: string,
 	snapshot: XiaofeiWorkspaceSnapshot,
 ): { level: RiskLevel; reason?: string } {
-	const match = snapshot.guardrails.handoffKeywords.find((keyword) =>
-		message.toLocaleLowerCase().includes(keyword.toLocaleLowerCase()),
-	);
-	if (match) return { level: "high", reason: `handoff_keyword:${match}` };
-	if (/(监管|起诉|律师|chargeback|投诉|complain|human agent|人工客服)/iu.test(message)) {
+	const normalized = message.toLocaleLowerCase();
+	const alwaysEscalate =
+		/(监管|投诉|起诉|律师|chargeback|complain|human agent|人工客服|真人客服|冒烟|起火|触电|漏液|强烈异味|异常高温)/iu;
+	if (alwaysEscalate.test(message)) {
 		return { level: "high", reason: "high_risk_or_human_request" };
+	}
+	const informationalQuestion =
+		/(规则|条件|流程|政策|怎么|如何|多久|什么时候|能不能|是否|了解|咨询|请问|问一下|what|how|policy|process)/iu.test(
+			message,
+		);
+	const directAction =
+		/^(?:马上|立即|立刻)?(?:给我|帮我)?(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)[！!。.\s]*$/iu.test(
+			message,
+		);
+	const forcefulAction =
+		/(?:帮我|给我|必须|要求你们?|马上给我|立即给我|立刻给我).{0,12}(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)/iu.test(
+			message,
+		);
+	const statedAction =
+		!informationalQuestion &&
+		/(?:我要|我需要|想要|want a|need a).{0,10}(?:退款|退货|赔偿|补发|取消订单|refund|return|compensation|replacement)/iu.test(
+			message,
+		);
+	const actionRequest = directAction || forcefulAction || statedAction;
+	if (actionRequest) {
+		return { level: "high", reason: "high_risk_action_request" };
+	}
+	const match = snapshot.guardrails.handoffKeywords.find((keyword) =>
+		normalized.includes(keyword.toLocaleLowerCase()),
+	);
+	if (
+		match &&
+		(alwaysEscalate.test(match) || /(冲突|不一致|无法核实)/u.test(match) || actionRequest)
+	) {
+		return { level: "high", reason: `handoff_keyword:${match}` };
 	}
 	return { level: "low" };
 }

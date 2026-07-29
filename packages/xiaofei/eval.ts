@@ -19,10 +19,10 @@ const FIXED_CASES = [
 	},
 	{
 		id: "knowledge-missing",
-		title: "知识缺失不得硬答",
+		title: "知识缺失先澄清而不是立即转人工",
 		message: "请告诉我火星门店的保修政策",
-		expectedAction: "stop" as const,
-		expectedOwner: "human" as const,
+		expectedAction: "clarify" as const,
+		expectedOwner: "ai" as const,
 		expectedKnowledgeId: null,
 	},
 ] as const;

@@ -43,7 +43,7 @@ export const createKnowledgeDocumentProcedure = supportProcedure
 		method: "POST",
 		path: "/xiaofei/knowledge/documents",
 		tags: ["Xiaofei Knowledge"],
-		summary: "Upload and normalize a tenant knowledge file",
+		summary: "Upload and normalize a public support knowledge file",
 	})
 	.input(
 		z.object({
@@ -80,7 +80,7 @@ export const listKnowledgeDocumentsProcedure = supportProcedure
 		method: "GET",
 		path: "/xiaofei/knowledge/documents",
 		tags: ["Xiaofei Knowledge"],
-		summary: "List tenant knowledge documents",
+		summary: "List public support knowledge documents",
 	})
 	.input(knowledgeDocumentListInputSchema)
 	.handler(async ({ context, input }) => await listKnowledgeDocuments(context, input));
@@ -89,7 +89,7 @@ export const getKnowledgeDocumentProcedure = supportProcedure
 		method: "GET",
 		path: "/xiaofei/knowledge/documents/{id}",
 		tags: ["Xiaofei Knowledge"],
-		summary: "Get a tenant knowledge document",
+		summary: "Get a public support knowledge document",
 	})
 	.input(z.object({ id: knowledgeDocumentIdSchema }))
 	.handler(async ({ context, input }) => await getKnowledgeDocument(context, input.id));
@@ -98,7 +98,7 @@ export const updateKnowledgeDocumentProcedure = supportProcedure
 		method: "PUT",
 		path: "/xiaofei/knowledge/documents/{id}",
 		tags: ["Xiaofei Knowledge"],
-		summary: "Update a tenant knowledge document",
+		summary: "Update a public support knowledge document",
 	})
 	.input(
 		z
@@ -123,7 +123,7 @@ export const deleteKnowledgeDocumentProcedure = supportProcedure
 		method: "DELETE",
 		path: "/xiaofei/knowledge/documents/{id}",
 		tags: ["Xiaofei Knowledge"],
-		summary: "Delete a tenant knowledge document",
+		summary: "Delete a public support knowledge document",
 	})
 	.input(z.object({ id: knowledgeDocumentIdSchema }))
 	.handler(async ({ context, input }) => await deleteKnowledgeDocumentForTenant(context, input.id));
@@ -133,7 +133,7 @@ export const listKnowledgeEntriesProcedure = supportProcedure
 		method: "GET",
 		path: "/xiaofei/knowledge/entries",
 		tags: ["Xiaofei Knowledge"],
-		summary: "List normalized tenant knowledge entries",
+		summary: "List normalized public support knowledge entries",
 	})
 	.input(knowledgeEntryListInputSchema)
 	.handler(async ({ context, input }) => await listKnowledgeEntries(context, input));
@@ -206,7 +206,7 @@ export const listKnowledgeUnitsProcedure = supportProcedure
 		method: "GET",
 		path: "/xiaofei/knowledge/units",
 		tags: ["Xiaofei Knowledge"],
-		summary: "List tenant knowledge units",
+		summary: "List public support knowledge units",
 	})
 	.handler(async ({ context }) => await listKnowledgeUnitsForTenant(context));
 export const updateKnowledgeUnitProcedure = supportProcedure
@@ -251,7 +251,7 @@ export const deleteKnowledgeUnitProcedure = supportProcedure
 		method: "DELETE",
 		path: "/xiaofei/knowledge/units/{id}",
 		tags: ["Xiaofei Knowledge"],
-		summary: "Delete a tenant knowledge unit",
+		summary: "Delete a public support knowledge unit",
 	})
 	.input(z.object({ id: knowledgeUnitIdSchema }))
 	.handler(async ({ context, input }) => await deleteKnowledgeUnitForTenant(context, input.id));

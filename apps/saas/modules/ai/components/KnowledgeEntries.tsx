@@ -421,10 +421,15 @@ export function KnowledgeEntries({
 					<CardHeader>
 						<CardTitle>知识条目</CardTitle>
 						<CardDescription>
-							{entries.length} 个当前租户条目；按来源分组，可批量启用复核后的条目。
+							{entries.length} 个公共客服条目；按来源分组，可批量启用复核后的条目。
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="gap-2 flex max-h-[600px] flex-col overflow-auto">
+						{entries.length === 0 && (
+							<p className="p-3 text-sm text-muted-foreground">
+								还没有知识条目。先从上方上传测试文件、抓取网页或录入手工问答。
+							</p>
+						)}
 						{groupKnowledgeEntries(entries, sources).map((group) => (
 							<div key={group.key} className="gap-1 flex flex-col">
 								<p className="px-3 pt-2 text-xs font-medium text-muted-foreground">

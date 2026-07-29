@@ -20,6 +20,7 @@ import type {
 import { orpcClient } from "@shared/lib/orpc-client";
 import {
 	ArrowUpIcon,
+	BellRingIcon,
 	BotIcon,
 	BookOpenIcon,
 	ExternalLinkIcon,
@@ -29,7 +30,10 @@ import {
 	UsersRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
+
+import "streamdown/styles.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
 
 export function SupportInbox() {
 	const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
@@ -201,11 +205,19 @@ export function SupportInbox() {
 											{conversation.online ? "在线" : "离线"}
 										</Badge>
 										<OwnerBadge conversation={conversation} />
+										{conversation.attentionRequired && (
+											<Badge status="warning">
+												<BellRingIcon className="mr-1 size-3" />
+												待人工关注
+											</Badge>
+										)}
 									</div>
 									<CardDescription className="mt-1">
-										{conversation.handoffReason
-											? `转人工原因：${conversation.handoffReason}`
-											: "公共网站客服渠道"}
+										{conversation.attentionRequired
+											? "知识暂未命中；小飞仍在接待并会继续尝试匹配，人工可旁观或主动接管。"
+											: conversation.handoffReason
+												? `转人工原因：${conversation.handoffReason}`
+												: "公共网站客服渠道"}
 									</CardDescription>
 								</div>
 								<Button
@@ -310,18 +322,33 @@ function ConversationItem({
 				/>
 			</div>
 			<p className="mt-1 text-xs truncate text-muted-foreground">
-				{conversation.lastMessage || "新会话"}
+				{conversation.lastMessage ? plainTextMessagePreview(conversation.lastMessage) : "新会话"}
 			</p>
 			<div className="mt-2 gap-2 flex items-center justify-between">
-				<span className="text-[11px] text-muted-foreground">
-					{conversation.ownerType === "ai" ? "小飞接待" : "人工接待"}
-				</span>
+				<div className="gap-1.5 flex items-center">
+					<span className="text-[11px] text-muted-foreground">
+						{conversation.ownerType === "ai" ? "小飞接待" : "人工接待"}
+					</span>
+					{conversation.attentionRequired && (
+						<span className="font-medium text-warning text-[11px]">待关注</span>
+					)}
+				</div>
 				<span className="text-[11px] text-muted-foreground">
 					{formatListTime(conversation.lastMessageAt ?? conversation.updatedAt)}
 				</span>
 			</div>
 		</button>
 	);
+}
+
+function plainTextMessagePreview(value: string): string {
+	return value
+		.replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
+		.replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
+		.replace(/^\s*(?:[-+*]|\d+[.)])\s+/gmu, "")
+		.replace(/[*_~`>#]/gu, "")
+		.replace(/\s+/gu, " ")
+		.trim();
 }
 
 function OwnerBadge({ conversation }: { conversation: SupportConversation }) {
@@ -346,11 +373,17 @@ function AgentMessageBubble({ message }: { message: SupportMessage }) {
 			</div>
 			<div
 				className={cn(
-					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl whitespace-pre-wrap",
-					isCustomer ? "border bg-muted" : "bg-primary text-primary-foreground",
+					"px-4 py-2.5 text-sm leading-6 max-w-[88%] rounded-2xl",
+					isCustomer
+						? "border bg-muted whitespace-pre-wrap"
+						: "prose prose-sm prose-invert bg-primary text-primary-foreground **:max-w-full",
 				)}
 			>
-				{message.text}
+				{isCustomer ? (
+					message.text
+				) : (
+					<Streamdown className="wrap-break-words">{message.text}</Streamdown>
+				)}
 			</div>
 		</div>
 	);

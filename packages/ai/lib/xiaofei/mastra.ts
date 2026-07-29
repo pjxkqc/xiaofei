@@ -20,6 +20,12 @@ class MastraReplyGenerator implements ReplyGenerator {
 		const result = await agent.generate(
 			[
 				`客户消息：${input.message}`,
+				...(input.state.lastReply
+					? [
+							`上一轮小飞回复：${input.state.lastReply}`,
+							"如果客户当前消息是在回答上一轮问题，请延续该语境，不要求客户重复商品名称。",
+						]
+					: []),
 				`知识标题：${input.knowledge.title}`,
 				`适用口径：${input.knowledge.standardReplyPolicy}`,
 				`禁止输出：${input.knowledge.forbiddenOutputs.join("、")}`,

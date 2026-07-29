@@ -14,6 +14,7 @@ rules remain visible where changes are made.
 | [`xiaofei-loopdesk-target-architecture.md`](./xiaofei-loopdesk-target-architecture.md) | Reviewing the proposed Xiaofei control plane and its P0 boundary   |
 | [`xiaofei-loopdesk-integration-plan.md`](./xiaofei-loopdesk-integration-plan.md)       | Planning the proposed Flyranking / LoopDesk integration            |
 | [`pr-preview-setup.md`](./pr-preview-setup.md)                                         | Operating GitHub, Vercel, Neon, Preview databases, or CI/CD        |
+| [`releases/README.md`](./releases/README.md)                                           | Finding the current version, environments, URLs, and test access   |
 | [`repository-structure.md`](./repository-structure.md)                                 | Finding code ownership, allowed dependencies, and validation scope |
 | [`multica/README.md`](./multica/README.md)                                             | Importing this repository into a Multica project and Agent squad   |
 
@@ -50,6 +51,8 @@ fencing, or channel persistence exist today.
 - Put provider-specific behavior in the AI adapter guide.
 - Put deployment credentials, Preview lifecycle, and cloud setup only in the
   CI/CD guide; never include credential values.
+- Keep current deployed revisions, stable URLs, environment differences, and
+  non-secret test-access methods in the Release status page.
 - Update the P0 framework document when a change alters the system boundary or
   a deliberate limit.
 - Keep the Multica blueprint aligned with `AGENTS.md` and the repository

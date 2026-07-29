@@ -5,9 +5,9 @@ import z from "zod";
 
 import { protectedProcedure } from "../../../orpc/procedures";
 import {
-	getOrCreateConversation,
-	getOrCreateXiaofeiWorkspace,
 	createKnowledgeWorkspaceBinding,
+	getOrCreateConversation,
+	getOrCreatePublicXiaofeiWorkspace,
 	saveConversation,
 } from "../../xiaofei/service";
 
@@ -31,9 +31,9 @@ export const streamMessage = protectedProcedure
 			messages: z.array(z.any() as z.ZodType<XiaofeiUIMessage>),
 		}),
 	)
-	.handler(async ({ context, input }) => {
+	.handler(async ({ input }) => {
 		const message = getLastUserText(input.messages);
-		const { workspace, snapshot } = await getOrCreateXiaofeiWorkspace(context);
+		const { workspace, snapshot } = await getOrCreatePublicXiaofeiWorkspace();
 		const conversation = await getOrCreateConversation({
 			workspaceId: workspace.id,
 			externalId: input.conversationId,
