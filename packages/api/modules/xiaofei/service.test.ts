@@ -17,11 +17,13 @@ import { createDefaultWorkspaceSnapshot } from "@repo/xiaofei";
 
 import { verifyOrganizationMembership } from "../organizations/lib/membership";
 import {
+	clearKnowledgeWorkspaceAdmission,
 	createKnowledgeWorkspaceBinding,
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	getXiaofeiTenantKey,
 	PUBLIC_SUPPORT_TENANT_KEY,
 	savePublicXiaofeiSnapshot,
+	synchronizeKnowledgeWorkspaceSnapshot,
 } from "./service";
 
 describe("authenticated Xiaofei workspace binding", () => {
@@ -113,6 +115,73 @@ describe("authenticated Xiaofei workspace binding", () => {
 			expect.objectContaining({
 				agent: expect.objectContaining({ tenantId: PUBLIC_SUPPORT_TENANT_KEY }),
 			}),
+		);
+	});
+
+	it("revokes admission evidence without erasing built-in knowledge during a managed KU change", async () => {
+		const snapshot = createDefaultWorkspaceSnapshot(PUBLIC_SUPPORT_TENANT_KEY);
+		vi.mocked(getXiaofeiWorkspace).mockResolvedValue({
+			id: "workspace-1",
+			tenantKey: PUBLIC_SUPPORT_TENANT_KEY,
+			snapshot,
+		} as never);
+
+		await clearKnowledgeWorkspaceAdmission(PUBLIC_SUPPORT_TENANT_KEY);
+
+		expect(upsertXiaofeiWorkspace).toHaveBeenCalledWith(
+			PUBLIC_SUPPORT_TENANT_KEY,
+			expect.objectContaining({
+				knowledgeUnits: expect.arrayContaining([
+					expect.objectContaining({ id: snapshot.knowledgeUnits[0]!.id }),
+				]),
+				capabilityPlan: expect.objectContaining({ knowledgeUnitIds: [] }),
+				evalSuite: expect.objectContaining({ status: "warning" }),
+			}),
+		);
+	});
+
+	it("merges source-managed KUs with built-in knowledge when synchronizing admission", async () => {
+		const snapshot = createDefaultWorkspaceSnapshot(PUBLIC_SUPPORT_TENANT_KEY);
+		const managedUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "c-air-mini-parameters",
+			title: "澄风 C-Air 常见问答",
+			scenarioKeywords: ["C-Air Mini", "Wi-Fi联网模块"],
+			lineage: {
+				workspaceId: snapshot.knowledgeWorkspaceId,
+				sourceId: "source-1",
+				sourceContentHash: "hash-1",
+				sourceVersion: 1,
+				entryId: "entry-1",
+				entryVersion: 1,
+			},
+		};
+		vi.mocked(getXiaofeiWorkspace).mockResolvedValue({
+			id: "workspace-1",
+			tenantKey: PUBLIC_SUPPORT_TENANT_KEY,
+			snapshot,
+		} as never);
+
+		const synchronized = await synchronizeKnowledgeWorkspaceSnapshot({
+			tenantKey: PUBLIC_SUPPORT_TENANT_KEY,
+			units: [
+				{
+					content: managedUnit,
+					status: "released",
+					eligibility: "eligible",
+					staleReason: null,
+				},
+			],
+		});
+
+		expect(synchronized.knowledgeUnits).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: managedUnit.id, eligibility: "eligible" }),
+				expect.objectContaining({ id: snapshot.knowledgeUnits[0]!.id }),
+			]),
+		);
+		expect(synchronized.capabilityPlan.knowledgeUnitIds).toEqual(
+			expect.arrayContaining([managedUnit.id, snapshot.knowledgeUnits[0]!.id]),
 		);
 	});
 

@@ -1,9 +1,14 @@
 import { runMastraGovernance } from "@repo/ai";
+import { listXiaofeiKnowledgeUnits } from "@repo/database";
 import { rebuildWorkspaceSnapshot } from "@repo/xiaofei";
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import { getOrCreatePublicXiaofeiWorkspace, savePublicXiaofeiSnapshot } from "../service";
+import {
+	getOrCreatePublicXiaofeiWorkspace,
+	mergeManagedKnowledgeUnitsIntoSnapshot,
+	savePublicXiaofeiSnapshot,
+} from "../service";
 
 export const saveXiaofeiConfig = supportProcedure
 	.route({
@@ -28,11 +33,16 @@ export const saveXiaofeiConfig = supportProcedure
 		}),
 	)
 	.handler(async ({ input }) => {
-		const { snapshot } = await getOrCreatePublicXiaofeiWorkspace();
+		const { workspace, snapshot } = await getOrCreatePublicXiaofeiWorkspace();
 		const rebuilt = rebuildWorkspaceSnapshot({
 			previous: snapshot,
 			...input,
 		});
-		const governed = await runMastraGovernance(rebuilt);
+		const managedUnits = await listXiaofeiKnowledgeUnits(workspace.id);
+		const synchronized =
+			managedUnits.length > 0
+				? mergeManagedKnowledgeUnitsIntoSnapshot(rebuilt, managedUnits)
+				: rebuilt;
+		const governed = await runMastraGovernance(synchronized);
 		return await savePublicXiaofeiSnapshot(governed);
 	});

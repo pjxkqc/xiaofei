@@ -77,11 +77,12 @@ aftersales collection flows and hand-authored KUs.
 Parsing and matching are deterministic so configuration review and Eval results
 are reproducible. Matching preserves explicit Latin product phrases such as
 `C-Air`, `Wi-Fi`, and `CADR` inside generated composite fields, prefers exact
-phrases, and allows only bounded character-pair similarity; an unrelated
-question does not become model input. A short answer to an immediately preceding
-question may reuse the last admitted KU when the prior reply explicitly invited
-details such as room size, networking, budget, model, or order number. Embeddings
-and vector stores remain future retrieval-adapter work.
+phrases—including a product-specific KU over a generic presales KU—and allows
+only bounded character-pair similarity; an unrelated question does not become
+model input. A short answer to an immediately preceding question may reuse the
+last admitted KU when the prior reply explicitly invited details such as room
+size, networking, budget, model, or order number. Embeddings and vector stores
+remain future retrieval-adapter work.
 
 Saving knowledge regenerates the capability plan and invalidates its previous
 review and Eval evidence. Review admits the exact KU IDs and field matrices;

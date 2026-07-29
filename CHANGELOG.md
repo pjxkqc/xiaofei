@@ -12,6 +12,9 @@
   size and networking answers.
 - Replaced automatic handoff after repeated knowledge misses with an
   operator-visible attention state while Xiaofei keeps handling later messages.
+- Preserved source-managed product KUs when Agent settings or built-in knowledge
+  are saved, so explicit models such as C-Air are not shadowed by generic
+  presales knowledge.
 
 ## 2026-07-28
 

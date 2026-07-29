@@ -196,6 +196,105 @@ describe("P0 runtime kernel", () => {
 		}
 	});
 
+	it("prefers a product-specific KU over the generic presales KU", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const genericProductUnit = snapshot.knowledgeUnits[0]!;
+		const specificProductUnit = {
+			...genericProductUnit,
+			id: "c-air-mini-parameters",
+			title: "澄风 C-Air 常见问答",
+			scenarioKeywords: ["C-Air Mini", "Wi-Fi联网模块", "空气净化器选型"],
+			applicableScenarios: ["客户询问 C-Air Mini 的面积、噪音或联网参数"],
+			requiredSlots: [],
+			standardReplyPolicy: "C-Air Mini 适合 8–20㎡，最低噪音 25dB(A)，不支持 Wi-Fi。",
+		};
+		snapshot.knowledgeUnits = [genericProductUnit, specificProductUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [genericProductUnit.id, specificProductUnit.id];
+
+		const prepared = prepareTurn({
+			message: "我看中 C-Air Mini，20平方米卧室够用吗？最低噪音和 Wi-Fi 怎么样？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			knowledge: { id: specificProductUnit.id },
+			action: "reply",
+		});
+	});
+
+	it("routes a complete greeting, product consultation, follow-up, and closing conversation", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const genericProductUnit = snapshot.knowledgeUnits[0]!;
+		const serviceUnit = snapshot.knowledgeUnits.find((unit) => unit.title.includes("服务范围"))!;
+		const specificProductUnit = {
+			...genericProductUnit,
+			id: "c-air-mini-complete-conversation",
+			title: "澄风 C-Air 常见问答",
+			scenarioKeywords: ["C-Air Mini", "Wi-Fi联网模块", "空气净化器选型"],
+			applicableScenarios: ["客户询问 C-Air Mini 的面积、噪音或联网参数"],
+			requiredSlots: [],
+			standardReplyPolicy: "C-Air Mini 适合 8–20㎡，最低噪音 25dB(A)，不支持 Wi-Fi。",
+		};
+		snapshot.knowledgeUnits = [...snapshot.knowledgeUnits, specificProductUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [
+			...snapshot.capabilityPlan.knowledgeUnitIds,
+			specificProductUnit.id,
+		];
+
+		const greetingPrepared = prepareTurn({
+			message: "你好，小飞",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const greeting = await finalizeTurn({
+			prepared: greetingPrepared,
+			snapshot,
+			message: "你好，小飞",
+			replyGenerator: { generate: async () => "你好，我是小飞。请告诉我你想了解的商品。" },
+			now,
+		});
+		const productPrepared = prepareTurn({
+			message: "我看中 C-Air Mini，20平方米卧室够用吗？最低噪音怎么样？",
+			state: greeting.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const product = await finalizeTurn({
+			prepared: productPrepared,
+			snapshot,
+			message: "我看中 C-Air Mini，20平方米卧室够用吗？最低噪音怎么样？",
+			replyGenerator: {
+				generate: async () => "20㎡在适用范围内，最低噪音是 25dB(A)。",
+			},
+			now,
+		});
+		const followUpPrepared = prepareTurn({
+			message: "那我还需要联网",
+			state: product.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const closingPrepared = prepareTurn({
+			message: "好的，谢谢，再见",
+			state: product.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(greetingPrepared).toMatchObject({ knowledge: { id: serviceUnit.id } });
+		expect(productPrepared).toMatchObject({ knowledge: { id: specificProductUnit.id } });
+		expect(followUpPrepared).toMatchObject({ knowledge: { id: specificProductUnit.id } });
+		expect(closingPrepared).toMatchObject({ knowledge: { id: serviceUnit.id } });
+	});
+
 	it("hydrates fallback defaults when reading legacy snapshots and conversation state", async () => {
 		const { snapshot, state } = await setup();
 		const legacySnapshot = JSON.parse(JSON.stringify(snapshot)) as {

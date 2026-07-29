@@ -10,7 +10,7 @@ persistence.
 | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract   |
 | `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                          |
-| `saveConfig`                               | `PUT /xiaofei/config`                               | Persist Agent/fallback policy, rebuild KU, and run Mastra governance  |
+| `saveConfig`                               | `PUT /xiaofei/config`                               | Persist Agent/fallback policy and reconcile built-in/source KUs       |
 | `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs        |
 | `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates              |
 | `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                        |
@@ -75,8 +75,13 @@ can prioritize it without transferring ownership. The API only validates and
 persists these values; matching, risk classification, Owner transitions, and
 Guardrail decisions remain in `@repo/xiaofei`.
 
-Knowledge changes regenerate the capability plan and clear stale Eval evidence.
-The API refuses to run Eval before the current capability plan is reviewed.
+Built-in Markdown KUs and source-managed database KUs coexist in the runtime
+snapshot. Saving Agent settings re-synchronizes the managed KUs instead of
+silently replacing product-specific knowledge with only the built-in template.
+Knowledge changes keep the built-in KUs visible while revoking capability
+admission, then merge the current managed rows, regenerate the capability plan,
+and clear stale Eval evidence. The API refuses to run Eval before the current
+capability plan is reviewed.
 
 P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on
