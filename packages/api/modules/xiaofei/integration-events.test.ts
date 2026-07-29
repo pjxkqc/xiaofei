@@ -1,3 +1,4 @@
+import { acceptInboundEvent } from "@repo/database";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
@@ -10,9 +11,12 @@ vi.mock("./service", () => ({ getOrCreatePublicXiaofeiWorkspace: vi.fn() }));
 
 import {
 	channelEnvelopeSchema,
+	ingestChannelEnvelope,
 	isValidIngestApiKey,
 	MAX_INBOUND_EVENT_BYTES,
+	safeInboundHeaders,
 } from "./integration-events";
+import { getOrCreatePublicXiaofeiWorkspace } from "./service";
 
 describe("ChannelEnvelope v1", () => {
 	it("accepts bounded transport metadata without a caller workspace", () => {
@@ -60,4 +64,45 @@ describe("ingest authentication", () => {
 		expect(isValidIngestApiKey(undefined)).toBe(false);
 	});
 	it("keeps the body limit at one MiB", () => expect(MAX_INBOUND_EVENT_BYTES).toBe(1024 * 1024));
+});
+
+describe("inbound metadata privacy", () => {
+	it("persists only allowlisted observability headers", async () => {
+		vi.mocked(getOrCreatePublicXiaofeiWorkspace).mockResolvedValue({
+			workspace: { id: "public-workspace" },
+		} as never);
+		vi.mocked(acceptInboundEvent).mockResolvedValue({
+			kind: "created",
+			event: { id: "event-1", source: "kafka", eventId: "evt-1", status: "accepted" },
+		} as never);
+
+		await ingestChannelEnvelope({
+			schemaVersion: "v1",
+			source: "kafka",
+			eventId: "evt-1",
+			transport: { kind: "kafka" },
+			payload: {},
+			metadata: {
+				headers: {
+					Authorization: "Bearer must-not-persist",
+					Cookie: "session=must-not-persist",
+					"X-Request-Id": "request-123",
+				},
+			},
+		});
+
+		expect(acceptInboundEvent).toHaveBeenCalledWith(
+			"public-workspace",
+			expect.objectContaining({ safeHeaders: { "x-request-id": "request-123" } }),
+		);
+	});
+
+	it("normalizes allowlisted names and excludes sensitive names", () => {
+		expect(
+			safeInboundHeaders({
+				TraceParent: "00-abc-def-01",
+				"x-api-key": "must-not-persist",
+			}),
+		).toEqual({ traceparent: "00-abc-def-01" });
+	});
 });

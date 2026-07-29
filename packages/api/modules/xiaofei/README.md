@@ -134,9 +134,50 @@ clear `BAD_REQUEST` messages without exposing database details.
 
 `POST /api/xiaofei/integrations/events` accepts at most 1 MiB of JSON with a
 `ChannelEnvelope v1` body and `Authorization: Bearer <XIAOFEI_INGEST_API_KEY>`.
-The caller never chooses a workspace. Workers should retain Kafka records and retry
-temporary failures, committing a contiguous offset only after the API returns durable
-`200` or `202`; a `409` means the same source/event ID carried a different payload.
+The caller never chooses a workspace. Metadata headers are optional correlation data;
+only `content-type`, `traceparent`, `tracestate`, `x-correlation-id`, `x-message-id`,
+and `x-request-id` are persisted. Authentication, cookies, API keys, and all other
+header names are discarded before event detail can be read.
+
+### Kafka worker contract
+
+This API is the P0 durable Inbox boundary only: it does not consume records, create a
+conversation, call AI, or write LoopDesk. Run Kafka in the external worker, with
+`enable.auto.commit=false`; Kafka is responsible for retaining records while the API
+is unavailable. Use a deterministic `eventId` for a source record (for example,
+`<topic>:<partition>:<offset>`) and send the original envelope on every retry.
+
+```json
+{
+	"schemaVersion": "v1",
+	"source": "flyranking-kafka",
+	"eventId": "inbound.events:4:9812",
+	"transport": {
+		"kind": "kafka",
+		"topic": "inbound.events",
+		"partition": 4,
+		"offset": "9812"
+	},
+	"eventType": "message.received",
+	"payload": { "messageId": "upstream-123", "body": "example" },
+	"metadata": { "headers": { "x-request-id": "worker-request-123" } }
+}
+```
+
+```bash
+curl --fail-with-body \
+  -X POST "$XIAOFEI_API_URL/api/xiaofei/integrations/events" \
+  -H "Authorization: Bearer $XIAOFEI_INGEST_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @channel-envelope.json
+```
+
+Commit the record's contiguous Kafka offset only after the API has durably returned
+`202` (new event) or `200` (identical replay). A timeout or `5xx` has an unknown
+outcome: retry the same envelope without committing. `400`, `409`, and `413` are
+non-retryable input failures: quarantine the record and alert an operator; do not
+commit it as a successful delivery. This is at-least-once delivery with idempotent
+Inbox acceptance, not exactly-once Kafka processing.
 
 ## Status communication paths
 

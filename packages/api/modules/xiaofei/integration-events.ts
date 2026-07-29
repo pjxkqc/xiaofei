@@ -12,6 +12,19 @@ import { getOrCreatePublicXiaofeiWorkspace } from "./service";
 
 export const MAX_INBOUND_EVENT_BYTES = 1024 * 1024;
 
+/**
+ * These headers are correlation metadata, not credentials or customer data.
+ * Keep this list small: persisted event details are visible to support users.
+ */
+const SAFE_METADATA_HEADER_NAMES = new Set([
+	"content-type",
+	"traceparent",
+	"tracestate",
+	"x-correlation-id",
+	"x-message-id",
+	"x-request-id",
+]);
+
 const optionalText = z.string().trim().min(1).max(500).optional();
 export const channelEnvelopeSchema = z
 	.object({
@@ -39,6 +52,18 @@ export const channelEnvelopeSchema = z
 
 export type ChannelEnvelope = z.infer<typeof channelEnvelopeSchema>;
 
+export function safeInboundHeaders(headers: Record<string, string> | undefined) {
+	if (!headers) return {};
+	return Object.fromEntries(
+		Object.entries(headers).flatMap(([name, value]) => {
+			const normalizedName = name.toLowerCase();
+			return SAFE_METADATA_HEADER_NAMES.has(normalizedName)
+				? [[normalizedName, value] as const]
+				: [];
+		}),
+	);
+}
+
 export async function ingestChannelEnvelope(input: unknown) {
 	const envelope = channelEnvelopeSchema.parse(input);
 	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
@@ -54,7 +79,7 @@ export async function ingestChannelEnvelope(input: unknown) {
 		eventType: envelope.eventType,
 		occurredAt: envelope.occurredAt ? new Date(envelope.occurredAt) : new Date(),
 		payload: envelope.payload as never,
-		safeHeaders: envelope.metadata?.headers ?? {},
+		safeHeaders: safeInboundHeaders(envelope.metadata?.headers),
 	});
 }
 
