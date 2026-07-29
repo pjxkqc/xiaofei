@@ -1,6 +1,8 @@
 # Xiaofei release status
 
 > Last verified: 2026-07-29 (Asia/Shanghai)
+>
+> Released revision: `ecb44a7baa27f109701fdbd3450cba42c4dc2878`
 
 This page is the repository source of truth for the currently deployed version,
 environment differences, stable URLs, demo capabilities, and safe test access.
@@ -30,6 +32,9 @@ Production.
   reply generation, LangGraph orchestration, and persisted Neon conversations.
 - Release source:
   [`v0.1.0`](https://github.com/pjxkqc/xiaofei/releases/tag/v0.1.0).
+- Released revision:
+  [`ecb44a7`](https://github.com/pjxkqc/xiaofei/commit/ecb44a7baa27f109701fdbd3450cba42c4dc2878);
+  `main`, `uat`, and the `v0.1.0` tag were verified at this revision.
 - Stable Production URL:
   [xiaofei-preview.vercel.app](https://xiaofei-preview.vercel.app).
 - Stable UAT URL:
@@ -37,9 +42,26 @@ Production.
 - UAT acceptance: 11 eligible KUs, current capability review, deterministic
   Eval `13/13`, and two clean persisted conversations covering product
   follow-up and knowledge-miss recovery.
-- Production acceptance: verify the same two conversation paths after the
-  release deployment; Production and UAT remain separate persistent data
-  boundaries.
+- Production acceptance: 11 eligible KUs, current capability review,
+  deterministic Eval `13/13`, and the same two conversation paths verified
+  after a clean pre-launch reset. Production and UAT remain separate persistent
+  data boundaries.
+
+### Acceptance records
+
+The named conversations below are intentionally retained so a reviewer can
+inspect the exact persisted messages in `/inbox`.
+
+| Environment | Product follow-up conversation                                                    | Knowledge-miss recovery conversation                                              |
+| ----------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| UAT         | `UAT-多轮会话-最终验证-20260729` (`d43bef80-3a61-4e6f-9a77-5c390cf36abf`)         | `UAT-兜底恢复-最终验证-20260729` (`448c8ac7-db07-46fe-9fe2-5bb079ad11c7`)         |
+| Production  | `PROD-v0.1.0-多轮会话-最终验证-20260729` (`c0094274-8c96-43f6-a5d0-b45e2dd59b18`) | `PROD-v0.1.0-兜底恢复-最终验证-20260729` (`be5433be-9c8e-4f8b-b882-1414d2cc731f`) |
+
+The final Production acceptance started from an empty conversation set: four
+older demo conversations were removed, then the two records above were entered
+message by message and retained. Knowledge sources, 11 eligible KUs, the
+reviewed capability, and passing Eval `13/13` were preserved because this
+release did not introduce an incompatible persisted-state change.
 
 ## Environments
 
@@ -72,24 +94,40 @@ quality runs Node.js 22, and the repository declares Node.js 22 or newer.
 Production and UAT run the same release code. Their users, workspaces,
 knowledge, Eval evidence, and conversations are intentionally independent.
 
+### Pre-launch data reset policy
+
+Xiaofei is still in a pre-launch demo stage. With explicit release-owner
+approval, UAT or Production demo data may be cleared and rebuilt when a
+material persisted-state, knowledge-governance, matching, fallback, or fixture
+change would make older evidence misleading. Reset test conversations before
+the final acceptance run and retain only the named release evidence needed by
+reviewers.
+
+Do not reset durable data for documentation, styling, or other changes that do
+not invalidate stored behavior. Once either environment contains pilot or real
+customer data, replace reset-based delivery with reviewed migrations, backups,
+and rollback evidence. Production cleanup always requires explicit human
+authorization even during the demo stage.
+
 ## Demo URLs
 
 Use Production for the released demo and UAT for safe operator validation. The
 same paths apply to both stable base URLs:
 
-| Surface                     | URL                                                                                                           | Access                   |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| Public customer support     | [`/support`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/support)                                 | No login                 |
-| Login                       | [`/login`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/login)                                     | Preview one-click button |
-| Sources and entries         | [`/knowledge/entries`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/entries)             | Authenticated            |
-| Knowledge Units             | [`/knowledge/units`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/units)                 | Authenticated            |
-| Capability review and Eval  | [`/knowledge/capabilities`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/capabilities)   | Authenticated            |
-| Conversation validation     | [`/chatbot`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/chatbot)                                 | Authenticated            |
-| Support inbox               | [`/inbox`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/inbox)                                     | Authenticated            |
-| Agent general settings      | [`/agent-settings/general`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/general)   | Authenticated            |
-| Fallback and handoff policy | [`/agent-settings/fallback`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/fallback) | Authenticated            |
-| Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/status)     | Authenticated            |
-| API communication demo      | [`/api-demo`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/api-demo)                               | Authenticated            |
+| Surface                     | Production                                                                               | UAT                                                                                                           | Access                                |
+| --------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Public customer support     | [`/support`](https://xiaofei-preview.vercel.app/support)                                 | [`/support`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/support)                                 | No login                              |
+| Login                       | [`/login`](https://xiaofei-preview.vercel.app/login)                                     | [`/login`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/login)                                     | Normal login; UAT has one-click login |
+| Knowledge documents         | [`/knowledge/documents`](https://xiaofei-preview.vercel.app/knowledge/documents)         | [`/knowledge/documents`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/documents)         | Authenticated                         |
+| Knowledge entries           | [`/knowledge/entries`](https://xiaofei-preview.vercel.app/knowledge/entries)             | [`/knowledge/entries`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/entries)             | Authenticated                         |
+| Knowledge Units             | [`/knowledge/units`](https://xiaofei-preview.vercel.app/knowledge/units)                 | [`/knowledge/units`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/units)                 | Authenticated                         |
+| Capability review and Eval  | [`/knowledge/capabilities`](https://xiaofei-preview.vercel.app/knowledge/capabilities)   | [`/knowledge/capabilities`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/knowledge/capabilities)   | Authenticated                         |
+| Conversation validation     | [`/chatbot`](https://xiaofei-preview.vercel.app/chatbot)                                 | [`/chatbot`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/chatbot)                                 | Authenticated                         |
+| Support inbox               | [`/inbox`](https://xiaofei-preview.vercel.app/inbox)                                     | [`/inbox`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/inbox)                                     | Authenticated                         |
+| Agent general settings      | [`/agent-settings/general`](https://xiaofei-preview.vercel.app/agent-settings/general)   | [`/agent-settings/general`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/general)   | Authenticated                         |
+| Fallback and handoff policy | [`/agent-settings/fallback`](https://xiaofei-preview.vercel.app/agent-settings/fallback) | [`/agent-settings/fallback`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/fallback) | Authenticated                         |
+| Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview.vercel.app/agent-settings/status)     | [`/agent-settings/status`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/status)     | Authenticated                         |
+| API communication demo      | [`/api-demo`](https://xiaofei-preview.vercel.app/api-demo)                               | [`/api-demo`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/api-demo)                               | Authenticated                         |
 
 Immutable Vercel deployment URLs belong in PR acceptance evidence, not in this
 maintained page, because every push creates a new one.
@@ -158,3 +196,6 @@ months for the fan motor, keeps AI ownership, and clears operator attention.
 See [PR Preview CI/CD](../pr-preview-setup.md) for deployment mechanics and the
 [Xiaofei PR delivery skill](../multica/skills/xiaofei-pr-delivery/SKILL.md) for
 the exact promotion protocol.
+
+The concise Chinese announcement for this release is available in
+[`v0.1.0-zh.md`](./v0.1.0-zh.md).

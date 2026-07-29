@@ -24,6 +24,11 @@
 - Verified a clean UAT data set with 11 eligible KUs, Eval `13/13`, a complete
   greeting-to-closing product conversation, and recovery from unsupported
   questions to a grounded warranty answer.
+- Cleared the pre-launch Production conversation data and repeated the same
+  multi-turn and fallback-recovery acceptance from an empty conversation set;
+  the two final persisted conversations remain available for review.
+- Added a concise Chinese release announcement with the stable Production and
+  UAT demo URLs and current feature summary.
 
 ## 2026-07-28
 
