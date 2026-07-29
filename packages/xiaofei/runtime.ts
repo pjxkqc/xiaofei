@@ -543,6 +543,7 @@ function bestKnowledgeTermMatch(
 	);
 	const hasSpecificExactTerm = exactTerms.some((term) => !WEAK_STANDALONE_TERMS.has(term));
 	let best: { score: number; reason: "exact" | "related" } | null = null;
+	let acceptedExactMatches = 0;
 
 	for (const term of terms) {
 		const exact =
@@ -551,10 +552,17 @@ function bestKnowledgeTermMatch(
 		if (exact && WEAK_STANDALONE_TERMS.has(term) && !hasSpecificExactTerm) {
 			continue;
 		}
+		if (exact) acceptedExactMatches += 1;
 		const candidate = exact
 			? { score: 100 + Math.min(term.length, 30), reason: "exact" as const }
 			: relatedTextScore(normalizedMessage, term);
 		if (candidate && (!best || candidate.score > best.score)) best = candidate;
+	}
+	if (best?.reason === "exact" && acceptedExactMatches > 1) {
+		return {
+			...best,
+			score: best.score + Math.min((acceptedExactMatches - 1) * 15, 60),
+		};
 	}
 	return best;
 }
