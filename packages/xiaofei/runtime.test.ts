@@ -286,6 +286,7 @@ describe("P0 runtime kernel", () => {
 			title: "C-Air 适用面积、联网能力与选型建议 FAQ",
 			scenarioKeywords: ["适用面积", "房间大小", "联网模块", "Wi-Fi"],
 			applicableScenarios: [
+				"用户询问 Mini 适合多大的房间",
 				"用户询问 C-Air Mini 的 CADR、噪音或联网能力",
 				"用户提供会议室面积、预算和 Wi-Fi 需求，希望获得型号推荐",
 			],

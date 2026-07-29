@@ -542,6 +542,19 @@ function bestKnowledgeTermMatch(
 			(normalizedMessage.length >= 4 && term.includes(normalizedMessage)),
 	);
 	const hasSpecificExactTerm = exactTerms.some((term) => !WEAK_STANDALONE_TERMS.has(term));
+	const exactScenarioKeywords = [
+		...new Set(
+			knowledge.scenarioKeywords
+				.map(normalizeSearchText)
+				.filter(
+					(term) =>
+						term.length >= 2 &&
+						(normalizedMessage.includes(term) ||
+							(normalizedMessage.length >= 4 && term.includes(normalizedMessage))) &&
+						(!WEAK_STANDALONE_TERMS.has(term) || hasSpecificExactTerm),
+				),
+		),
+	];
 	let best: { score: number; reason: "exact" | "related" } | null = null;
 	let acceptedExactMatches = 0;
 
@@ -561,7 +574,16 @@ function bestKnowledgeTermMatch(
 	if (best?.reason === "exact" && acceptedExactMatches > 1) {
 		return {
 			...best,
-			score: best.score + Math.min((acceptedExactMatches - 1) * 15, 60),
+			score:
+				best.score +
+				Math.min((acceptedExactMatches - 1) * 15, 60) +
+				Math.min(exactScenarioKeywords.length * 20, 60),
+		};
+	}
+	if (best?.reason === "exact" && exactScenarioKeywords.length > 0) {
+		return {
+			...best,
+			score: best.score + Math.min(exactScenarioKeywords.length * 20, 60),
 		};
 	}
 	return best;
