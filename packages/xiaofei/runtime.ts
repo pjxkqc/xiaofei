@@ -115,16 +115,19 @@ function prepareTurnInternal(
 		);
 	}
 
-	const callableKnowledgeIds = new Set(input.snapshot.capabilityPlan.knowledgeUnitIds);
-	const selection = selectKnowledge(
-		input.message,
-		state,
-		input.snapshot.knowledgeUnits.filter(
-			(unit) => callableKnowledgeIds.has(unit.id) && isKnowledgeUnitEligible(unit),
-		),
-	);
-	const knowledge = selection?.knowledge ?? null;
 	const risk = detectRisk(input.message, input.snapshot);
+	const callableKnowledgeIds = new Set(input.snapshot.capabilityPlan.knowledgeUnitIds);
+	const selection =
+		risk.level === "high"
+			? null
+			: selectKnowledge(
+					input.message,
+					state,
+					input.snapshot.knowledgeUnits.filter(
+						(unit) => callableKnowledgeIds.has(unit.id) && isKnowledgeUnitEligible(unit),
+					),
+				);
+	const knowledge = selection?.knowledge ?? null;
 	traces.push(
 		trace(
 			state.id,
@@ -533,12 +536,21 @@ function bestKnowledgeTermMatch(
 				.filter((term) => term.length >= 2),
 		),
 	];
+	const exactTerms = terms.filter(
+		(term) =>
+			normalizedMessage.includes(term) ||
+			(normalizedMessage.length >= 4 && term.includes(normalizedMessage)),
+	);
+	const hasSpecificExactTerm = exactTerms.some((term) => !WEAK_STANDALONE_TERMS.has(term));
 	let best: { score: number; reason: "exact" | "related" } | null = null;
 
 	for (const term of terms) {
 		const exact =
 			normalizedMessage.includes(term) ||
 			(normalizedMessage.length >= 4 && term.includes(normalizedMessage));
+		if (exact && WEAK_STANDALONE_TERMS.has(term) && !hasSpecificExactTerm) {
+			continue;
+		}
 		const candidate = exact
 			? { score: 100 + Math.min(term.length, 30), reason: "exact" as const }
 			: relatedTextScore(normalizedMessage, term);
@@ -546,6 +558,8 @@ function bestKnowledgeTermMatch(
 	}
 	return best;
 }
+
+const WEAK_STANDALONE_TERMS = new Set(["保修", "人工客服"].map(normalizeSearchText));
 
 function expandKnowledgeSearchTerm(value: string): string[] {
 	const explicitProductTerms = value.match(/[A-Za-z][A-Za-z0-9]*(?:[- ][A-Za-z0-9]+)*/gu) ?? [];
