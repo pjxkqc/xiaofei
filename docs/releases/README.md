@@ -16,37 +16,38 @@ page records what a reviewer can use now.
 | GitHub Release + `vX.Y.Z` tag        | Immutable history for a version that has actually been promoted to Production      |
 | Multica issue                        | Owner, acceptance criteria, validation evidence, and the work needed for a release |
 
-There is no tagged Xiaofei GitHub Release yet. The current P0 demo is accepted
-in UAT at [merge commit
-`fda5406`](https://github.com/pjxkqc/xiaofei/commit/fda54061feb3de8b81b1503360c578857ab8bc83),
-but has not been promoted to Production. The first GitHub Release should be
-created only after an explicitly authorized UAT-to-Production promotion.
+The current Xiaofei P0 demo release is
+[`v0.1.0`](https://github.com/pjxkqc/xiaofei/releases/tag/v0.1.0). The tag is
+created only after the exact `main` revision is deployed and verified in
+Production.
 
-## Current candidate
+## Current release
 
-**Accepted UAT candidate — FLY-77 / FLY-85**
+**Xiaofei P0 demo — `v0.1.0`**
 
-- Status: [PR #22](https://github.com/pjxkqc/xiaofei/pull/22) is merged and the
-  candidate is available in UAT; Production remains unchanged.
-- Source: `uat@fda54061feb3de8b81b1503360c578857ab8bc83`.
+- Scope: Supastarter auth and roles, public customer support, support inbox,
+  governed knowledge ingestion, KU review, capability admission, Eval, Mastra
+  reply generation, LangGraph orchestration, and persisted Neon conversations.
+- Release source:
+  [`v0.1.0`](https://github.com/pjxkqc/xiaofei/releases/tag/v0.1.0).
+- Stable Production URL:
+  [xiaofei-preview.vercel.app](https://xiaofei-preview.vercel.app).
 - Stable UAT URL:
   [xiaofei-preview-git-uat-flyranking16.vercel.app](https://xiaofei-preview-git-uat-flyranking16.vercel.app).
-- Validation: the PR exact head, merge commit Quality run, durable UAT alias,
-  Preview cleanup, and persisted UAT data were verified.
-- UAT data note: the existing public-support workspace intentionally preserved
-  its 2 reviewed KUs instead of overwriting tenant data with the new
-  nine-category defaults. Its Agent and fallback follow-up limits are 5, and
-  the post-merge Eval passed 4/4.
-- Intended next step: prepare a separately authorized `promote/uat-* → main`
-  PR when Production release is desired.
+- UAT acceptance: 11 eligible KUs, current capability review, deterministic
+  Eval `13/13`, and two clean persisted conversations covering product
+  follow-up and knowledge-miss recovery.
+- Production acceptance: verify the same two conversation paths after the
+  release deployment; Production and UAT remain separate persistent data
+  boundaries.
 
 ## Environments
 
-| Environment       | Source and current revision                                                                         | Stable base URL                                                                                            | Data boundary                                     | Login and lifecycle                                                                              |
-| ----------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Production        | [`main@eb0b275`](https://github.com/pjxkqc/xiaofei/commit/eb0b2759cd3614409985f6892418f90709d34795) | [xiaofei-preview.vercel.app](https://xiaofei-preview.vercel.app)                                           | Neon `main`                                       | Normal login/signup only; persistent. Preview one-click login is disabled.                       |
-| UAT               | [`uat@fda5406`](https://github.com/pjxkqc/xiaofei/commit/fda54061feb3de8b81b1503360c578857ab8bc83)  | [xiaofei-preview-git-uat-flyranking16.vercel.app](https://xiaofei-preview-git-uat-flyranking16.vercel.app) | Neon `preview/uat`                                | Preview one-click login; durable shared test data. Do not delete or force-push the `uat` branch. |
-| Local development | Current checkout                                                                                    | [localhost:3000](http://localhost:3000)                                                                    | Developer-selected PostgreSQL/Docker or test Neon | Create a local user. Preview one-click login is disabled outside Vercel Preview.                 |
+| Environment       | Release source                                                             | Stable base URL                                                                                            | Data boundary                                     | Login and lifecycle                                                                              |
+| ----------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Production        | [`v0.1.0`](https://github.com/pjxkqc/xiaofei/releases/tag/v0.1.0) (`main`) | [xiaofei-preview.vercel.app](https://xiaofei-preview.vercel.app)                                           | Neon `main`                                       | Normal login/signup only; persistent. Preview one-click login is disabled.                       |
+| UAT               | [`v0.1.0`](https://github.com/pjxkqc/xiaofei/releases/tag/v0.1.0) (`uat`)  | [xiaofei-preview-git-uat-flyranking16.vercel.app](https://xiaofei-preview-git-uat-flyranking16.vercel.app) | Neon `preview/uat`                                | Preview one-click login; durable shared test data. Do not delete or force-push the `uat` branch. |
+| Local development | Current checkout                                                           | [localhost:3000](http://localhost:3000)                                                                    | Developer-selected PostgreSQL/Docker or test Neon | Create a local user. Preview one-click login is disabled outside Vercel Preview.                 |
 
 Production and UAT are currently built by Vercel with Node.js 24.x. GitHub
 quality runs Node.js 22, and the repository declares Node.js 22 or newer.
@@ -60,23 +61,21 @@ quality runs Node.js 22, and the repository declares Node.js 22 or newer.
 | Mastra generation, LangGraph state, Guardrail, ownership, and Neon persistence                | Yes        | Yes |
 | MD/TXT, PDF/DOCX/XLSX, one-page web, and manual-Q&A ingestion                                 | Yes        | Yes |
 | Entry CRUD, KU generation/review/publish, capability review, and deterministic Eval           | Yes        | Yes |
-| Preview fixture selectors and one-click operator                                              | Hidden     | Yes |
-| Flyranking/LoopDesk target architecture documentation                                         | No         | Yes |
-| Reusable Multica `xiaofei-pr-delivery` skill                                                  | No         | Yes |
-| Nine-category default knowledge, bounded clarification, and explicit-risk handoff             | No         | Yes |
-| Shared public-support governance workspace and four-step knowledge-to-conversation navigation | No         | Yes |
-| Presales slots kept non-blocking and generated `C-Air`/`Wi-Fi` product terms preserved        | No         | Yes |
-| Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | No         | Yes |
-| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | No         | Yes |
-| Split Agent general, fallback/handoff, and runtime-status settings pages                      | No         | Yes |
+| Nine-category default knowledge and source-grounded generated KUs                             | Yes        | Yes |
+| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | Yes        | Yes |
+| Direct scenario-evidence ranking for overlapping product KUs                                  | Yes        | Yes |
+| Shared public-support governance workspace and four-step knowledge-to-conversation navigation | Yes        | Yes |
+| Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | Yes        | Yes |
+| Split Agent general, fallback/handoff, and runtime-status settings pages                      | Yes        | Yes |
+| Preview fixtures and one-click operator                                                       | Hidden     | Yes |
 
-The table describes deployed revisions, not merely code that exists somewhere
-in the repository. UAT includes the accepted PR #22 runtime and Agent-settings
-delta; Production remains on the earlier baseline.
+Production and UAT run the same release code. Their users, workspaces,
+knowledge, Eval evidence, and conversations are intentionally independent.
 
 ## Demo URLs
 
-Use the stable UAT alias for the current demo:
+Use Production for the released demo and UAT for safe operator validation. The
+same paths apply to both stable base URLs:
 
 | Surface                     | URL                                                                                                           | Access                   |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
@@ -92,9 +91,8 @@ Use the stable UAT alias for the current demo:
 | Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/status)     | Authenticated            |
 | API communication demo      | [`/api-demo`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/api-demo)                               | Authenticated            |
 
-The same paths apply to the UAT and Production base URLs. Immutable Vercel
-deployment URLs belong in PR acceptance evidence, not in this maintained page,
-because every push creates a new one.
+Immutable Vercel deployment URLs belong in PR acceptance evidence, not in this
+maintained page, because every push creates a new one.
 
 ## Test access
 
@@ -123,12 +121,20 @@ authorization header to this page, a GitHub Release, or a Multica issue.
 5. Open `/support` in a signed-out browser, send a customer question, and
    confirm the same conversation and owner state in `/inbox`.
 
-For the current accepted fixture, a useful grounded question is:
+For the current accepted fixture, useful grounded questions are:
 
-> C-Air Pro 适合 40 平方米会议室并且支持 Wi-Fi 吗？
+> C-Air Mini 适合多大的房间？
 
-The expected behavior is to match the released C-Air KU, state which facts the
-FAQ actually confirms, and avoid inventing C-Air Pro specifications.
+Then continue with:
+
+> 20 平方，需要联网。
+
+To verify fallback recovery, ask two unsupported store-hours questions, then:
+
+> C-Air Mini 的保修期限是多久？
+
+The expected recovery answer states 24 months for the complete unit and 36
+months for the fan motor, keeps AI ownership, and clears operator attention.
 
 ## Maintenance workflow
 
