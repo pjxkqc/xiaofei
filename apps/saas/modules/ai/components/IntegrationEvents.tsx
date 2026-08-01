@@ -151,7 +151,7 @@ export function IntegrationEvents() {
 										<span className="text-sm text-muted-foreground">{event.eventType}</span>
 									</div>
 									<span className="text-sm text-muted-foreground">
-										{event.deliveryCount} delivery{event.deliveryCount === 1 ? "" : "ies"}
+										{event.deliveryCount} {event.deliveryCount === 1 ? "delivery" : "deliveries"}
 									</span>
 								</div>
 								<div className="gap-2 text-sm sm:grid-cols-2 grid">
