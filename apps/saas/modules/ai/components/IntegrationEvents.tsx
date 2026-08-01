@@ -21,7 +21,9 @@ interface EventSummary {
 	status: string;
 	eventType: string;
 	deliveryCount: number;
-	createdAt: Date | string;
+	occurredAt: Date | string;
+	firstReceivedAt: Date | string;
+	lastReceivedAt: Date | string;
 }
 
 export function IntegrationEvents() {
@@ -109,7 +111,10 @@ export function IntegrationEvents() {
 			<Card>
 				<CardHeader>
 					<CardTitle>Inbound events</CardTitle>
-					<CardDescription>Metadata list only; raw payload is loaded on demand.</CardDescription>
+					<CardDescription>
+						Event, first-received, and latest-delivery times use your browser time zone. Raw payload
+						is loaded on demand.
+					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="gap-2 md:grid-cols-4 grid">
@@ -135,18 +140,31 @@ export function IntegrationEvents() {
 								key={event.id}
 								type="button"
 								onClick={() => void showDetail(event.id)}
-								className="gap-3 p-3 sm:grid-cols-6 grid w-full text-left hover:bg-muted/50"
+								className="space-y-3 p-4 w-full text-left hover:bg-muted/50"
 							>
-								<span className="font-medium">{event.source}</span>
-								<span className="font-mono text-xs">{event.eventId}</span>
-								<span>{event.topic ?? "—"}</span>
-								<span>{event.eventType}</span>
-								<Badge status={event.status === "accepted" ? "success" : "info"}>
-									{event.status}
-								</Badge>
-								<span className="text-muted-foreground">
-									{event.deliveryCount} delivery{event.deliveryCount === 1 ? "" : "ies"}
-								</span>
+								<div className="gap-3 flex flex-wrap items-center justify-between">
+									<div className="gap-2 flex flex-wrap items-center">
+										<span className="font-medium">{event.source}</span>
+										<Badge status={event.status === "accepted" ? "success" : "info"}>
+											{event.status}
+										</Badge>
+										<span className="text-sm text-muted-foreground">{event.eventType}</span>
+									</div>
+									<span className="text-sm text-muted-foreground">
+										{event.deliveryCount} delivery{event.deliveryCount === 1 ? "" : "ies"}
+									</span>
+								</div>
+								<div className="gap-2 text-sm sm:grid-cols-2 grid">
+									<span className="font-mono text-xs">{event.eventId}</span>
+									<span className="sm:text-right text-muted-foreground">
+										Topic: {event.topic ?? "—"}
+									</span>
+								</div>
+								<div className="gap-3 pt-3 text-xs sm:grid-cols-3 grid border-t">
+									<EventTime label="Event time" value={event.occurredAt} />
+									<EventTime label="First received" value={event.firstReceivedAt} />
+									<EventTime label="Latest delivery" value={event.lastReceivedAt} />
+								</div>
 							</button>
 						))}
 					</div>
@@ -167,4 +185,29 @@ export function IntegrationEvents() {
 			)}
 		</div>
 	);
+}
+
+function EventTime({ label, value }: { label: string; value: Date | string }) {
+	return (
+		<span className="space-y-1">
+			<span className="block text-muted-foreground">{label}</span>
+			<time className="font-medium block" dateTime={toIsoDateTime(value)}>
+				{formatDateTime(value)}
+			</time>
+		</span>
+	);
+}
+
+function formatDateTime(value: Date | string) {
+	const date = value instanceof Date ? value : new Date(value);
+	if (Number.isNaN(date.getTime())) return "—";
+	return new Intl.DateTimeFormat("zh-CN", {
+		dateStyle: "medium",
+		timeStyle: "medium",
+	}).format(date);
+}
+
+function toIsoDateTime(value: Date | string) {
+	const date = value instanceof Date ? value : new Date(value);
+	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
