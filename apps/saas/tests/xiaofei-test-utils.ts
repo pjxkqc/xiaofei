@@ -15,5 +15,8 @@ export async function registerOrganizationAdmin(page: Page, prefix: string) {
 	await page.goto("/new-organization");
 	await page.getByRole("textbox", { name: "Organization name" }).fill(`${prefix} organization`);
 	await page.getByRole("button", { name: "Create organization" }).click();
-	await expect(page).toHaveURL(/\/[^/]+$/u);
+	await page.waitForURL(
+		(url) => url.pathname !== "/new-organization" && /^\/[^/]+$/u.test(url.pathname),
+	);
+	await expect(page.getByRole("heading", { name: `${prefix} organization` })).toBeVisible();
 }

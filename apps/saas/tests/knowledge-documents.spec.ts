@@ -7,12 +7,14 @@ test.describe("knowledge document management", () => {
 		await registerOrganizationAdmin(page, "knowledge");
 
 		await page.goto("/knowledge/documents");
+		await expect(page.getByLabel("Organization required")).toHaveCount(0);
 		await expect(page.getByRole("heading", { name: "知识文档" })).toBeVisible();
 		await expect(
 			page.getByText(/PDF、DOCX、XLSX 通过服务端 Firecrawl 解析（最多 4 MB）/u),
 		).toBeVisible();
 
 		const fileInput = page.getByLabel("文档文件");
+		await expect(fileInput).toBeVisible();
 		await expect(fileInput).toHaveAttribute("accept", /\.pdf/u);
 		await expect(fileInput).toHaveAttribute("accept", /\.xlsx/u);
 
