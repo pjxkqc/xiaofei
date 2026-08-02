@@ -364,7 +364,9 @@ export const SupportConversationStatusSchema = z.enum(["open", "closed"]);
 
 export const SupportConversationSummarySchema = z.object({
 	id: z.string().min(1),
+	customerId: z.string().min(1).nullable().default(null),
 	customerName: z.string().min(1),
+	channel: z.string().min(1),
 	status: SupportConversationStatusSchema,
 	ownerType: OwnerTypeSchema,
 	stage: ConversationStageSchema,
@@ -381,6 +383,21 @@ export const SupportConversationSummarySchema = z.object({
 export const SupportConversationSchema = SupportConversationSummarySchema.extend({
 	messages: z.array(SupportMessageSchema),
 	handoffReason: z.string().nullable(),
+});
+
+export const CustomerStatusSchema = z.enum(["active", "archived"]);
+
+export const CustomerSchema = z.object({
+	id: z.string().min(1),
+	externalCustomerId: z.string().min(1),
+	name: z.string().nullable(),
+	email: z.string().nullable(),
+	whatsappNumber: z.string().nullable(),
+	status: CustomerStatusSchema,
+	lastSeenAt: z.string().nullable(),
+	createdAt: z.string().min(1),
+	updatedAt: z.string().min(1),
+	conversationCount: z.number().int().nonnegative(),
 });
 
 export type GateStatus = z.infer<typeof GateStatusSchema>;
@@ -421,3 +438,4 @@ export type SupportMessage = z.infer<typeof SupportMessageSchema>;
 export type SupportConversationStatus = z.infer<typeof SupportConversationStatusSchema>;
 export type SupportConversationSummary = z.infer<typeof SupportConversationSummarySchema>;
 export type SupportConversation = z.infer<typeof SupportConversationSchema>;
+export type Customer = z.infer<typeof CustomerSchema>;

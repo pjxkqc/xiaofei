@@ -320,8 +320,16 @@ export function getXiaofeiCustomer(organizationId: string, externalCustomerId: s
 export function listXiaofeiCustomers(organizationId: string) {
 	return db.xiaofeiCustomer.findMany({
 		where: { organizationId },
+		include: { _count: { select: { conversations: true } } },
 		orderBy: [{ lastSeenAt: "desc" }, { updatedAt: "desc" }],
 		take: 50,
+	});
+}
+
+export function getXiaofeiCustomerById(organizationId: string, id: string) {
+	return db.xiaofeiCustomer.findUnique({
+		where: { organizationId_id: { organizationId, id } },
+		include: { _count: { select: { conversations: true } } },
 	});
 }
 
@@ -395,11 +403,21 @@ export async function upsertXiaofeiOrganizationConversation(input: {
 export function getXiaofeiConversation(workspaceId: string, externalId: string) {
 	return db.xiaofeiConversation.findUnique({
 		where: { workspaceId_externalId: { workspaceId, externalId } },
+		include: { customer: true },
 	});
 }
 export function listXiaofeiConversations(workspaceId: string) {
 	return db.xiaofeiConversation.findMany({
 		where: { workspaceId },
+		include: { customer: true },
+		orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
+		take: 50,
+	});
+}
+export function listXiaofeiCustomerConversations(workspaceId: string, customerId: string) {
+	return db.xiaofeiConversation.findMany({
+		where: { workspaceId, customerId },
+		include: { customer: true },
 		orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
 		take: 50,
 	});

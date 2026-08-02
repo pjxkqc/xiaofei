@@ -36,7 +36,7 @@ export interface XiaofeiAuthContext {
 
 export const PUBLIC_SUPPORT_TENANT_KEY = "channel:public-support";
 
-export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<string> {
+export async function getXiaofeiOrganizationId(context: XiaofeiAuthContext): Promise<string> {
 	const organizationId = context.session.activeOrganizationId;
 	if (!organizationId) {
 		throw new ORPCError("FORBIDDEN", {
@@ -50,7 +50,11 @@ export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<
 			message: "You do not have access to the active organization.",
 		});
 	}
-	return `organization:${organizationId}`;
+	return organizationId;
+}
+
+export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<string> {
+	return `organization:${await getXiaofeiOrganizationId(context)}`;
 }
 
 export async function requireXiaofeiOrganizationAdmin(

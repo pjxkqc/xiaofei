@@ -41,6 +41,7 @@ import {
 	Settings2Icon,
 	ShieldUserIcon,
 	UserCogIcon,
+	UsersRoundIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
@@ -351,6 +352,12 @@ export function NavBar() {
 				href: startHref,
 				icon: HomeIcon,
 				isActive: pathname === "/" || pathname === basePath,
+			},
+			{
+				label: "客户",
+				href: "/customers",
+				icon: UsersRoundIcon,
+				isActive: pathname.startsWith("/customers"),
 			},
 			{
 				label: t("app.menu.supportInbox"),

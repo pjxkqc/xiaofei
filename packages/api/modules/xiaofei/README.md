@@ -21,6 +21,7 @@ persistence.
 | `getPublicConversation`                    | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat                                                              |
 | `sendPublicMessage`                        | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner                                                        |
 | `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role                                                           |
+| `list/get/create/update/archiveCustomer`   | Authenticated `/xiaofei` RPC                        | Organization-scoped customer lifecycle and customer-linked conversation history                                       |
 | `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                                                                  |
 | `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                                                                         |
 | `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document                                                       |
@@ -47,6 +48,13 @@ Agent, knowledge, Chatbot, Inbox, and event-monitor state and operate Inbox
 conversations. Owners and Organization admins are additionally required for
 Agent settings, capability review, Eval, and any knowledge mutation. Global
 admin status does not bypass this Organization membership boundary.
+
+`/customers` follows the same server-selected Organization boundary. Members
+may read their Organization's customers and customer-linked conversation
+history; only Organization owners/admins can create, edit, or archive a
+customer. Customer IDs are resolved with the Organization selector before any
+conversation query, so a customer from another Organization cannot be bound or
+read. Legacy conversations with a null customer remain visible in `/inbox`.
 
 Customers receive a random UUID conversation token; they cannot list
 conversations or choose a workspace. Inbox and governance procedures use

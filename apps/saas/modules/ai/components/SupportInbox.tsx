@@ -10,6 +10,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@repo/ui/components/card";
+import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import type {
@@ -42,6 +43,10 @@ export function SupportInbox() {
 	const [input, setInput] = useState("");
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
+	const [customerFilter, setCustomerFilter] = useState("");
+	const [channelFilter, setChannelFilter] = useState("all");
+	const [ownerFilter, setOwnerFilter] = useState("all");
+	const [statusFilter, setStatusFilter] = useState("all");
 	const messagesRef = useRef<HTMLDivElement>(null);
 
 	const refreshList = useCallback(async () => {
@@ -124,6 +129,14 @@ export function SupportInbox() {
 			setBusy(false);
 		}
 	};
+	const filteredConversations = conversations.filter(
+		(item) =>
+			(statusFilter === "all" || item.status === statusFilter) &&
+			(ownerFilter === "all" || item.ownerType === ownerFilter) &&
+			(channelFilter === "all" || item.channel === channelFilter) &&
+			(!customerFilter.trim() ||
+				item.customerName.toLowerCase().includes(customerFilter.trim().toLowerCase())),
+	);
 
 	return (
 		<div className="gap-6 flex flex-col">
@@ -168,12 +181,53 @@ export function SupportInbox() {
 							<Badge status="info">{conversations.filter((item) => item.online).length} 在线</Badge>
 						</div>
 					</CardHeader>
+					<div className="gap-2 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4 grid border-b">
+						<Input
+							aria-label="Filter customer"
+							value={customerFilter}
+							onChange={(event) => setCustomerFilter(event.target.value)}
+							placeholder="客户"
+						/>
+						<select
+							aria-label="Filter channel"
+							className="px-3 text-sm rounded-md border bg-background"
+							value={channelFilter}
+							onChange={(event) => setChannelFilter(event.target.value)}
+						>
+							<option value="all">全部渠道</option>
+							{[...new Set(conversations.map((item) => item.channel))].map((channel) => (
+								<option key={channel} value={channel}>
+									{channel}
+								</option>
+							))}
+						</select>
+						<select
+							aria-label="Filter owner"
+							className="px-3 text-sm rounded-md border bg-background"
+							value={ownerFilter}
+							onChange={(event) => setOwnerFilter(event.target.value)}
+						>
+							<option value="all">全部 Owner</option>
+							<option value="ai">小飞</option>
+							<option value="human">人工</option>
+						</select>
+						<select
+							aria-label="Filter status"
+							className="px-3 text-sm rounded-md border bg-background"
+							value={statusFilter}
+							onChange={(event) => setStatusFilter(event.target.value)}
+						>
+							<option value="all">全部状态</option>
+							<option value="open">Open</option>
+							<option value="closed">Closed</option>
+						</select>
+					</div>
 					<CardContent className="p-2 gap-1 flex max-h-[680px] flex-col overflow-y-auto">
 						{loading ? (
 							<div className="py-20 flex justify-center">
 								<LoaderCircleIcon className="size-5 animate-spin text-primary" />
 							</div>
-						) : conversations.length === 0 ? (
+						) : filteredConversations.length === 0 ? (
 							<div className="px-5 py-20 text-center">
 								<MessageSquareTextIcon className="size-8 mb-3 mx-auto text-muted-foreground" />
 								<p className="text-sm font-medium">还没有客户会话</p>
@@ -182,7 +236,7 @@ export function SupportInbox() {
 								</p>
 							</div>
 						) : (
-							conversations.map((item) => (
+							filteredConversations.map((item) => (
 								<ConversationItem
 									key={item.id}
 									conversation={item}
@@ -321,6 +375,7 @@ function ConversationItem({
 					aria-label={conversation.online ? "在线" : "离线"}
 				/>
 			</div>
+			<p className="mt-1 text-[11px] text-muted-foreground">{conversation.channel}</p>
 			<p className="mt-1 text-xs truncate text-muted-foreground">
 				{conversation.lastMessage ? plainTextMessagePreview(conversation.lastMessage) : "新会话"}
 			</p>
