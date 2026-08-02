@@ -144,9 +144,44 @@ model Organization {
   members            Member[]
   invitations        Invitation[]
   purchases          Purchase[]
+  xiaofeiConfig      XiaofeiOrganizationConfig?
+  xiaofeiCustomers   XiaofeiCustomer[]
 
   @@unique([slug])
   @@map("organization")
+}
+
+model XiaofeiOrganizationConfig {
+  id                 String       @id @default(cuid())
+  organizationId     String       @unique
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  externalMerchantId String?      @unique
+  xiaofeiEnabled     Boolean      @default(false)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@map("xiaofei_organization_config")
+}
+
+model XiaofeiCustomer {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  externalCustomerId String
+  name               String?
+  email              String?
+  whatsappNumber     String?
+  status             String       @default("active")
+  lastSeenAt         DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  conversations XiaofeiConversation[]
+
+  @@unique([organizationId, externalCustomerId])
+  @@unique([organizationId, id])
+  @@index([organizationId, updatedAt])
+  @@map("xiaofei_customer")
 }
 
 model Member {
@@ -263,6 +298,9 @@ model XiaofeiConversation {
   workspaceId        String
   workspace          XiaofeiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   externalId         String
+  customerId         String?
+  customer           XiaofeiCustomer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  channel            String           @default("public_support")
   customerName       String?
   status             String           @default("open")
   assignedUserId     String?
@@ -278,6 +316,7 @@ model XiaofeiConversation {
   @@unique([workspaceId, externalId])
   @@index([workspaceId])
   @@index([workspaceId, updatedAt])
+  @@index([customerId])
   @@map("xiaofei_conversation")
 }
 

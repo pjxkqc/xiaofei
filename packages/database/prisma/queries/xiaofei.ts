@@ -11,6 +11,35 @@ import type {
 	XiaofeiKnowledgeDocumentCategory,
 } from "../generated/client";
 
+export interface UpsertXiaofeiOrganizationConfigInput {
+	externalMerchantId?: string | null;
+	xiaofeiEnabled?: boolean;
+}
+
+export interface CreateXiaofeiCustomerInput {
+	organizationId: string;
+	externalCustomerId: string;
+	name?: string | null;
+	email?: string | null;
+	whatsappNumber?: string | null;
+	status?: string;
+	lastSeenAt?: Date | null;
+}
+
+export interface UpdateXiaofeiCustomerInput {
+	name?: string | null;
+	email?: string | null;
+	whatsappNumber?: string | null;
+	status?: string;
+	lastSeenAt?: Date | null;
+}
+
+export interface UpdateXiaofeiInboundEventStatusInput {
+	status: "processing" | "processed" | "failed";
+	processedAt?: Date | null;
+	lastError?: string | null;
+}
+
 export interface AcceptInboundEventInput {
 	source: string;
 	eventId: string;
@@ -45,6 +74,23 @@ export class XiaofeiInboundEventConflictError extends Error {
 	) {
 		super("An inbound event with this source and event ID has a different payload.");
 		this.name = "XiaofeiInboundEventConflictError";
+	}
+}
+
+export class XiaofeiOrganizationWorkspaceNotFoundError extends Error {
+	constructor(readonly organizationId: string) {
+		super("The Organization does not have a Xiaofei workspace.");
+		this.name = "XiaofeiOrganizationWorkspaceNotFoundError";
+	}
+}
+
+export class XiaofeiOrganizationCustomerNotFoundError extends Error {
+	constructor(
+		readonly organizationId: string,
+		readonly customerId: string,
+	) {
+		super("The Xiaofei customer does not belong to this Organization.");
+		this.name = "XiaofeiOrganizationCustomerNotFoundError";
 	}
 }
 
@@ -249,6 +295,103 @@ export function upsertXiaofeiWorkspace(tenantKey: string, snapshot: Prisma.Input
 		update: { snapshot },
 	});
 }
+
+export function getXiaofeiOrganizationConfig(organizationId: string) {
+	return db.xiaofeiOrganizationConfig.findUnique({ where: { organizationId } });
+}
+
+export function upsertXiaofeiOrganizationConfig(
+	organizationId: string,
+	input: UpsertXiaofeiOrganizationConfigInput,
+) {
+	return db.xiaofeiOrganizationConfig.upsert({
+		where: { organizationId },
+		create: { organizationId, ...input },
+		update: input,
+	});
+}
+
+export function getXiaofeiCustomer(organizationId: string, externalCustomerId: string) {
+	return db.xiaofeiCustomer.findUnique({
+		where: { organizationId_externalCustomerId: { organizationId, externalCustomerId } },
+	});
+}
+
+export function listXiaofeiCustomers(organizationId: string) {
+	return db.xiaofeiCustomer.findMany({
+		where: { organizationId },
+		orderBy: [{ lastSeenAt: "desc" }, { updatedAt: "desc" }],
+		take: 50,
+	});
+}
+
+export function createXiaofeiCustomer(input: CreateXiaofeiCustomerInput) {
+	return db.xiaofeiCustomer.create({ data: input });
+}
+
+export function updateXiaofeiCustomer(
+	organizationId: string,
+	externalCustomerId: string,
+	data: UpdateXiaofeiCustomerInput,
+) {
+	return db.xiaofeiCustomer.update({
+		where: { organizationId_externalCustomerId: { organizationId, externalCustomerId } },
+		data,
+	});
+}
+
+export function getXiaofeiOrganizationWorkspace(organizationId: string) {
+	return getXiaofeiWorkspace(organizationTenantKey(organizationId));
+}
+
+export async function getXiaofeiOrganizationConversation(
+	organizationId: string,
+	externalId: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return getXiaofeiConversation(workspace.id, externalId);
+}
+
+export async function listXiaofeiOrganizationConversations(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return listXiaofeiConversations(workspace.id);
+}
+
+export async function upsertXiaofeiOrganizationConversation(input: {
+	organizationId: string;
+	externalId: string;
+	customerId?: string | null;
+	channel?: string;
+	state: Prisma.InputJsonValue;
+	traceEvents: Prisma.InputJsonValue;
+}) {
+	return db.$transaction(async (transaction) => {
+		const { organizationId, ...conversation } = input;
+		const workspace = await transaction.xiaofeiWorkspace.findUnique({
+			where: { tenantKey: organizationTenantKey(organizationId) },
+		});
+		if (!workspace) throw new XiaofeiOrganizationWorkspaceNotFoundError(organizationId);
+		if (input.customerId) {
+			const customer = await transaction.xiaofeiCustomer.findUnique({
+				where: { organizationId_id: { organizationId, id: input.customerId } },
+			});
+			if (!customer)
+				throw new XiaofeiOrganizationCustomerNotFoundError(organizationId, input.customerId);
+		}
+		return transaction.xiaofeiConversation.upsert({
+			where: {
+				workspaceId_externalId: { workspaceId: workspace.id, externalId: input.externalId },
+			},
+			create: { ...conversation, workspaceId: workspace.id },
+			update: {
+				customerId: conversation.customerId,
+				channel: conversation.channel,
+				state: conversation.state,
+				traceEvents: conversation.traceEvents,
+			},
+		});
+	});
+}
 export function getXiaofeiConversation(workspaceId: string, externalId: string) {
 	return db.xiaofeiConversation.findUnique({
 		where: { workspaceId_externalId: { workspaceId, externalId } },
@@ -392,6 +535,47 @@ export async function listInboundEvents(
 
 export function getInboundEvent(workspaceId: string, id: string) {
 	return db.xiaofeiInboundEvent.findUnique({ where: { workspaceId_id: { workspaceId, id } } });
+}
+
+export function updateXiaofeiInboundEventStatus(
+	workspaceId: string,
+	id: string,
+	data: UpdateXiaofeiInboundEventStatusInput,
+) {
+	return db.xiaofeiInboundEvent.update({
+		where: { workspaceId_id: { workspaceId, id } },
+		data,
+	});
+}
+
+export async function listXiaofeiOrganizationInboundEvents(
+	organizationId: string,
+	options: ListInboundEventsOptions = {},
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return listInboundEvents(workspace.id, options);
+}
+
+export async function acceptXiaofeiOrganizationInboundEvent(
+	organizationId: string,
+	input: AcceptInboundEventInput,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return acceptInboundEvent(workspace.id, input);
+}
+
+export async function getXiaofeiOrganizationInboundEvent(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return getInboundEvent(workspace.id, id);
+}
+
+export async function updateXiaofeiOrganizationInboundEventStatus(
+	organizationId: string,
+	id: string,
+	data: UpdateXiaofeiInboundEventStatusInput,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return updateXiaofeiInboundEventStatus(workspace.id, id, data);
 }
 
 export function createXiaofeiKnowledgeDocument(input: CreateXiaofeiKnowledgeDocumentInput) {
@@ -802,6 +986,14 @@ function assertPageLimit(value: number | undefined) {
 }
 function hashContent(bodyText: string) {
 	return createHash("sha256").update(bodyText, "utf8").digest("hex");
+}
+function organizationTenantKey(organizationId: string) {
+	return `organization:${organizationId}`;
+}
+async function getRequiredXiaofeiOrganizationWorkspace(organizationId: string) {
+	const workspace = await getXiaofeiOrganizationWorkspace(organizationId);
+	if (!workspace) throw new XiaofeiOrganizationWorkspaceNotFoundError(organizationId);
+	return workspace;
 }
 function hashJson(value: Prisma.InputJsonValue) {
 	return createHash("sha256").update(stableJson(value), "utf8").digest("hex");

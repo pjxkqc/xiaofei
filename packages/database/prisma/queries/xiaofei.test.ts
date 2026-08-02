@@ -9,6 +9,9 @@ const queryMocks = vi.hoisted(() => {
 			findUnique: vi.fn(),
 			update: vi.fn(),
 		},
+		xiaofeiWorkspace: { findUnique: vi.fn() },
+		xiaofeiCustomer: { findUnique: vi.fn() },
+		xiaofeiConversation: { upsert: vi.fn() },
 		xiaofeiKnowledgeDocument: {
 			create: vi.fn(),
 			deleteMany: vi.fn(),
@@ -59,6 +62,19 @@ const queryMocks = vi.hoisted(() => {
 		updateInboundEvent: transactionClient.xiaofeiInboundEvent.update,
 		listInboundEvents: vi.fn(),
 		getInboundEvent: vi.fn(),
+		getOrganizationConfig: vi.fn(),
+		upsertOrganizationConfig: vi.fn(),
+		getCustomer: vi.fn(),
+		listCustomers: vi.fn(),
+		createCustomer: vi.fn(),
+		updateCustomer: vi.fn(),
+		getWorkspace: vi.fn(),
+		getConversation: vi.fn(),
+		listConversations: vi.fn(),
+		updateInboundEventDirect: vi.fn(),
+		findWorkspaceInTransaction: transactionClient.xiaofeiWorkspace.findUnique,
+		findCustomerInTransaction: transactionClient.xiaofeiCustomer.findUnique,
+		upsertConversation: transactionClient.xiaofeiConversation.upsert,
 	};
 });
 
@@ -81,6 +97,22 @@ vi.mock("../client", () => ({
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
 			findUnique: queryMocks.getInboundEvent,
+			update: queryMocks.updateInboundEventDirect,
+		},
+		xiaofeiOrganizationConfig: {
+			findUnique: queryMocks.getOrganizationConfig,
+			upsert: queryMocks.upsertOrganizationConfig,
+		},
+		xiaofeiCustomer: {
+			findUnique: queryMocks.getCustomer,
+			findMany: queryMocks.listCustomers,
+			create: queryMocks.createCustomer,
+			update: queryMocks.updateCustomer,
+		},
+		xiaofeiWorkspace: { findUnique: queryMocks.getWorkspace },
+		xiaofeiConversation: {
+			findUnique: queryMocks.getConversation,
+			findMany: queryMocks.listConversations,
 		},
 	},
 }));
@@ -106,7 +138,86 @@ import {
 	getInboundEvent,
 	listInboundEvents,
 	XiaofeiInboundEventConflictError,
+	getXiaofeiCustomer,
+	getXiaofeiOrganizationConversation,
+	listXiaofeiCustomers,
+	upsertXiaofeiOrganizationConfig,
+	upsertXiaofeiOrganizationConversation,
+	updateXiaofeiInboundEventStatus,
+	XiaofeiOrganizationCustomerNotFoundError,
 } from "./xiaofei";
+
+describe("Xiaofei Organization queries", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("keeps configuration and customers within their Organization selectors", async () => {
+		await upsertXiaofeiOrganizationConfig("organization-a", { xiaofeiEnabled: true });
+		await getXiaofeiCustomer("organization-a", "customer-a");
+		await listXiaofeiCustomers("organization-a");
+
+		expect(queryMocks.upsertOrganizationConfig).toHaveBeenCalledWith({
+			where: { organizationId: "organization-a" },
+			create: { organizationId: "organization-a", xiaofeiEnabled: true },
+			update: { xiaofeiEnabled: true },
+		});
+		expect(queryMocks.getCustomer).toHaveBeenCalledWith({
+			where: {
+				organizationId_externalCustomerId: {
+					organizationId: "organization-a",
+					externalCustomerId: "customer-a",
+				},
+			},
+		});
+		expect(queryMocks.listCustomers).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { organizationId: "organization-a" },
+			}),
+		);
+	});
+
+	it("resolves an Organization conversation through its fixed workspace tenant key", async () => {
+		queryMocks.getWorkspace.mockResolvedValueOnce({ id: "workspace-a" });
+		await getXiaofeiOrganizationConversation("organization-a", "conversation-a");
+
+		expect(queryMocks.getWorkspace).toHaveBeenCalledWith({
+			where: { tenantKey: "organization:organization-a" },
+		});
+		expect(queryMocks.getConversation).toHaveBeenCalledWith({
+			where: {
+				workspaceId_externalId: { workspaceId: "workspace-a", externalId: "conversation-a" },
+			},
+		});
+	});
+
+	it("refuses to bind a conversation to a customer from another Organization", async () => {
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findCustomerInTransaction.mockResolvedValueOnce(null);
+
+		await expect(
+			upsertXiaofeiOrganizationConversation({
+				organizationId: "organization-a",
+				externalId: "conversation-a",
+				customerId: "customer-b",
+				state: {},
+				traceEvents: [],
+			}),
+		).rejects.toBeInstanceOf(XiaofeiOrganizationCustomerNotFoundError);
+		expect(queryMocks.findCustomerInTransaction).toHaveBeenCalledWith({
+			where: { organizationId_id: { organizationId: "organization-a", id: "customer-b" } },
+		});
+	});
+
+	it("limits processor event writes to its status fields", async () => {
+		await updateXiaofeiInboundEventStatus("workspace-a", "event-a", {
+			status: "processed",
+			processedAt: new Date("2026-08-02T00:00:00.000Z"),
+		});
+		expect(queryMocks.updateInboundEventDirect).toHaveBeenCalledWith({
+			where: { workspaceId_id: { workspaceId: "workspace-a", id: "event-a" } },
+			data: { status: "processed", processedAt: new Date("2026-08-02T00:00:00.000Z") },
+		});
+	});
+});
 
 describe("Xiaofei knowledge document queries", () => {
 	beforeEach(() => {
