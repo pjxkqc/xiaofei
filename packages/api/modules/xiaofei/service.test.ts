@@ -21,6 +21,7 @@ import {
 	createKnowledgeWorkspaceBinding,
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	getXiaofeiTenantKey,
+	requireXiaofeiOrganizationAdmin,
 	PUBLIC_SUPPORT_TENANT_KEY,
 	savePublicXiaofeiSnapshot,
 	synchronizeKnowledgeWorkspaceSnapshot,
@@ -52,6 +53,22 @@ describe("authenticated Xiaofei workspace binding", () => {
 				user: { id: "user-1" },
 			}),
 		).rejects.toThrow("active organization");
+	});
+
+	it("rejects a missing active organization instead of falling back to a personal workspace", async () => {
+		await expect(getXiaofeiTenantKey({ session: {}, user: { id: "user-1" } })).rejects.toThrow(
+			"Select an organization",
+		);
+	});
+
+	it("requires an owner or admin for Xiaofei governance", async () => {
+		vi.mocked(verifyOrganizationMembership).mockResolvedValue({ role: "member" } as never);
+		await expect(
+			requireXiaofeiOrganizationAdmin({
+				session: { activeOrganizationId: "org-1" },
+				user: { id: "user-1" },
+			}),
+		).rejects.toThrow("owner or admin");
 	});
 
 	it("uses only persisted workspace and loaded snapshot values for the runtime binding", () => {

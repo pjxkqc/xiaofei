@@ -38,12 +38,34 @@ export const PUBLIC_SUPPORT_TENANT_KEY = "channel:public-support";
 
 export async function getXiaofeiTenantKey(context: XiaofeiAuthContext): Promise<string> {
 	const organizationId = context.session.activeOrganizationId;
-	if (!organizationId) return `user:${context.user.id}`;
+	if (!organizationId) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "Select an organization before accessing Xiaofei.",
+		});
+	}
 
 	const membership = await verifyOrganizationMembership(organizationId, context.user.id);
 	if (!membership) {
 		throw new ORPCError("FORBIDDEN", {
 			message: "You do not have access to the active organization.",
+		});
+	}
+	return `organization:${organizationId}`;
+}
+
+export async function requireXiaofeiOrganizationAdmin(
+	context: XiaofeiAuthContext,
+): Promise<string> {
+	const organizationId = context.session.activeOrganizationId;
+	if (!organizationId) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "Select an organization before managing Xiaofei.",
+		});
+	}
+	const membership = await verifyOrganizationMembership(organizationId, context.user.id);
+	if (!membership || !["owner", "admin"].includes(membership.role)) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "Organization owner or admin access is required to manage Xiaofei.",
 		});
 	}
 	return `organization:${organizationId}`;

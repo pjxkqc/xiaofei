@@ -41,7 +41,8 @@ import type { XiaofeiAuthContext } from "./service";
 import {
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	clearKnowledgeWorkspaceAdmission,
-	PUBLIC_SUPPORT_TENANT_KEY,
+	getXiaofeiTenantKey,
+	requireXiaofeiOrganizationAdmin,
 	synchronizeKnowledgeWorkspaceSnapshot,
 } from "./service";
 
@@ -110,16 +111,15 @@ interface UpdateKnowledgeUnitInput {
 	fallbackReply?: string;
 }
 
-export async function getKnowledgeTenantKey(_context: XiaofeiAuthContext): Promise<string> {
-	// P0 operates one public support channel. The authenticated context authorizes
-	// governance through supportProcedure; it must not select a different runtime workspace.
-	return PUBLIC_SUPPORT_TENANT_KEY;
+export async function getKnowledgeTenantKey(context: XiaofeiAuthContext): Promise<string> {
+	return await getXiaofeiTenantKey(context);
 }
 
 export async function createKnowledgeDocument(
 	context: XiaofeiAuthContext,
 	input: CreateKnowledgeDocumentInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const file = validateAndExtractFile(input);
 	const { workspace } = await getKnowledgeWorkspace(context);
 
@@ -141,6 +141,7 @@ export async function createKnowledgeFile(
 	context: XiaofeiAuthContext,
 	input: CreateKnowledgeDocumentInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const file = validateFile(input);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const parsed = file.isLocal
@@ -173,6 +174,7 @@ export async function createKnowledgeWeb(
 	context: XiaofeiAuthContext,
 	input: CreateKnowledgeWebInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	validatePublicHttpUrl(input.url);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	let parsed;
@@ -205,6 +207,7 @@ export async function createManualKnowledgeEntries(
 	context: XiaofeiAuthContext,
 	input: CreateKnowledgeManualInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const bodyText = input.pairs.map((pair) => `Q: ${pair.question}\nA: ${pair.answer}`).join("\n\n");
 	try {
@@ -247,6 +250,7 @@ export async function updateKnowledgeEntryForTenant(
 	id: string,
 	input: UpdateKnowledgeEntryInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const existing = await getXiaofeiKnowledgeEntry(workspace.id, id);
 	if (!existing) throw new ORPCError("NOT_FOUND", { message: "Knowledge entry not found." });
@@ -268,6 +272,7 @@ export async function updateKnowledgeEntryForTenant(
 	}
 }
 export async function deleteKnowledgeEntryForTenant(context: XiaofeiAuthContext, id: string) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	await clearKnowledgeAdmission(context);
 	if ((await deleteXiaofeiKnowledgeEntry(workspace.id, id)).count === 0)
@@ -280,6 +285,7 @@ export async function generateKnowledgeUnitsForTenant(
 	context: XiaofeiAuthContext,
 	entryIds: string[],
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const entries = await Promise.all(
 		entryIds.map((id) => getXiaofeiKnowledgeEntry(workspace.id, id)),
@@ -343,6 +349,7 @@ export async function updateKnowledgeUnitForTenant(
 	id: string,
 	input: UpdateKnowledgeUnitInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const unit = await requireKnowledgeUnit(workspace.id, id);
 	await clearKnowledgeAdmission(context);
@@ -368,6 +375,7 @@ export async function transitionKnowledgeUnitForTenant(
 	id: string,
 	action: "review" | "revokeReview" | "publish" | "revokePublish",
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const unit = await requireKnowledgeUnit(workspace.id, id);
 	await clearKnowledgeAdmission(context);
@@ -386,6 +394,7 @@ export async function transitionKnowledgeUnitForTenant(
 }
 
 export async function deleteKnowledgeUnitForTenant(context: XiaofeiAuthContext, id: string) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	await clearKnowledgeAdmission(context);
 	if ((await deleteXiaofeiKnowledgeUnit(workspace.id, id)).count === 0)
@@ -429,6 +438,7 @@ export async function updateKnowledgeDocumentForTenant(
 	id: string,
 	input: UpdateKnowledgeDocumentInput,
 ) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const existing = await getXiaofeiKnowledgeDocument(workspace.id, id);
 	if (!existing) {
@@ -449,6 +459,7 @@ export async function updateKnowledgeDocumentForTenant(
 }
 
 export async function deleteKnowledgeDocumentForTenant(context: XiaofeiAuthContext, id: string) {
+	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
 	await clearKnowledgeAdmission(context);
 	const result = await deleteXiaofeiKnowledgeDocument(workspace.id, id);

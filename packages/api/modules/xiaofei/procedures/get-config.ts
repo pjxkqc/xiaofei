@@ -1,5 +1,5 @@
 import { supportProcedure } from "../../../orpc/procedures";
-import { getOrCreatePublicXiaofeiWorkspace } from "../service";
+import { getOrCreateXiaofeiWorkspace } from "../service";
 
 export const getXiaofeiConfig = supportProcedure
 	.route({
@@ -8,7 +8,7 @@ export const getXiaofeiConfig = supportProcedure
 		tags: ["Xiaofei"],
 		summary: "Get Xiaofei Agent configuration",
 	})
-	.handler(async () => {
-		const { snapshot } = await getOrCreatePublicXiaofeiWorkspace();
+	.handler(async ({ context }) => {
+		const { snapshot } = await getOrCreateXiaofeiWorkspace(context);
 		return snapshot;
 	});

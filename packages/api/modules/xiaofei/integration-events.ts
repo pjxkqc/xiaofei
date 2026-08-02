@@ -8,7 +8,11 @@ import {
 } from "@repo/database";
 import { z } from "zod";
 
-import { getOrCreatePublicXiaofeiWorkspace } from "./service";
+import {
+	getOrCreatePublicXiaofeiWorkspace,
+	getOrCreateXiaofeiWorkspace,
+	type XiaofeiAuthContext,
+} from "./service";
 
 export const MAX_INBOUND_EVENT_BYTES = 1024 * 1024;
 
@@ -67,7 +71,20 @@ export function safeInboundHeaders(headers: Record<string, string> | undefined) 
 export async function ingestChannelEnvelope(input: unknown) {
 	const envelope = channelEnvelopeSchema.parse(input);
 	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
-	return await acceptInboundEvent(workspace.id, {
+	return await acceptEnvelope(workspace.id, envelope);
+}
+
+export async function simulateOrganizationChannelEnvelope(
+	context: XiaofeiAuthContext,
+	input: unknown,
+) {
+	const envelope = channelEnvelopeSchema.parse(input);
+	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
+	return await acceptEnvelope(workspace.id, envelope);
+}
+
+async function acceptEnvelope(workspaceId: string, envelope: ChannelEnvelope) {
+	return await acceptInboundEvent(workspaceId, {
 		source: envelope.source,
 		eventId: envelope.eventId,
 		schemaVersion: envelope.schemaVersion,
@@ -83,19 +100,22 @@ export async function ingestChannelEnvelope(input: unknown) {
 	});
 }
 
-export async function listIntegrationEvents(input: {
-	cursor?: string;
-	limit?: number;
-	source?: string;
-	status?: string;
-	topic?: string;
-}) {
-	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
+export async function listIntegrationEvents(
+	context: XiaofeiAuthContext,
+	input: {
+		cursor?: string;
+		limit?: number;
+		source?: string;
+		status?: string;
+		topic?: string;
+	},
+) {
+	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
 	return await listInboundEvents(workspace.id, input);
 }
 
-export async function getIntegrationEvent(id: string) {
-	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
+export async function getIntegrationEvent(context: XiaofeiAuthContext, id: string) {
+	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
 	return await getInboundEvent(workspace.id, id);
 }
 

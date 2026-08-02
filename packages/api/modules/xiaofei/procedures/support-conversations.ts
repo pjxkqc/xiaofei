@@ -51,7 +51,7 @@ export const listAgentConversations = supportProcedure
 		tags: ["Xiaofei Support"],
 		summary: "List customer support conversations for support agents",
 	})
-	.handler(async () => await listSupportConversations());
+	.handler(async ({ context }) => await listSupportConversations(context));
 
 export const getAgentConversation = supportProcedure
 	.route({
@@ -61,7 +61,9 @@ export const getAgentConversation = supportProcedure
 		summary: "Read a customer support conversation",
 	})
 	.input(z.object({ conversationId: conversationIdSchema }))
-	.handler(async ({ input }) => await getSupportConversation(input.conversationId));
+	.handler(
+		async ({ context, input }) => await getSupportConversation(context, input.conversationId),
+	);
 
 export const setAgentConversationOwner = supportProcedure
 	.route({
@@ -79,6 +81,7 @@ export const setAgentConversationOwner = supportProcedure
 	.handler(
 		async ({ context, input }) =>
 			await setSupportConversationOwner({
+				context,
 				externalId: input.conversationId,
 				owner: input.owner,
 				user: { id: context.user.id, name: context.user.name },
@@ -96,6 +99,7 @@ export const sendAgentMessage = supportProcedure
 	.handler(
 		async ({ context, input }) =>
 			await sendHumanSupportMessage({
+				context,
 				externalId: input.conversationId,
 				text: input.text,
 				user: { id: context.user.id, name: context.user.name },
