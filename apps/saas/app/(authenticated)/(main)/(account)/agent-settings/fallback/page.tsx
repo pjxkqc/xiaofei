@@ -1,5 +1,6 @@
 import { AgentSettingsNav } from "@ai/components/AgentSettingsNav";
 import { XiaofeiFallbackSettings } from "@ai/components/XiaofeiFallbackSettings";
+import { OrganizationRequired } from "@organizations/components/OrganizationRequired";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default function XiaofeiFallbackSettingsPage() {
@@ -10,10 +11,12 @@ export default function XiaofeiFallbackSettingsPage() {
 				subtitle="配置知识未命中后的澄清、客服关注和人工转接策略。"
 				className="max-w-6xl mx-auto"
 			/>
-			<div className="max-w-6xl mx-auto">
-				<AgentSettingsNav current="fallback" />
-				<XiaofeiFallbackSettings />
-			</div>
+			<OrganizationRequired>
+				<div className="max-w-6xl mx-auto">
+					<AgentSettingsNav current="fallback" />
+					<XiaofeiFallbackSettings />
+				</div>
+			</OrganizationRequired>
 		</>
 	);
 }

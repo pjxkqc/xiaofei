@@ -1,5 +1,6 @@
 import { AgentSettingsNav } from "@ai/components/AgentSettingsNav";
 import { XiaofeiAgentStatus } from "@ai/components/XiaofeiAgentStatus";
+import { OrganizationRequired } from "@organizations/components/OrganizationRequired";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default function XiaofeiAgentStatusPage() {
@@ -10,10 +11,12 @@ export default function XiaofeiAgentStatusPage() {
 				subtitle="查看知识、能力审核、Eval 和会话准入的当前状态。"
 				className="max-w-6xl mx-auto"
 			/>
-			<div className="max-w-6xl mx-auto">
-				<AgentSettingsNav current="status" />
-				<XiaofeiAgentStatus />
-			</div>
+			<OrganizationRequired>
+				<div className="max-w-6xl mx-auto">
+					<AgentSettingsNav current="status" />
+					<XiaofeiAgentStatus />
+				</div>
+			</OrganizationRequired>
 		</>
 	);
 }
