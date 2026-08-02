@@ -47,6 +47,8 @@ vi.mock("@repo/database", () => ({
 vi.mock("./service", () => ({
 	clearKnowledgeWorkspaceAdmission: vi.fn(),
 	getOrCreateXiaofeiWorkspaceByTenantKey: vi.fn(),
+	getXiaofeiTenantKey: vi.fn(),
+	requireXiaofeiOrganizationAdmin: vi.fn(),
 	PUBLIC_SUPPORT_TENANT_KEY: "channel:public-support",
 	synchronizeKnowledgeWorkspaceSnapshot: vi.fn(),
 }));
@@ -93,7 +95,8 @@ import {
 } from "./knowledge-documents";
 import {
 	getOrCreateXiaofeiWorkspaceByTenantKey,
-	PUBLIC_SUPPORT_TENANT_KEY,
+	getXiaofeiTenantKey,
+	requireXiaofeiOrganizationAdmin,
 	synchronizeKnowledgeWorkspaceSnapshot,
 } from "./service";
 
@@ -146,6 +149,8 @@ describe("knowledge document application boundary", () => {
 					snapshot: {},
 				}) as never,
 		);
+		vi.mocked(getXiaofeiTenantKey).mockResolvedValue("organization:org-a");
+		vi.mocked(requireXiaofeiOrganizationAdmin).mockResolvedValue("organization:org-a");
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
 		} as never);
@@ -158,19 +163,19 @@ describe("knowledge document application boundary", () => {
 		);
 	});
 
-	it("keeps knowledge governance on the public support workspace for every operator context", async () => {
+	it("uses the server-verified active organization workspace for knowledge governance", async () => {
 		await expect(
 			getKnowledgeTenantKey({
 				session: { activeOrganizationId: "org-a" },
 				user: { id: "user-1" },
 			}),
-		).resolves.toBe(PUBLIC_SUPPORT_TENANT_KEY);
+		).resolves.toBe("organization:org-a");
 		await expect(
 			getKnowledgeTenantKey({
 				session: { activeOrganizationId: null },
 				user: { id: "another-user" },
 			}),
-		).resolves.toBe(PUBLIC_SUPPORT_TENANT_KEY);
+		).resolves.toBe("organization:org-a");
 	});
 
 	it.each([
@@ -553,7 +558,7 @@ describe("knowledge document application boundary", () => {
 		await expect(getKnowledgeDocument(context, "other-tenant-document")).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
-		expect(getOrCreateXiaofeiWorkspaceByTenantKey).toHaveBeenCalledWith(PUBLIC_SUPPORT_TENANT_KEY);
+		expect(getOrCreateXiaofeiWorkspaceByTenantKey).toHaveBeenCalledWith("organization:org-a");
 		expect(getXiaofeiKnowledgeDocument).toHaveBeenCalledWith(
 			"workspace-public",
 			"other-tenant-document",
@@ -669,7 +674,7 @@ describe("knowledge document application boundary", () => {
 
 		expect(synchronizeKnowledgeWorkspaceSnapshot).toHaveBeenCalledWith(
 			expect.objectContaining({
-				tenantKey: PUBLIC_SUPPORT_TENANT_KEY,
+				tenantKey: "organization:org-a",
 				units: [expect.objectContaining({ eligibility: "eligible" })],
 			}),
 		);

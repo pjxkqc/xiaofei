@@ -3,7 +3,11 @@ import { setCapabilityPlanReview } from "@repo/xiaofei";
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import { getOrCreatePublicXiaofeiWorkspace, savePublicXiaofeiSnapshot } from "../service";
+import {
+	getOrCreateXiaofeiWorkspace,
+	requireXiaofeiOrganizationAdmin,
+	saveXiaofeiSnapshot,
+} from "../service";
 
 export const reviewXiaofeiCapability = supportProcedure
 	.route({
@@ -13,13 +17,14 @@ export const reviewXiaofeiCapability = supportProcedure
 		summary: "Review the capability plan derived from released Knowledge Units",
 	})
 	.input(z.object({ reviewed: z.boolean() }))
-	.handler(async ({ input }) => {
-		const { snapshot } = await getOrCreatePublicXiaofeiWorkspace();
+	.handler(async ({ context, input }) => {
+		await requireXiaofeiOrganizationAdmin(context);
+		const { snapshot } = await getOrCreateXiaofeiWorkspace(context);
 		if (input.reviewed && snapshot.capabilityPlan.status === "blocked") {
 			throw new ORPCError("BAD_REQUEST", {
 				message: "At least one released Knowledge Unit is required.",
 			});
 		}
 
-		return await savePublicXiaofeiSnapshot(setCapabilityPlanReview(snapshot, input.reviewed));
+		return await saveXiaofeiSnapshot(context, setCapabilityPlanReview(snapshot, input.reviewed));
 	});

@@ -1,4 +1,5 @@
 import { SupportInbox } from "@ai/components/SupportInbox";
+import { OrganizationRequired } from "@organizations/components/OrganizationRequired";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default function SupportInboxPage() {
@@ -9,9 +10,11 @@ export default function SupportInboxPage() {
 				subtitle="查看客户在线状态、小飞接管状态，并在需要时切换为真人回复。"
 				className="max-w-7xl mx-auto"
 			/>
-			<div className="max-w-7xl mx-auto">
-				<SupportInbox />
-			</div>
+			<OrganizationRequired>
+				<div className="max-w-7xl mx-auto">
+					<SupportInbox />
+				</div>
+			</OrganizationRequired>
 		</>
 	);
 }

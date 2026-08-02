@@ -166,7 +166,7 @@ export function KnowledgeUnits() {
 				<Card>
 					<CardHeader>
 						<CardTitle>知识单元</CardTitle>
-						<CardDescription>{units.length} 个公共客服单元</CardDescription>
+						<CardDescription>{units.length} 个当前 Organization 知识单元</CardDescription>
 					</CardHeader>
 					<CardContent className="gap-2 flex max-h-[600px] flex-col overflow-auto">
 						{units.length === 0 && (

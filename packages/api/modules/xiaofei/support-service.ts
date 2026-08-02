@@ -21,7 +21,12 @@ import {
 } from "@repo/xiaofei";
 import { z } from "zod";
 
-import { createKnowledgeWorkspaceBinding, getOrCreatePublicXiaofeiWorkspace } from "./service";
+import {
+	createKnowledgeWorkspaceBinding,
+	getOrCreatePublicXiaofeiWorkspace,
+	getOrCreateXiaofeiWorkspace,
+	type XiaofeiAuthContext,
+} from "./service";
 
 const ONLINE_WINDOW_MS = 30_000;
 const MAX_MESSAGES = 160;
@@ -117,25 +122,28 @@ export async function sendPublicSupportMessage(externalId: string, text: string)
 	return toConversation(updated);
 }
 
-export async function listSupportConversations(): Promise<SupportConversationSummary[]> {
-	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
+export async function listSupportConversations(
+	context: XiaofeiAuthContext,
+): Promise<SupportConversationSummary[]> {
+	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
 	const conversations = await listXiaofeiConversations(workspace.id);
 	return conversations
 		.map(toSummary)
 		.sort((left, right) => Number(right.attentionRequired) - Number(left.attentionRequired));
 }
 
-export async function getSupportConversation(externalId: string) {
-	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
+export async function getSupportConversation(context: XiaofeiAuthContext, externalId: string) {
+	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
 	return toConversation(await getRequiredConversation(workspace.id, externalId));
 }
 
 export async function setSupportConversationOwner(input: {
+	context: XiaofeiAuthContext;
 	externalId: string;
 	owner: "ai" | "human";
 	user: { id: string; name: string };
 }) {
-	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
+	const { workspace } = await getOrCreateXiaofeiWorkspace(input.context);
 	const existing = await getRequiredConversation(workspace.id, input.externalId);
 	if (existing.status === "closed") {
 		throw new ORPCError("BAD_REQUEST", { message: "This conversation is closed." });
@@ -152,11 +160,12 @@ export async function setSupportConversationOwner(input: {
 }
 
 export async function sendHumanSupportMessage(input: {
+	context: XiaofeiAuthContext;
 	externalId: string;
 	text: string;
 	user: { id: string; name: string };
 }) {
-	const { workspace } = await getOrCreatePublicXiaofeiWorkspace();
+	const { workspace } = await getOrCreateXiaofeiWorkspace(input.context);
 	const existing = await getRequiredConversation(workspace.id, input.externalId);
 	const state = ConversationStateSchema.parse(existing.state);
 	if (existing.status === "closed" || state.ownerType !== "human") {

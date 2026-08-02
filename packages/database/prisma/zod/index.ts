@@ -52,6 +52,18 @@ export const OrganizationScalarFieldEnumSchema = z.enum(['id', 'name', 'slug', '
 
 export type OrganizationScalarFieldEnum = z.infer<typeof OrganizationScalarFieldEnumSchema>;
 
+// File: XiaofeiOrganizationConfigScalarFieldEnum.schema.ts
+
+export const XiaofeiOrganizationConfigScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'externalMerchantId', 'xiaofeiEnabled', 'createdAt', 'updatedAt'])
+
+export type XiaofeiOrganizationConfigScalarFieldEnum = z.infer<typeof XiaofeiOrganizationConfigScalarFieldEnumSchema>;
+
+// File: XiaofeiCustomerScalarFieldEnum.schema.ts
+
+export const XiaofeiCustomerScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'externalCustomerId', 'name', 'email', 'whatsappNumber', 'status', 'lastSeenAt', 'createdAt', 'updatedAt'])
+
+export type XiaofeiCustomerScalarFieldEnum = z.infer<typeof XiaofeiCustomerScalarFieldEnumSchema>;
+
 // File: MemberScalarFieldEnum.schema.ts
 
 export const MemberScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'userId', 'role', 'createdAt'])
@@ -90,7 +102,7 @@ export type XiaofeiWorkspaceScalarFieldEnum = z.infer<typeof XiaofeiWorkspaceSca
 
 // File: XiaofeiConversationScalarFieldEnum.schema.ts
 
-export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'externalId', 'customerName', 'status', 'assignedUserId', 'assignedUserName', 'state', 'messages', 'traceEvents', 'lastCustomerSeenAt', 'lastMessageAt', 'createdAt', 'updatedAt'])
+export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'externalId', 'customerId', 'channel', 'customerName', 'status', 'assignedUserId', 'assignedUserName', 'state', 'messages', 'traceEvents', 'lastCustomerSeenAt', 'lastMessageAt', 'createdAt', 'updatedAt'])
 
 export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversationScalarFieldEnumSchema>;
 
@@ -309,6 +321,38 @@ export const OrganizationSchema = z.object({
 export type OrganizationType = z.infer<typeof OrganizationSchema>;
 
 
+// File: XiaofeiOrganizationConfig.schema.ts
+
+export const XiaofeiOrganizationConfigSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  externalMerchantId: z.string().nullish(),
+  xiaofeiEnabled: z.boolean(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiOrganizationConfigType = z.infer<typeof XiaofeiOrganizationConfigSchema>;
+
+
+// File: XiaofeiCustomer.schema.ts
+
+export const XiaofeiCustomerSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  externalCustomerId: z.string(),
+  name: z.string().nullish(),
+  email: z.string().nullish(),
+  whatsappNumber: z.string().nullish(),
+  status: z.string().default("active"),
+  lastSeenAt: z.date().nullish(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiCustomerType = z.infer<typeof XiaofeiCustomerSchema>;
+
+
 // File: Member.schema.ts
 
 export const MemberSchema = z.object({
@@ -402,6 +446,8 @@ export const XiaofeiConversationSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
   externalId: z.string(),
+  customerId: z.string().nullish(),
+  channel: z.string().default("public_support"),
   customerName: z.string().nullish(),
   status: z.string().default("open"),
   assignedUserId: z.string().nullish(),

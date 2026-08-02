@@ -11,7 +11,7 @@ persistence.
 | `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract                                                   |
 | `POST /xiaofei/integrations/events`        | External HTTP route                                 | Bearer-authenticated durable ChannelEnvelope v1 ingress; fixed public workspace, 202 create, 200 replay, 409 conflict |
 | `list/get/simulateIntegrationEvent`        | Authenticated `/xiaofei` RPC                        | Support monitor metadata/detail reads and Preview-safe sample ingress                                                 |
-| `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                                                                          |
+| `getConfig`                                | `GET /xiaofei/config`                               | Load or create the active Organization workspace snapshot                                                             |
 | `saveAgentSettings`                        | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence                                                         |
 | `saveConfig`                               | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation                                                      |
 | `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs                                                        |
@@ -38,14 +38,15 @@ because it is the existing AI SDK transport. That procedure now loads the
 Xiaofei workspace, runs the governed runtime, persists state and traces, and
 emits customer-visible text only after final authorization.
 
-## Channel and role boundary
+## Organization, channel, and role boundary
 
-The current Flyranking validation slice uses one stable
-`channel:public-support` workspace so the no-login customer page, support
-inbox, Agent settings, capability review, deterministic Eval, and authenticated
-validation Chatbot operate on the same state. This prevents an operator from
-approving one tenant snapshot while the public customer channel continues to
-run against an unreviewed default snapshot.
+Authenticated Xiaofei pages require an active Organization and a verified
+membership. They resolve only `organization:{id}` on the server; the browser
+cannot provide a workspace identifier. Members can read the Organization's
+Agent, knowledge, Chatbot, Inbox, and event-monitor state and operate Inbox
+conversations. Owners and Organization admins are additionally required for
+Agent settings, capability review, Eval, and any knowledge mutation. Global
+admin status does not bypass this Organization membership boundary.
 
 Customers receive a random UUID conversation token; they cannot list
 conversations or choose a workspace. Inbox and governance procedures use
@@ -54,12 +55,13 @@ future `support` role, or `admin`. Flyranking/LoopDesk tenant and channel
 mapping remains a future adapter concern.
 
 Knowledge sources, normalized entries, generated KUs, capability review, Eval,
-authenticated Chatbot validation, and public conversations all use that same
-server-selected public workspace. Changing the active organization or support
-user does not silently switch the governed knowledge behind the customer
-channel. Every knowledge procedure still starts with `supportProcedure`; the
-browser cannot choose a workspace ID, and row reads or mutations remain scoped
-to the server-resolved workspace.
+authenticated Chatbot validation, Inbox, and event-monitor reads use the same
+server-selected Organization workspace. The unauthenticated `/support` flow
+and external event ingress deliberately remain on legacy
+`channel:public-support`; those conversations never appear in an Organization
+Inbox. Every authenticated procedure starts with `supportProcedure`, then
+resolves membership server-side; row reads and mutations remain scoped to that
+resolved workspace.
 
 ## Persistence boundary
 

@@ -421,7 +421,7 @@ export function KnowledgeEntries({
 					<CardHeader>
 						<CardTitle>知识条目</CardTitle>
 						<CardDescription>
-							{entries.length} 个公共客服条目；按来源分组，可批量启用复核后的条目。
+							{entries.length} 个当前 Organization 条目；按来源分组，可批量启用复核后的条目。
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="gap-2 flex max-h-[600px] flex-col overflow-auto">

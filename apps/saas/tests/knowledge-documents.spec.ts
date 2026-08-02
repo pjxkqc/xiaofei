@@ -1,26 +1,20 @@
 import { expect, test } from "@playwright/test";
 
+import { registerOrganizationAdmin } from "./xiaofei-test-utils";
+
 test.describe("knowledge document management", () => {
 	test("uploads, edits, reloads, and deletes a Markdown document", async ({ page }) => {
-		const uniqueEmail = `knowledge-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-
-		await page.goto("/signup");
-		await page.getByRole("textbox", { name: "Name" }).fill("Knowledge Tester");
-		await page.getByRole("textbox", { name: "Email" }).fill(uniqueEmail);
-		await page.locator('input[autocomplete="new-password"]').fill("Knowledge-Test-2026!");
-		await page.getByRole("button", { name: "Create account" }).click();
-
-		await expect(page).toHaveURL(/\/onboarding(?:\?|$)/u);
-		await page.getByRole("button", { name: "Continue" }).click();
-		await expect(page).toHaveURL("/");
+		await registerOrganizationAdmin(page, "knowledge");
 
 		await page.goto("/knowledge/documents");
+		await expect(page.getByLabel("Organization required")).toHaveCount(0);
 		await expect(page.getByRole("heading", { name: "知识文档" })).toBeVisible();
 		await expect(
 			page.getByText(/PDF、DOCX、XLSX 通过服务端 Firecrawl 解析（最多 4 MB）/u),
 		).toBeVisible();
 
 		const fileInput = page.getByLabel("文档文件");
+		await expect(fileInput).toBeVisible();
 		await expect(fileInput).toHaveAttribute("accept", /\.pdf/u);
 		await expect(fileInput).toHaveAttribute("accept", /\.xlsx/u);
 

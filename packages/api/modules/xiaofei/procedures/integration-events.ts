@@ -4,8 +4,8 @@ import { z } from "zod";
 import { supportProcedure } from "../../../orpc/procedures";
 import {
 	getIntegrationEvent,
-	ingestChannelEnvelope,
 	listIntegrationEvents,
+	simulateOrganizationChannelEnvelope,
 } from "../integration-events";
 
 const listInput = z.object({
@@ -18,17 +18,17 @@ const listInput = z.object({
 
 export const listIntegrationEventsProcedure = supportProcedure
 	.input(listInput)
-	.handler(async ({ input }) => await listIntegrationEvents(input));
+	.handler(async ({ context, input }) => await listIntegrationEvents(context, input));
 export const getIntegrationEventProcedure = supportProcedure
 	.input(z.object({ id: z.string().min(1) }))
-	.handler(async ({ input }) => {
-		const event = await getIntegrationEvent(input.id);
+	.handler(async ({ context, input }) => {
+		const event = await getIntegrationEvent(context, input.id);
 		if (!event) throw new ORPCError("NOT_FOUND", { message: "Integration event not found." });
 		return event;
 	});
 export const simulateIntegrationEventProcedure = supportProcedure.handler(
-	async () =>
-		await ingestChannelEnvelope({
+	async ({ context }) =>
+		await simulateOrganizationChannelEnvelope(context, {
 			schemaVersion: "v1",
 			source: "preview-simulator",
 			eventId: crypto.randomUUID(),

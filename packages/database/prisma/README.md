@@ -6,14 +6,22 @@ aggregates.
 
 ## Xiaofei models
 
-`XiaofeiWorkspace` stores one validated snapshot per personal or organization
-tenant. `XiaofeiConversation` stores state and trace events for an external
-conversation ID within that workspace. `XiaofeiKnowledgeDocument` is the
+`XiaofeiOrganizationConfig` is the one-to-one Xiaofei extension of Better Auth's
+Organization (the merchant). Its nullable `externalMerchantId` is unique when
+configured. `XiaofeiCustomer` stores an external customer identity only within
+one Organization. `XiaofeiWorkspace` stores one validated snapshot per personal
+or organization tenant. `XiaofeiConversation` stores state and trace events for
+an external conversation ID within that workspace. `XiaofeiKnowledgeDocument` is the
 single durable knowledge-source record for files, webpages, and manual content;
 `XiaofeiKnowledgeEntry` stores editable normalized question-and-answer entries.
 
 ```text
-XiaofeiWorkspace
+Organization
+  └─ XiaofeiOrganizationConfig (one-to-one)
+  └─ XiaofeiCustomer (external ID unique within Organization)
+       └─ XiaofeiConversation (optional customer link; SetNull preserves audit)
+
+XiaofeiWorkspace (tenant key `organization:{organizationId}` for merchants)
   tenantKey unique
   snapshot JSON
   └─ XiaofeiConversation
@@ -48,6 +56,22 @@ are not retained; `bodyText` is the durable extracted content.
 - scoped conversation reset;
 - document create, list, get, update, and delete by workspace.
 - inbound event acceptance, workspace-scoped metadata lists, and full detail reads.
+
+Organization query helpers are the merchant boundary for new Xiaofei work:
+
+- configuration and customer get/list/create/update calls take `organizationId`;
+- organization conversation and Inbox helpers (including event acceptance) resolve only the fixed
+  `organization:{organizationId}` workspace tenant key;
+- `upsertXiaofeiOrganizationConversation` checks the compound
+  `organizationId_id` customer selector before binding `customerId`, so a caller
+  cannot attach another Organization's customer;
+- `updateXiaofeiInboundEventStatus` and its Organization wrapper can update only
+  processor state (`processing`, `processed`, or `failed`) plus processed/error
+  metadata. They cannot rewrite the accepted inbound payload.
+
+Legacy public-support conversations remain valid: `customerId` is nullable and
+`channel` defaults to `public_support`. Customer deletion sets the conversation
+link to null, retaining conversation audit history.
 
 `acceptInboundEvent(workspaceId, input)` is the Inbox write boundary. The authenticated
 caller supplies `workspaceId` separately; event input cannot select a tenant. It creates a

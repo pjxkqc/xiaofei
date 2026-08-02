@@ -3,7 +3,11 @@ import { updateAgentSettingsSnapshot } from "@repo/xiaofei";
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import { getOrCreatePublicXiaofeiWorkspace, savePublicXiaofeiSnapshot } from "../service";
+import {
+	getOrCreateXiaofeiWorkspace,
+	requireXiaofeiOrganizationAdmin,
+	saveXiaofeiSnapshot,
+} from "../service";
 
 export const saveXiaofeiAgentSettings = supportProcedure
 	.route({
@@ -30,8 +34,9 @@ export const saveXiaofeiAgentSettings = supportProcedure
 			}),
 		]),
 	)
-	.handler(async ({ input }) => {
-		const { snapshot } = await getOrCreatePublicXiaofeiWorkspace();
+	.handler(async ({ context, input }) => {
+		await requireXiaofeiOrganizationAdmin(context);
+		const { snapshot } = await getOrCreateXiaofeiWorkspace(context);
 		const updated = updateAgentSettingsSnapshot({
 			previous: snapshot,
 			instructions: input.section === "general" ? input.instructions : snapshot.agent.instructions,
@@ -39,5 +44,5 @@ export const saveXiaofeiAgentSettings = supportProcedure
 			fallbackPolicy:
 				input.section === "fallback" ? input.fallbackPolicy : snapshot.agent.fallbackPolicy,
 		});
-		return await savePublicXiaofeiSnapshot(await runMastraGovernance(updated));
+		return await saveXiaofeiSnapshot(context, await runMastraGovernance(updated));
 	});

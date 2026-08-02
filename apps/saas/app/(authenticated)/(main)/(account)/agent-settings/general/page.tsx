@@ -1,5 +1,6 @@
 import { AgentSettingsNav } from "@ai/components/AgentSettingsNav";
 import { XiaofeiAgentGeneralSettings } from "@ai/components/XiaofeiAgentGeneralSettings";
+import { OrganizationRequired } from "@organizations/components/OrganizationRequired";
 import { PageHeader } from "@shared/components/PageHeader";
 
 export default function XiaofeiAgentGeneralSettingsPage() {
@@ -10,10 +11,12 @@ export default function XiaofeiAgentGeneralSettingsPage() {
 				subtitle="配置小飞的角色指令和资料收集追问边界。"
 				className="max-w-6xl mx-auto"
 			/>
-			<div className="max-w-6xl mx-auto">
-				<AgentSettingsNav current="general" />
-				<XiaofeiAgentGeneralSettings />
-			</div>
+			<OrganizationRequired>
+				<div className="max-w-6xl mx-auto">
+					<AgentSettingsNav current="general" />
+					<XiaofeiAgentGeneralSettings />
+				</div>
+			</OrganizationRequired>
 		</>
 	);
 }

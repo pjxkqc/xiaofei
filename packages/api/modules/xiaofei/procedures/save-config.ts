@@ -5,9 +5,10 @@ import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
 import {
-	getOrCreatePublicXiaofeiWorkspace,
+	getOrCreateXiaofeiWorkspace,
 	mergeManagedKnowledgeUnitsIntoSnapshot,
-	savePublicXiaofeiSnapshot,
+	requireXiaofeiOrganizationAdmin,
+	saveXiaofeiSnapshot,
 } from "../service";
 
 export const saveXiaofeiConfig = supportProcedure
@@ -32,8 +33,9 @@ export const saveXiaofeiConfig = supportProcedure
 			knowledgeMarkdown: z.string().min(50).max(50_000),
 		}),
 	)
-	.handler(async ({ input }) => {
-		const { workspace, snapshot } = await getOrCreatePublicXiaofeiWorkspace();
+	.handler(async ({ context, input }) => {
+		await requireXiaofeiOrganizationAdmin(context);
+		const { workspace, snapshot } = await getOrCreateXiaofeiWorkspace(context);
 		const rebuilt = rebuildWorkspaceSnapshot({
 			previous: snapshot,
 			...input,
@@ -44,5 +46,5 @@ export const saveXiaofeiConfig = supportProcedure
 				? mergeManagedKnowledgeUnitsIntoSnapshot(rebuilt, managedUnits)
 				: rebuilt;
 		const governed = await runMastraGovernance(synchronized);
-		return await savePublicXiaofeiSnapshot(governed);
+		return await saveXiaofeiSnapshot(context, governed);
 	});

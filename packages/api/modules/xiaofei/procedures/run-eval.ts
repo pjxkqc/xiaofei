@@ -2,7 +2,11 @@ import { ORPCError } from "@orpc/server";
 import { deriveReleaseGates, runP0EvalSuite } from "@repo/xiaofei";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import { getOrCreatePublicXiaofeiWorkspace, savePublicXiaofeiSnapshot } from "../service";
+import {
+	getOrCreateXiaofeiWorkspace,
+	requireXiaofeiOrganizationAdmin,
+	saveXiaofeiSnapshot,
+} from "../service";
 
 export const runXiaofeiEval = supportProcedure
 	.route({
@@ -11,15 +15,16 @@ export const runXiaofeiEval = supportProcedure
 		tags: ["Xiaofei"],
 		summary: "Run deterministic Xiaofei P0 release assertions",
 	})
-	.handler(async () => {
-		const { snapshot } = await getOrCreatePublicXiaofeiWorkspace();
+	.handler(async ({ context }) => {
+		await requireXiaofeiOrganizationAdmin(context);
+		const { snapshot } = await getOrCreateXiaofeiWorkspace(context);
 		if (!snapshot.capabilityPlan.reviewed) {
 			throw new ORPCError("BAD_REQUEST", {
 				message: "Review the KU capability plan before running P0 Eval.",
 			});
 		}
 		const evalSuite = await runP0EvalSuite(snapshot);
-		return await savePublicXiaofeiSnapshot({
+		return await saveXiaofeiSnapshot(context, {
 			...snapshot,
 			evalSuite,
 			gates: deriveReleaseGates(
