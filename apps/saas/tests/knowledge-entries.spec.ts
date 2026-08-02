@@ -1,15 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+import { registerOrganizationAdmin } from "./xiaofei-test-utils";
+
 test("submits two manual knowledge pairs and caps the form at twenty", async ({ page }) => {
-	const email = `entries-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
-	await page.goto("/signup");
-	await page.getByRole("textbox", { name: "Name" }).fill("Knowledge Entry Tester");
-	await page.getByRole("textbox", { name: "Email" }).fill(email);
-	await page.locator('input[autocomplete="new-password"]').fill("Knowledge-Test-2026!");
-	await page.getByRole("button", { name: "Create account" }).click();
-	await expect(page).toHaveURL(/\/onboarding(?:\?|$)/u);
-	await page.getByRole("button", { name: "Continue" }).click();
-	await expect(page).toHaveURL("/");
+	await registerOrganizationAdmin(page, "entries");
 	await page.goto("/knowledge/entries");
 	await expect(page.getByRole("heading", { name: "知识条目", level: 2 })).toBeVisible();
 	await page.getByPlaceholder("问题").fill("First question");
