@@ -136,7 +136,7 @@ export function SupportInbox() {
 						<div>
 							<p className="font-medium">客服角色工作区</p>
 							<p className="text-xs text-muted-foreground">
-								登录用户可查看公共渠道、接管小飞并发送真人回复。
+								查看当前 Organization 的客服会话、接管小飞并发送真人回复。
 							</p>
 						</div>
 					</div>
@@ -178,7 +178,7 @@ export function SupportInbox() {
 								<MessageSquareTextIcon className="size-8 mb-3 mx-auto text-muted-foreground" />
 								<p className="text-sm font-medium">还没有客户会话</p>
 								<p className="mt-1 text-xs text-muted-foreground">
-									从公开客服页面发起一条消息即可验证。
+									组织级消息接入后，会话会显示在这里供客服处理。
 								</p>
 							</div>
 						) : (
@@ -217,7 +217,7 @@ export function SupportInbox() {
 											? "知识暂未命中；小飞仍在接待并会继续尝试匹配，人工可旁观或主动接管。"
 											: conversation.handoffReason
 												? `转人工原因：${conversation.handoffReason}`
-												: "公共网站客服渠道"}
+												: "Organization 消息接入"}
 									</CardDescription>
 								</div>
 								<Button
