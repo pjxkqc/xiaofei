@@ -6,30 +6,32 @@ persistence.
 
 ## Procedures
 
-| Procedure                                  | Route                                               | Responsibility                                                        |
-| ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
-| `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract   |
-| `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                          |
-| `saveAgentSettings`                        | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence         |
-| `saveConfig`                               | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation      |
-| `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs        |
-| `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates              |
-| `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                        |
-| `startSupportConversation`                 | `POST /xiaofei/public/conversations`                | Start a token-scoped public customer conversation                     |
-| `getPublicConversation`                    | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat              |
-| `sendPublicMessage`                        | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner        |
-| `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role           |
-| `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                  |
-| `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                         |
-| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document       |
-| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only public-channel source summaries            |
-| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one public-channel source document                               |
-| `updateKnowledgeDocument`                  | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status           |
-| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one public-channel source document                             |
-| `createKnowledgeWeb`                       | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry  |
-| `createManualKnowledgeEntries`             | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                 |
-| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage public-channel normalized entries and eligibility              |
-| `generate/list/update/deleteKnowledgeUnit` | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations |
+| Procedure                                  | Route                                               | Responsibility                                                                                                        |
+| ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract                                                   |
+| `POST /xiaofei/integrations/events`        | External HTTP route                                 | Bearer-authenticated durable ChannelEnvelope v1 ingress; fixed public workspace, 202 create, 200 replay, 409 conflict |
+| `list/get/simulateIntegrationEvent`        | Authenticated `/xiaofei` RPC                        | Support monitor metadata/detail reads and Preview-safe sample ingress                                                 |
+| `getConfig`                                | `GET /xiaofei/config`                               | Load or create the tenant workspace snapshot                                                                          |
+| `saveAgentSettings`                        | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence                                                         |
+| `saveConfig`                               | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation                                                      |
+| `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs                                                        |
+| `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates                                                              |
+| `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                                                                        |
+| `startSupportConversation`                 | `POST /xiaofei/public/conversations`                | Start a token-scoped public customer conversation                                                                     |
+| `getPublicConversation`                    | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat                                                              |
+| `sendPublicMessage`                        | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner                                                        |
+| `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role                                                           |
+| `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                                                                  |
+| `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                                                                         |
+| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document                                                       |
+| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only public-channel source summaries                                                            |
+| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one public-channel source document                                                                               |
+| `updateKnowledgeDocument`                  | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status                                                           |
+| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one public-channel source document                                                                             |
+| `createKnowledgeWeb`                       | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry                                                  |
+| `createManualKnowledgeEntries`             | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                                                                 |
+| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage public-channel normalized entries and eligibility                                                              |
+| `generate/list/update/deleteKnowledgeUnit` | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations                                                 |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
 because it is the existing AI SDK transport. That procedure now loads the
@@ -127,6 +129,55 @@ clear `BAD_REQUEST` messages without exposing database details.
 - Keep engine/provider code in `@repo/ai`.
 - Keep Prisma queries in `@repo/database`.
 - Do not return secrets, provider headers, or raw connection errors.
+
+## External event ingress
+
+`POST /api/xiaofei/integrations/events` accepts at most 1 MiB of JSON with a
+`ChannelEnvelope v1` body and `Authorization: Bearer <XIAOFEI_INGEST_API_KEY>`.
+The caller never chooses a workspace. Metadata headers are optional correlation data;
+only `content-type`, `traceparent`, `tracestate`, `x-correlation-id`, `x-message-id`,
+and `x-request-id` are persisted. Authentication, cookies, API keys, and all other
+header names are discarded before event detail can be read.
+
+### Kafka worker contract
+
+This API is the P0 durable Inbox boundary only: it does not consume records, create a
+conversation, call AI, or write LoopDesk. Run Kafka in the external worker, with
+`enable.auto.commit=false`; Kafka is responsible for retaining records while the API
+is unavailable. Use a deterministic `eventId` for a source record (for example,
+`<topic>:<partition>:<offset>`) and send the original envelope on every retry.
+
+```json
+{
+	"schemaVersion": "v1",
+	"source": "flyranking-kafka",
+	"eventId": "inbound.events:4:9812",
+	"transport": {
+		"kind": "kafka",
+		"topic": "inbound.events",
+		"partition": 4,
+		"offset": "9812"
+	},
+	"eventType": "message.received",
+	"payload": { "messageId": "upstream-123", "body": "example" },
+	"metadata": { "headers": { "x-request-id": "worker-request-123" } }
+}
+```
+
+```bash
+curl --fail-with-body \
+  -X POST "$XIAOFEI_API_URL/api/xiaofei/integrations/events" \
+  -H "Authorization: Bearer $XIAOFEI_INGEST_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @channel-envelope.json
+```
+
+Commit the record's contiguous Kafka offset only after the API has durably returned
+`202` (new event) or `200` (identical replay). A timeout or `5xx` has an unknown
+outcome: retry the same envelope without committing. `400`, `409`, and `413` are
+non-retryable input failures: quarantine the record and alert an operator; do not
+commit it as a successful delivery. This is at-least-once delivery with idempotent
+Inbox acceptance, not exactly-once Kafka processing.
 
 ## Status communication paths
 

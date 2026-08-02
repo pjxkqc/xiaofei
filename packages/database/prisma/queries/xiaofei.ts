@@ -5,7 +5,48 @@ import {
 	XiaofeiKnowledgeDocumentFileType,
 	XiaofeiKnowledgeDocumentSourceType,
 } from "../generated/client";
-import type { Prisma, XiaofeiKnowledgeDocumentCategory } from "../generated/client";
+import type {
+	Prisma,
+	XiaofeiInboundEvent,
+	XiaofeiKnowledgeDocumentCategory,
+} from "../generated/client";
+
+export interface AcceptInboundEventInput {
+	source: string;
+	eventId: string;
+	schemaVersion: string;
+	transportKind: string;
+	topic?: string | null;
+	partition?: number | null;
+	offset?: string | null;
+	messageKey?: string | null;
+	eventType: string;
+	occurredAt: Date;
+	payload: Prisma.InputJsonValue;
+	safeHeaders?: Prisma.InputJsonValue;
+	status?: string;
+}
+
+export interface ListInboundEventsOptions {
+	cursor?: string;
+	limit?: number;
+	source?: string;
+	status?: string;
+	topic?: string;
+}
+
+export class XiaofeiInboundEventConflictError extends Error {
+	readonly code = "INBOUND_EVENT_PAYLOAD_CONFLICT";
+
+	constructor(
+		readonly workspaceId: string,
+		readonly source: string,
+		readonly eventId: string,
+	) {
+		super("An inbound event with this source and event ID has a different payload.");
+		this.name = "XiaofeiInboundEventConflictError";
+	}
+}
 
 export interface CreateXiaofeiKnowledgeDocumentInput {
 	workspaceId: string;
@@ -164,6 +205,28 @@ const DOCUMENT_METADATA_SELECT = {
 const ENTRY_WITH_SOURCE_INCLUDE = {
 	source: { select: { id: true, contentHash: true, sourceVersion: true } },
 } as const;
+const INBOUND_EVENT_LIST_SELECT = {
+	id: true,
+	workspaceId: true,
+	source: true,
+	eventId: true,
+	schemaVersion: true,
+	transportKind: true,
+	topic: true,
+	partition: true,
+	offset: true,
+	messageKey: true,
+	eventType: true,
+	occurredAt: true,
+	payloadHash: true,
+	status: true,
+	deliveryCount: true,
+	firstReceivedAt: true,
+	lastReceivedAt: true,
+	processedAt: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
 
 type LegacyKnowledgeDocumentFileType = "MARKDOWN" | "TEXT" | "DOCX";
 
@@ -252,6 +315,83 @@ export function upsertXiaofeiConversation(input: {
 }
 export function deleteXiaofeiConversation(workspaceId: string, externalId: string) {
 	return db.xiaofeiConversation.deleteMany({ where: { workspaceId, externalId } });
+}
+
+/**
+ * Records an event exactly once per workspace/source/event ID. Replays only increment
+ * delivery metadata; a different canonical payload is a durable conflict, never an overwrite.
+ */
+export async function acceptInboundEvent(
+	workspaceId: string,
+	input: AcceptInboundEventInput,
+): Promise<{ kind: "created" | "duplicate"; event: XiaofeiInboundEvent }> {
+	const payloadHash = hashJson(input.payload);
+	const receivedAt = new Date();
+	try {
+		const event = await db.$transaction((transaction) =>
+			transaction.xiaofeiInboundEvent.create({
+				data: {
+					workspaceId,
+					...input,
+					payloadHash,
+					safeHeaders: input.safeHeaders ?? {},
+					firstReceivedAt: receivedAt,
+					lastReceivedAt: receivedAt,
+				},
+			}),
+		);
+		return { kind: "created" as const, event };
+	} catch (error) {
+		if (!isInboundEventUniqueViolation(error)) throw error;
+	}
+
+	return db.$transaction(async (transaction) => {
+		const existing = await transaction.xiaofeiInboundEvent.findUnique({
+			where: {
+				workspaceId_source_eventId: { workspaceId, source: input.source, eventId: input.eventId },
+			},
+		});
+		if (!existing)
+			throw new Error(
+				"Inbound event duplicate could not be resolved after the unique constraint race.",
+			);
+		if (existing.payloadHash !== payloadHash) {
+			throw new XiaofeiInboundEventConflictError(workspaceId, input.source, input.eventId);
+		}
+		const event = await transaction.xiaofeiInboundEvent.update({
+			where: {
+				workspaceId_source_eventId: { workspaceId, source: input.source, eventId: input.eventId },
+			},
+			data: { deliveryCount: { increment: 1 }, lastReceivedAt: new Date() },
+		});
+		return { kind: "duplicate" as const, event };
+	});
+}
+
+export async function listInboundEvents(
+	workspaceId: string,
+	options: ListInboundEventsOptions = {},
+) {
+	const limit = assertPageLimit(options.limit);
+	const records = await db.xiaofeiInboundEvent.findMany({
+		where: {
+			workspaceId,
+			...(options.source === undefined ? {} : { source: options.source }),
+			...(options.status === undefined ? {} : { status: options.status }),
+			...(options.topic === undefined ? {} : { topic: options.topic }),
+		},
+		select: INBOUND_EVENT_LIST_SELECT,
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		take: limit + 1,
+		...(options.cursor
+			? { cursor: { workspaceId_id: { workspaceId, id: options.cursor } }, skip: 1 }
+			: {}),
+	});
+	return page(records, limit);
+}
+
+export function getInboundEvent(workspaceId: string, id: string) {
+	return db.xiaofeiInboundEvent.findUnique({ where: { workspaceId_id: { workspaceId, id } } });
 }
 
 export function createXiaofeiKnowledgeDocument(input: CreateXiaofeiKnowledgeDocumentInput) {
@@ -662,6 +802,21 @@ function assertPageLimit(value: number | undefined) {
 }
 function hashContent(bodyText: string) {
 	return createHash("sha256").update(bodyText, "utf8").digest("hex");
+}
+function hashJson(value: Prisma.InputJsonValue) {
+	return createHash("sha256").update(stableJson(value), "utf8").digest("hex");
+}
+function stableJson(value: Prisma.InputJsonValue): string {
+	if (value === null || typeof value !== "object") return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+	const record = value as Record<string, Prisma.InputJsonValue>;
+	return `{${Object.keys(record)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${stableJson(record[key]!)}`)
+		.join(",")}}`;
+}
+function isInboundEventUniqueViolation(error: unknown) {
+	return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
 function entryBodyBytes(
 	entry:
