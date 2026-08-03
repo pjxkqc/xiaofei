@@ -68,6 +68,10 @@ describe("synchronizePreviewFixtures", () => {
 			expect.objectContaining({ update: expect.objectContaining({ status: "active" }) }),
 		);
 		expect(mocks.transaction).not.toHaveProperty("delete");
+		expect(mocks.db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: 20_000,
+		});
 	});
 
 	it("repairs an existing credential account with the Better Auth user ID account key", async () => {

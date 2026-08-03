@@ -140,6 +140,6 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 				});
 			}
 		},
-		{ isolationLevel: "Serializable" },
+		{ isolationLevel: "Serializable", timeout: 20_000 },
 	);
 }
