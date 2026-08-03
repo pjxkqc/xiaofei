@@ -63,6 +63,57 @@ describe("admin Xiaofei procedures", () => {
 		expect(mocks.upsertConfig).toHaveBeenCalledWith("org-a", { xiaofeiEnabled: true });
 	});
 
+	it("returns explicit A/B aggregates without forwarding the caller active Organization", async () => {
+		mocks.getSession.mockResolvedValue({
+			user: { id: "admin", role: "admin" },
+			session: { id: "session", activeOrganizationId: "org-active" },
+		});
+		const overview = {
+			organizations: 2,
+			enabled: 1,
+			customers: 3,
+			openConversations: 2,
+			attentionConversations: 1,
+			failedEvents: 0,
+			recentEvents: [],
+		};
+		const listed = {
+			total: 2,
+			organizations: [
+				{ id: "org-a", name: "A" },
+				{ id: "org-b", name: "B" },
+			],
+		};
+		const updated = {
+			organizationId: "org-b",
+			externalMerchantId: "merchant-b",
+			xiaofeiEnabled: true,
+		};
+		mocks.getOverview.mockResolvedValue(overview);
+		mocks.listOrganizations.mockResolvedValue(listed);
+		mocks.upsertConfig.mockResolvedValue(updated);
+		await expect(call(getXiaofeiOverview, undefined, { context })).resolves.toEqual(overview);
+		await expect(
+			call(listXiaofeiOrganizations, { query: "A/B", limit: 20, offset: 0 }, { context }),
+		).resolves.toEqual(listed);
+		await expect(
+			call(
+				updateXiaofeiOrganization,
+				{ organizationId: "org-b", externalMerchantId: "merchant-b", xiaofeiEnabled: true },
+				{ context },
+			),
+		).resolves.toEqual(updated);
+		expect(mocks.getOverview).toHaveBeenCalledWith();
+		expect(mocks.listOrganizations).toHaveBeenCalledWith({ query: "A/B", limit: 20, offset: 0 });
+		expect(mocks.upsertConfig).toHaveBeenCalledWith("org-b", {
+			externalMerchantId: "merchant-b",
+			xiaofeiEnabled: true,
+		});
+		expect(JSON.stringify(mocks.getOverview.mock.calls)).not.toContain("org-active");
+		expect(JSON.stringify(mocks.listOrganizations.mock.calls)).not.toContain("org-active");
+		expect(JSON.stringify(mocks.upsertConfig.mock.calls)).not.toContain("org-active");
+	});
+
 	it("maps external merchant unique conflicts to a safe business error", async () => {
 		mocks.getSession.mockResolvedValue({
 			user: { id: "admin", role: "admin" },

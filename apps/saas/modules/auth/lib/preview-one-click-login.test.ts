@@ -118,9 +118,10 @@ describe("Preview one-click login", () => {
 		).toBe(true);
 		expect(first.customers).toHaveLength(2);
 		expect(first).not.toHaveProperty("delete");
-		expect(
-			first.users.find((user) => user.email === "preview-global-admin@xiaofei.invalid")?.role,
-		).toBe("admin");
+		const globalAdmin = first.users.find(
+			(user) => user.email === "preview-global-admin@xiaofei.invalid",
+		);
+		expect(globalAdmin && "role" in globalAdmin ? globalAdmin.role : undefined).toBe("admin");
 	});
 
 	it("renders role accounts only behind the Preview login flag", () => {

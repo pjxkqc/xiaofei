@@ -129,32 +129,12 @@ export function XiaofeiOrganizationDetail({ organizationId }: { organizationId: 
 					)}
 					<div className="mt-3 space-y-2">
 						<p className="text-muted-foreground">
-							以下商户侧页面需要该商户 membership；不会切换当前 Organization。
+							客户、会话、事件和知识治理均为账户级商户操作页面。请仅在拥有该商户 membership
+							且已实际选择该活动 Organization 后进入；此 Admin 页面不会切换 Organization 或代登录。
 						</p>
-						<div className="gap-3 flex flex-wrap">
-							<Link className="underline" href={getAdminPath(`/organizations/${organization.id}`)}>
-								Admin Organization 记录
-							</Link>
-							{organization.slug && (
-								<>
-									<Link className="underline" href={`/${organization.slug}`}>
-										商户主页（需 membership）
-									</Link>
-									<Link className="underline" href={`/${organization.slug}/customers`}>
-										客户（需 membership）
-									</Link>
-									<Link className="underline" href={`/${organization.slug}/inbox`}>
-										会话（需 membership）
-									</Link>
-									<Link className="underline" href={`/${organization.slug}/integrations/events`}>
-										事件（需 membership）
-									</Link>
-									<Link className="underline" href={`/${organization.slug}/knowledge/entries`}>
-										知识治理（需 membership）
-									</Link>
-								</>
-							)}
-						</div>
+						<Link className="underline" href={getAdminPath(`/organizations/${organization.id}`)}>
+							Admin Organization 记录
+						</Link>
 					</div>
 				</CardContent>
 			</Card>
