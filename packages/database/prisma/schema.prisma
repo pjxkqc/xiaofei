@@ -394,6 +394,7 @@ model XiaofeiConversationMessage {
   conversation       XiaofeiConversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   inboundEventId     String                    @unique
   inboundEvent       XiaofeiInboundEvent       @relation(fields: [inboundEventId], references: [id], onDelete: Cascade)
+  eventId            String
   sourceMessageId    String
   providerMessageId  String?
   replyToSourceMessageId String?
@@ -414,7 +415,7 @@ model XiaofeiConversationMessage {
 
   processingJob XiaofeiProcessingJob?
 
-  @@unique([workspaceId, sourceMessageId])
+  @@unique([workspaceId, eventId])
   @@unique([workspaceId, id])
   @@index([workspaceId, conversationId, occurredAt, id])
   @@map("xiaofei_conversation_message")

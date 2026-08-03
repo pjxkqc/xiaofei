@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { isCustomerInboundEmailJobEligible, type EmailMessageIngestV1 } from "@repo/xiaofei";
+import {
+	createConversationState,
+	isCustomerInboundEmailJobEligible,
+	type EmailMessageIngestV1,
+} from "@repo/xiaofei";
 
 import { db } from "../client";
 import {
@@ -100,6 +104,21 @@ export class XiaofeiChannelBindingConflictError extends Error {
 	readonly code = "CHANNEL_BINDING_CONFLICT";
 	constructor(readonly companyId: string) {
 		super("The email account ID and address resolve to different active bindings.");
+	}
+}
+export class XiaofeiChannelBindingWorkspaceMismatchError extends Error {
+	readonly code = "CHANNEL_BINDING_WORKSPACE_MISMATCH";
+	constructor(readonly organizationId: string) {
+		super("The channel binding does not belong to this Organization workspace.");
+	}
+}
+export class XiaofeiEmailConversationConflictError extends Error {
+	readonly code = "EMAIL_CONVERSATION_CONFLICT";
+	constructor(
+		readonly workspaceId: string,
+		readonly externalId: string,
+	) {
+		super("The existing email conversation has a different customer or channel.");
 	}
 }
 
@@ -352,10 +371,54 @@ interface KnowledgeDocumentSourceMetadata {
 export function getXiaofeiWorkspace(tenantKey: string) {
 	return db.xiaofeiWorkspace.findUnique({ where: { tenantKey } });
 }
-export function createXiaofeiChannelBinding(input: CreateXiaofeiChannelBindingInput) {
+/** Organization-scoped binding mutations never accept a workspace ID from callers. */
+export async function createXiaofeiOrganizationEmailChannelBinding(
+	organizationId: string,
+	input: Omit<CreateXiaofeiChannelBindingInput, "organizationId" | "workspaceId">,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
 	return db.xiaofeiChannelBinding.create({
-		data: { ...input, channel: "email", address: normalizeEmailAddress(input.address) },
+		data: {
+			...input,
+			organizationId,
+			workspaceId: workspace.id,
+			channel: "email",
+			address: normalizeEmailAddress(input.address),
+		},
 	});
+}
+export async function listXiaofeiOrganizationEmailChannelBindings(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiChannelBinding.findMany({
+		where: { organizationId, workspaceId: workspace.id, channel: "email" },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+export async function updateXiaofeiOrganizationEmailChannelBinding(
+	organizationId: string,
+	id: string,
+	data: Pick<
+		Partial<CreateXiaofeiChannelBindingInput>,
+		"companyId" | "channelAccountId" | "address" | "status"
+	>,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	const binding = await db.xiaofeiChannelBinding.findUnique({ where: { id } });
+	if (!binding || binding.organizationId !== organizationId || binding.workspaceId !== workspace.id)
+		throw new XiaofeiChannelBindingWorkspaceMismatchError(organizationId);
+	return db.xiaofeiChannelBinding.update({
+		where: { id },
+		data: {
+			...data,
+			...(data.address === undefined ? {} : { address: normalizeEmailAddress(data.address) }),
+		},
+	});
+}
+export function enableXiaofeiOrganizationEmailChannelBinding(organizationId: string, id: string) {
+	return updateXiaofeiOrganizationEmailChannelBinding(organizationId, id, { status: "active" });
+}
+export function disableXiaofeiOrganizationEmailChannelBinding(organizationId: string, id: string) {
+	return updateXiaofeiOrganizationEmailChannelBinding(organizationId, id, { status: "disabled" });
 }
 
 /** Resolve both account identifiers together; callers cannot supply a workspace. */
@@ -364,14 +427,30 @@ export async function resolveActiveXiaofeiEmailChannelBinding(input: {
 	channelAccountId: string;
 	address: string;
 }) {
+	return resolveActiveXiaofeiEmailChannelBindingInClient(db, input);
+}
+async function resolveActiveXiaofeiEmailChannelBindingInClient(
+	client: Pick<typeof db, "xiaofeiChannelBinding">,
+	input: { companyId: string; channelAccountId: string; address: string },
+) {
 	const address = normalizeEmailAddress(input.address);
-	const bindings = await db.xiaofeiChannelBinding.findMany({
+	const bindings = await client.xiaofeiChannelBinding.findMany({
 		where: {
 			companyId: input.companyId,
 			channel: "email",
 			OR: [{ channelAccountId: input.channelAccountId }, { address }],
 		},
 	});
+	const idMatches = bindings.filter(
+		(binding) => binding.channelAccountId === input.channelAccountId,
+	);
+	const addressMatches = bindings.filter((binding) => binding.address === address);
+	if (
+		idMatches.some((idBinding) =>
+			addressMatches.some((addressBinding) => idBinding.id !== addressBinding.id),
+		)
+	)
+		throw new XiaofeiChannelBindingConflictError(input.companyId);
 	const active = bindings.filter((binding) => binding.status === "active");
 	const idBinding = active.find((binding) => binding.channelAccountId === input.channelAccountId);
 	const addressBinding = active.find((binding) => binding.address === address);
@@ -836,15 +915,15 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 	messageId: string;
 	jobId: string | null;
 }> {
-	const binding = await resolveActiveXiaofeiEmailChannelBinding({
-		companyId: input.tenant.companyId,
-		channelAccountId: input.channelAccount.id,
-		address: input.channelAccount.address,
-	});
 	const businessHash = hashEmailBusinessFacts(input);
 	const ingestedAt = new Date();
 	try {
 		return await db.$transaction(async (transaction) => {
+			const binding = await resolveActiveXiaofeiEmailChannelBindingInClient(transaction, {
+				companyId: input.tenant.companyId,
+				channelAccountId: input.channelAccount.id,
+				address: input.channelAccount.address,
+			});
 			const existing = await transaction.xiaofeiInboundEvent.findUnique({
 				where: {
 					workspaceId_source_eventId: {
@@ -860,6 +939,16 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 					throw new XiaofeiEmailMirrorConflictError(binding.workspaceId, input.eventId);
 				const message = existing.conversationMessage;
 				if (!message) throw new Error("Accepted email event is missing its message locator.");
+				await transaction.xiaofeiInboundEvent.update({
+					where: {
+						workspaceId_source_eventId: {
+							workspaceId: binding.workspaceId,
+							source: "email",
+							eventId: input.eventId,
+						},
+					},
+					data: { deliveryCount: { increment: 1 }, lastReceivedAt: ingestedAt },
+				});
 				return {
 					status: "duplicate" as const,
 					conversationId: message.conversationId,
@@ -868,47 +957,64 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 				};
 			}
 			const occurredAt = new Date(input.occurredAt);
+			const isInbound = isCustomerInboundEmailJobEligible(input);
+			const customerAddress = normalizeEmailAddress(
+				isInbound ? input.message.from.address : input.message.to[0]!.address,
+			);
+			const customerName = isInbound ? input.message.from.name : input.message.to[0]!.name;
 			const customer = await transaction.xiaofeiCustomer.upsert({
 				where: {
 					organizationId_externalCustomerId: {
 						organizationId: binding.organizationId,
-						externalCustomerId: normalizeEmailAddress(input.message.from.address),
+						externalCustomerId: customerAddress,
 					},
 				},
 				create: {
 					organizationId: binding.organizationId,
-					externalCustomerId: normalizeEmailAddress(input.message.from.address),
-					name: input.message.from.name,
-					email: normalizeEmailAddress(input.message.from.address),
-					lastSeenAt: occurredAt,
+					externalCustomerId: customerAddress,
+					name: customerName,
+					email: customerAddress,
+					...(isInbound ? { lastSeenAt: occurredAt } : {}),
 				},
-				update: {
-					name: input.message.from.name,
-					email: normalizeEmailAddress(input.message.from.address),
-					lastSeenAt: occurredAt,
-				},
+				update: { name: customerName, email: customerAddress },
 			});
-			const conversation = await transaction.xiaofeiConversation.upsert({
+			const currentConversation = await transaction.xiaofeiConversation.findUnique({
 				where: {
 					workspaceId_externalId: {
 						workspaceId: binding.workspaceId,
 						externalId: input.conversation.externalId,
 					},
 				},
-				create: {
-					workspaceId: binding.workspaceId,
-					externalId: input.conversation.externalId,
-					customerId: customer.id,
-					channel: "email",
-					customerName: customer.name,
-					state: {},
-					messages: [],
-					traceEvents: [],
-					lastCustomerSeenAt: isCustomerInboundEmailJobEligible(input) ? occurredAt : null,
-					lastMessageAt: occurredAt,
-				},
-				update: { customerId: customer.id, customerName: customer.name },
 			});
+			if (
+				currentConversation &&
+				(currentConversation.customerId !== customer.id || currentConversation.channel !== "email")
+			)
+				throw new XiaofeiEmailConversationConflictError(
+					binding.workspaceId,
+					input.conversation.externalId,
+				);
+			const conversation =
+				currentConversation ??
+				(await transaction.xiaofeiConversation.create({
+					data: {
+						workspaceId: binding.workspaceId,
+						externalId: input.conversation.externalId,
+						customerId: customer.id,
+						channel: "email",
+						customerName: customer.name,
+						state: createConversationState({
+							id: input.conversation.externalId,
+							tenantId: `organization:${binding.organizationId}`,
+							agentId: "email-mirror",
+							maxFollowUps: 0,
+						}),
+						messages: [],
+						traceEvents: [],
+						lastCustomerSeenAt: isInbound ? occurredAt : null,
+						lastMessageAt: occurredAt,
+					},
+				}));
 			const event = await transaction.xiaofeiInboundEvent.create({
 				data: {
 					workspaceId: binding.workspaceId,
@@ -935,6 +1041,7 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 					workspaceId: binding.workspaceId,
 					conversationId: conversation.id,
 					inboundEventId: event.id,
+					eventId: input.eventId,
 					sourceMessageId: input.message.sourceMessageId,
 					providerMessageId: input.message.providerMessageId,
 					replyToSourceMessageId: input.message.replyToSourceMessageId,
@@ -958,12 +1065,25 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 					id: conversation.id,
 					OR: [{ lastMessageAt: null }, { lastMessageAt: { lte: occurredAt } }],
 				},
-				data: {
-					lastMessageAt: occurredAt,
-					...(isCustomerInboundEmailJobEligible(input) ? { lastCustomerSeenAt: occurredAt } : {}),
-				},
+				data: { lastMessageAt: occurredAt },
 			});
-			const job = isCustomerInboundEmailJobEligible(input)
+			if (isInbound) {
+				await transaction.xiaofeiConversation.updateMany({
+					where: {
+						id: conversation.id,
+						OR: [{ lastCustomerSeenAt: null }, { lastCustomerSeenAt: { lte: occurredAt } }],
+					},
+					data: { lastCustomerSeenAt: occurredAt },
+				});
+				await transaction.xiaofeiCustomer.updateMany({
+					where: {
+						id: customer.id,
+						OR: [{ lastSeenAt: null }, { lastSeenAt: { lte: occurredAt } }],
+					},
+					data: { lastSeenAt: occurredAt },
+				});
+			}
+			const job = isInbound
 				? await transaction.xiaofeiProcessingJob.create({
 						data: {
 							workspaceId: binding.workspaceId,
@@ -984,8 +1104,39 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 		});
 	} catch (error) {
 		if (!isInboundEventUniqueViolation(error)) throw error;
-		// A concurrent insert won the unique constraint; resolve it through the same durable locator.
-		return acceptMirroredEmailMessage(input);
+		const binding = await resolveActiveXiaofeiEmailChannelBinding({
+			companyId: input.tenant.companyId,
+			channelAccountId: input.channelAccount.id,
+			address: input.channelAccount.address,
+		});
+		const existing = await db.xiaofeiInboundEvent.findUnique({
+			where: {
+				workspaceId_source_eventId: {
+					workspaceId: binding.workspaceId,
+					source: "email",
+					eventId: input.eventId,
+				},
+			},
+			include: { conversationMessage: { include: { processingJob: true } } },
+		});
+		if (!existing || existing.payloadHash !== businessHash || !existing.conversationMessage)
+			throw error;
+		await db.xiaofeiInboundEvent.update({
+			where: {
+				workspaceId_source_eventId: {
+					workspaceId: binding.workspaceId,
+					source: "email",
+					eventId: input.eventId,
+				},
+			},
+			data: { deliveryCount: { increment: 1 }, lastReceivedAt: ingestedAt },
+		});
+		return {
+			status: "duplicate",
+			conversationId: existing.conversationMessage.conversationId,
+			messageId: existing.conversationMessage.id,
+			jobId: existing.conversationMessage.processingJob?.id ?? null,
+		};
 	}
 }
 

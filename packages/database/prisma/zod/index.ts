@@ -120,7 +120,7 @@ export type XiaofeiInboundEventScalarFieldEnum = z.infer<typeof XiaofeiInboundEv
 
 // File: XiaofeiConversationMessageScalarFieldEnum.schema.ts
 
-export const XiaofeiConversationMessageScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'conversationId', 'inboundEventId', 'sourceMessageId', 'providerMessageId', 'replyToSourceMessageId', 'direction', 'senderType', 'fromAddress', 'fromName', 'toRecipients', 'subject', 'contentType', 'contentValue', 'attachments', 'labels', 'sourceSendType', 'occurredAt', 'ingestedAt', 'createdAt'])
+export const XiaofeiConversationMessageScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'conversationId', 'inboundEventId', 'eventId', 'sourceMessageId', 'providerMessageId', 'replyToSourceMessageId', 'direction', 'senderType', 'fromAddress', 'fromName', 'toRecipients', 'subject', 'contentType', 'contentValue', 'attachments', 'labels', 'sourceSendType', 'occurredAt', 'ingestedAt', 'createdAt'])
 
 export type XiaofeiConversationMessageScalarFieldEnum = z.infer<typeof XiaofeiConversationMessageScalarFieldEnumSchema>;
 
@@ -544,6 +544,7 @@ export const XiaofeiConversationMessageSchema = z.object({
   workspaceId: z.string(),
   conversationId: z.string(),
   inboundEventId: z.string(),
+  eventId: z.string(),
   sourceMessageId: z.string(),
   providerMessageId: z.string().nullish(),
   replyToSourceMessageId: z.string().nullish(),

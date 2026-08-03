@@ -3,9 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
 	const transaction = {
-		xiaofeiInboundEvent: { findUnique: vi.fn(), create: vi.fn() },
-		xiaofeiCustomer: { upsert: vi.fn() },
-		xiaofeiConversation: { upsert: vi.fn(), updateMany: vi.fn() },
+		xiaofeiChannelBinding: { findMany: vi.fn() },
+		xiaofeiInboundEvent: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+		xiaofeiCustomer: { upsert: vi.fn(), updateMany: vi.fn() },
+		xiaofeiConversation: {
+			upsert: vi.fn(),
+			findUnique: vi.fn(),
+			create: vi.fn(),
+			updateMany: vi.fn(),
+		},
 		xiaofeiConversationMessage: { create: vi.fn() },
 		xiaofeiProcessingJob: { create: vi.fn() },
 	};
@@ -67,9 +73,20 @@ describe("email mirror persistence", () => {
 				status: "active",
 			},
 		]);
+		mocks.xiaofeiChannelBinding.findMany.mockResolvedValue([
+			{
+				id: "binding-a",
+				organizationId: "organization-a",
+				workspaceId: "workspace-a",
+				channelAccountId: "mailbox-a",
+				address: "support@example.com",
+				status: "active",
+			},
+		]);
 		mocks.xiaofeiInboundEvent.findUnique.mockResolvedValue(null);
 		mocks.xiaofeiCustomer.upsert.mockResolvedValue({ id: "customer-a", name: "Customer" });
-		mocks.xiaofeiConversation.upsert.mockResolvedValue({ id: "conversation-a" });
+		mocks.xiaofeiConversation.findUnique.mockResolvedValue(null);
+		mocks.xiaofeiConversation.create.mockResolvedValue({ id: "conversation-a" });
 		mocks.xiaofeiInboundEvent.create.mockResolvedValue({ id: "event-a" });
 		mocks.xiaofeiConversationMessage.create.mockResolvedValue({ id: "message-a" });
 		mocks.xiaofeiProcessingJob.create.mockResolvedValue({ id: "job-a" });
