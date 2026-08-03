@@ -22,6 +22,10 @@ The product surface is deliberately kept to small, focused pages:
 - `/integrations/events` is an authenticated monitor for durable S2S ingress. It
   shows metadata by default, loads raw JSON only for a selected event, and its
   Preview simulator uses a protected server procedure rather than an ingest key.
+- `/integrations/mock-worker` runs an authenticated Organization-scoped Email or
+  WhatsApp simulator. It resolves the configured external merchant server-side,
+  binds the customer/conversation, and records the Xiaofei delivery plus its
+  ignored echo in the same event monitor.
 - `/knowledge/entries` adds and manages normalized entries for the shared
   public-support workspace from a file, one public webpage, or manual Q&A.
   `/knowledge/documents` remains the source-document view with bounded metadata

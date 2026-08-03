@@ -5,6 +5,7 @@ import { supportProcedure } from "../../../orpc/procedures";
 import {
 	getIntegrationEvent,
 	listIntegrationEvents,
+	runMockWorker,
 	simulateOrganizationChannelEnvelope,
 } from "../integration-events";
 
@@ -37,3 +38,20 @@ export const simulateIntegrationEventProcedure = supportProcedure.handler(
 			payload: { message: "Preview event", simulated: true },
 		}),
 );
+
+export const runMockWorkerProcedure = supportProcedure
+	.input(
+		z.object({
+			externalMerchantId: z.string().trim().min(1).max(120),
+			externalCustomerId: z.string().trim().min(1).max(120),
+			channel: z.enum(["email", "whatsapp"]),
+			externalConversationId: z.string().trim().min(1).max(200),
+			externalMessageId: z.string().trim().min(1).max(200),
+			title: z.string().trim().max(300).optional(),
+			text: z.string().trim().min(1).max(10_000),
+		}),
+	)
+	.handler(
+		async ({ context, input }) =>
+			await runMockWorker(context, { ...input, direction: "inbound", origin: "customer" }),
+	);

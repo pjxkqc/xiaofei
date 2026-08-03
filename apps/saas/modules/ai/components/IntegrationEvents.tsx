@@ -24,6 +24,8 @@ interface EventSummary {
 	occurredAt: Date | string;
 	firstReceivedAt: Date | string;
 	lastReceivedAt: Date | string;
+	processedAt: Date | string | null;
+	updatedAt: Date | string;
 }
 
 export function IntegrationEvents() {
@@ -160,10 +162,12 @@ export function IntegrationEvents() {
 										Topic: {event.topic ?? "—"}
 									</span>
 								</div>
-								<div className="gap-3 pt-3 text-xs sm:grid-cols-3 grid border-t">
+								<div className="gap-3 pt-3 text-xs sm:grid-cols-5 grid border-t">
 									<EventTime label="Event time" value={event.occurredAt} />
 									<EventTime label="First received" value={event.firstReceivedAt} />
 									<EventTime label="Latest delivery" value={event.lastReceivedAt} />
+									<EventTime label="Completed" value={event.processedAt} />
+									<EventTime label="Updated" value={event.updatedAt} />
 								</div>
 							</button>
 						))}
@@ -187,7 +191,7 @@ export function IntegrationEvents() {
 	);
 }
 
-function EventTime({ label, value }: { label: string; value: Date | string }) {
+function EventTime({ label, value }: { label: string; value: Date | string | null }) {
 	return (
 		<span className="space-y-1">
 			<span className="block text-muted-foreground">{label}</span>
@@ -198,7 +202,8 @@ function EventTime({ label, value }: { label: string; value: Date | string }) {
 	);
 }
 
-function formatDateTime(value: Date | string) {
+function formatDateTime(value: Date | string | null) {
+	if (!value) return "—";
 	const date = value instanceof Date ? value : new Date(value);
 	if (Number.isNaN(date.getTime())) return "—";
 	return new Intl.DateTimeFormat("zh-CN", {
@@ -207,7 +212,8 @@ function formatDateTime(value: Date | string) {
 	}).format(date);
 }
 
-function toIsoDateTime(value: Date | string) {
+function toIsoDateTime(value: Date | string | null) {
+	if (!value) return undefined;
 	const date = value instanceof Date ? value : new Date(value);
 	return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }

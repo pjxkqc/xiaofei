@@ -11,6 +11,7 @@ import {
 	getIntegrationEventProcedure,
 	listIntegrationEventsProcedure,
 	simulateIntegrationEventProcedure,
+	runMockWorkerProcedure,
 } from "./procedures/integration-events";
 import {
 	createKnowledgeDocumentProcedure,
@@ -55,6 +56,7 @@ export const xiaofeiRouter = {
 	listIntegrationEvents: listIntegrationEventsProcedure,
 	getIntegrationEvent: getIntegrationEventProcedure,
 	simulateIntegrationEvent: simulateIntegrationEventProcedure,
+	runMockWorker: runMockWorkerProcedure,
 	getConfig: getXiaofeiConfig,
 	saveAgentSettings: saveXiaofeiAgentSettings,
 	saveConfig: saveXiaofeiConfig,

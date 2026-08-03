@@ -11,7 +11,8 @@ import {
 	startPublicSupportConversation,
 } from "../support-service";
 
-const conversationIdSchema = z.string().uuid();
+export const publicConversationIdSchema = z.string().uuid();
+export const agentConversationIdSchema = z.string().trim().min(1).max(200);
 const messageSchema = z.string().trim().min(1).max(2_000);
 
 export const startSupportConversation = publicProcedure
@@ -31,7 +32,7 @@ export const getPublicConversation = publicProcedure
 		tags: ["Xiaofei Support"],
 		summary: "Read and heartbeat a public customer support conversation",
 	})
-	.input(z.object({ conversationId: conversationIdSchema }))
+	.input(z.object({ conversationId: publicConversationIdSchema }))
 	.handler(async ({ input }) => await getPublicSupportConversation(input.conversationId));
 
 export const sendPublicMessage = publicProcedure
@@ -41,7 +42,7 @@ export const sendPublicMessage = publicProcedure
 		tags: ["Xiaofei Support"],
 		summary: "Send a customer message to Xiaofei or the assigned human agent",
 	})
-	.input(z.object({ conversationId: conversationIdSchema, text: messageSchema }))
+	.input(z.object({ conversationId: publicConversationIdSchema, text: messageSchema }))
 	.handler(async ({ input }) => await sendPublicSupportMessage(input.conversationId, input.text));
 
 export const listAgentConversations = supportProcedure
@@ -60,7 +61,7 @@ export const getAgentConversation = supportProcedure
 		tags: ["Xiaofei Support"],
 		summary: "Read a customer support conversation",
 	})
-	.input(z.object({ conversationId: conversationIdSchema }))
+	.input(z.object({ conversationId: agentConversationIdSchema }))
 	.handler(
 		async ({ context, input }) => await getSupportConversation(context, input.conversationId),
 	);
@@ -74,7 +75,7 @@ export const setAgentConversationOwner = supportProcedure
 	})
 	.input(
 		z.object({
-			conversationId: conversationIdSchema,
+			conversationId: agentConversationIdSchema,
 			owner: z.enum(["ai", "human"]),
 		}),
 	)
@@ -95,7 +96,7 @@ export const sendAgentMessage = supportProcedure
 		tags: ["Xiaofei Support"],
 		summary: "Send a human support reply",
 	})
-	.input(z.object({ conversationId: conversationIdSchema, text: messageSchema }))
+	.input(z.object({ conversationId: agentConversationIdSchema, text: messageSchema }))
 	.handler(
 		async ({ context, input }) =>
 			await sendHumanSupportMessage({

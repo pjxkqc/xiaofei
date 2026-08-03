@@ -1,15 +1,33 @@
 import { timingSafeEqual } from "node:crypto";
 
+import { runXiaofeiTurn } from "@repo/ai";
 import {
 	acceptInboundEvent,
+	createXiaofeiCustomer,
+	getXiaofeiConversation,
+	getXiaofeiCustomer,
+	getXiaofeiOrganizationConfigByExternalMerchantId,
 	getInboundEvent,
 	listInboundEvents,
+	updateXiaofeiInboundEventStatus,
+	updateXiaofeiCustomer,
+	updateXiaofeiSupportConversation,
+	upsertXiaofeiSupportConversation,
 	XiaofeiInboundEventConflictError,
+	type Prisma,
 } from "@repo/database";
+import {
+	ConversationStateSchema,
+	SupportMessageSchema,
+	TraceEventSchema,
+	createConversationState,
+} from "@repo/xiaofei";
 import { z } from "zod";
 
 import {
 	getOrCreatePublicXiaofeiWorkspace,
+	createKnowledgeWorkspaceBinding,
+	getOrCreateXiaofeiWorkspaceByTenantKey,
 	getOrCreateXiaofeiWorkspace,
 	type XiaofeiAuthContext,
 } from "./service";
@@ -56,6 +74,18 @@ export const channelEnvelopeSchema = z
 
 export type ChannelEnvelope = z.infer<typeof channelEnvelopeSchema>;
 
+const mockMessagePayloadSchema = z.object({
+	externalMerchantId: z.string().trim().min(1).max(120),
+	externalCustomerId: z.string().trim().min(1).max(120),
+	channel: z.enum(["email", "whatsapp"]),
+	externalConversationId: z.string().trim().min(1).max(200),
+	externalMessageId: z.string().trim().min(1).max(200),
+	title: z.string().trim().max(300).optional(),
+	text: z.string().trim().min(1).max(10_000),
+	direction: z.literal("inbound"),
+	origin: z.enum(["customer", "xiaofei"]),
+});
+
 export function safeInboundHeaders(headers: Record<string, string> | undefined) {
 	if (!headers) return {};
 	return Object.fromEntries(
@@ -81,6 +111,186 @@ export async function simulateOrganizationChannelEnvelope(
 	const envelope = channelEnvelopeSchema.parse(input);
 	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
 	return await acceptEnvelope(workspace.id, envelope);
+}
+
+/**
+ * Preview-only, organization-scoped channel worker. It deliberately accepts no
+ * workspace ID: merchant resolution is the trust boundary for every message.
+ */
+export async function runMockWorker(context: XiaofeiAuthContext, input: unknown) {
+	const payload = mockMessagePayloadSchema.parse(input);
+	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
+	const eventId = `mock:${payload.externalMessageId}`;
+	const accepted = await acceptEnvelope(workspace.id, {
+		schemaVersion: "v1",
+		source: "mock-worker",
+		eventId,
+		transport: { kind: "manual", topic: `mock.${payload.channel}` },
+		eventType: "message.received",
+		payload,
+	});
+	if (accepted.kind === "duplicate") return { ...accepted, outcome: "duplicate" as const };
+	const event = accepted.event;
+	try {
+		const config = await getXiaofeiOrganizationConfigByExternalMerchantId(
+			payload.externalMerchantId,
+		);
+		if (!config || config.organizationId !== workspace.tenantKey.slice("organization:".length)) {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "merchant_unknown",
+				processedAt: new Date(),
+				lastError: "Unknown merchant.",
+			});
+			return { ...accepted, outcome: "merchant_unknown" as const };
+		}
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "organization_resolved",
+		});
+		let customer = await getXiaofeiCustomer(config.organizationId, payload.externalCustomerId);
+		if (!customer)
+			customer = await createXiaofeiCustomer({
+				organizationId: config.organizationId,
+				externalCustomerId: payload.externalCustomerId,
+				lastSeenAt: new Date(),
+			});
+		else
+			customer = await updateXiaofeiCustomer(config.organizationId, payload.externalCustomerId, {
+				lastSeenAt: new Date(),
+			});
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, { status: "customer_upserted" });
+		if (payload.origin === "xiaofei") {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "echo_ignored",
+				processedAt: new Date(),
+			});
+			return { ...accepted, outcome: "echo_ignored" as const };
+		}
+		const loaded = await getOrCreateXiaofeiWorkspaceByTenantKey(workspace.tenantKey);
+		const current = await getXiaofeiConversation(workspace.id, payload.externalConversationId);
+		if (current && (current.customerId !== customer.id || current.channel !== payload.channel)) {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "conversation_conflict",
+				processedAt: new Date(),
+				lastError: "Conversation customer or channel binding mismatch.",
+			});
+			return { ...accepted, outcome: "conversation_conflict" as const };
+		}
+		const now = new Date();
+		const inboundText = normalizeInboundText(payload.title, payload.text);
+		const state = current
+			? ConversationStateSchema.parse(current.state)
+			: createConversationState({
+					id: payload.externalConversationId,
+					tenantId: workspace.tenantKey,
+					agentId: loaded.snapshot.agent.id,
+					maxFollowUps: loaded.snapshot.agent.maxFollowUps,
+					now: () => now.toISOString(),
+				});
+		const messages = current ? z.array(SupportMessageSchema).parse(current.messages) : [];
+		const inbound = SupportMessageSchema.parse({
+			id: payload.externalMessageId,
+			role: "customer",
+			authorName: customer.name ?? payload.externalCustomerId,
+			text: inboundText,
+			createdAt: now.toISOString(),
+		});
+		const traces = current ? z.array(TraceEventSchema).parse(current.traceEvents) : [];
+		if (!current)
+			await upsertXiaofeiSupportConversation({
+				workspaceId: workspace.id,
+				externalId: payload.externalConversationId,
+				customerId: customer.id,
+				channel: payload.channel,
+				customerName: customer.name ?? payload.externalCustomerId,
+				state: toJson(state),
+				traceEvents: toJson(traces),
+				messages: toJson([...messages, inbound]),
+				lastCustomerSeenAt: now,
+				lastMessageAt: now,
+			});
+		else
+			await updateXiaofeiSupportConversation(workspace.id, payload.externalConversationId, {
+				customerName: customer.name ?? payload.externalCustomerId,
+				state: toJson(state),
+				messages: toJson([...messages, inbound].slice(-160)),
+				lastCustomerSeenAt: now,
+				lastMessageAt: now,
+			});
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "conversation_updated",
+		});
+		if (!config.xiaofeiEnabled) {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "ai_disabled",
+				processedAt: new Date(),
+			});
+			return { ...accepted, outcome: "ai_disabled" as const };
+		}
+		const result = await runXiaofeiTurn({
+			message: inboundText,
+			state,
+			snapshot: loaded.snapshot,
+			knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
+				workspace: loaded.workspace,
+				snapshot: loaded.snapshot,
+				conversationId: state.id,
+				channelId: `mock:${payload.channel}`,
+			}),
+		});
+		const reply = SupportMessageSchema.parse({
+			id: `xiaofei:${payload.externalMessageId}`,
+			role: "ai",
+			authorName: loaded.snapshot.agent.name,
+			text: result.reply,
+			createdAt: new Date().toISOString(),
+		});
+		await updateXiaofeiSupportConversation(workspace.id, payload.externalConversationId, {
+			state: toJson(result.state),
+			traceEvents: toJson([...traces, ...result.metadata.traces].slice(-80)),
+			messages: toJson([...messages, inbound, reply].slice(-160)),
+			lastMessageAt: new Date(),
+		});
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "ai_replied",
+		});
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "mock_delivered",
+			processedAt: new Date(),
+		});
+		const echoPayload = {
+			...payload,
+			externalMessageId: `xiaofei:${payload.externalMessageId}`,
+			origin: "xiaofei" as const,
+		};
+		const echo = await acceptEnvelope(workspace.id, {
+			schemaVersion: "v1",
+			source: "mock-worker",
+			eventId: `mock:${echoPayload.externalMessageId}`,
+			transport: { kind: "manual", topic: `mock.${payload.channel}` },
+			eventType: "message.echo",
+			payload: echoPayload,
+		});
+		await updateXiaofeiInboundEventStatus(workspace.id, echo.event.id, {
+			status: "echo_ignored",
+			processedAt: new Date(),
+		});
+		return { ...accepted, outcome: "mock_delivered" as const, echo: echo.event };
+	} catch (error) {
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "failed",
+			processedAt: new Date(),
+			lastError: "Mock worker failed.",
+		});
+		throw error;
+	}
+}
+
+function toJson(value: unknown): Prisma.InputJsonValue {
+	return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function normalizeInboundText(title: string | undefined, text: string) {
+	return [title?.trim(), text.trim()].filter(Boolean).join("\n\n");
 }
 
 async function acceptEnvelope(workspaceId: string, envelope: ChannelEnvelope) {
