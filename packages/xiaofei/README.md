@@ -19,6 +19,33 @@ Next.js, oRPC, Prisma, Mastra, LangGraph, or a channel SDK.
 | `defaults.ts`     | Default workspace plus deterministic KU capability plans, review transitions, and release gates                                 |
 | `ports.ts`        | Product-owned channel adapter interface                                                                                         |
 
+## Email ingestion contract
+
+`EmailMessageIngestV1Schema` is the strict, vendor-neutral
+`email.message.v1` event shared by the API boundary and future persistence
+worker. Its top-level identity is `eventId`, with `tenant.companyId`,
+`channel: "email"`, a channel account, occurrence time, conversation, complete
+message facts, and source tracing. The conversation external ID must begin
+`email:{tenant.companyId}:`; this prevents a caller from mixing company
+projections. `workspaceId`, ownership epochs, hosting version, AI-trigger
+flags, and all framework state are deliberately rejected.
+
+The public schemas are `StableExternalIdSchema`, `CompanyIdSchema`,
+`EmailMessageDirectionSchema`, `EmailMessageSenderTypeSchema`,
+`EmailParticipantSchema`, `EmailMessageContentSchema`,
+`EmailMessageAttachmentSchema`, `EmailMessageFactsSchema`,
+`EmailConversationReferenceSchema`, `EmailMessageSourceSchema`, and
+`EmailMessageIngestV1Schema`. `source.topic`, `source.partition`, and
+`source.offset` are tracing-only and not idempotency inputs. The kernel does not
+cap or truncate content or attachments: Stage 3's HTTP request limit remains
+the controlling boundary, and attachments are controlled references plus
+metadata only. `isCustomerInboundEmailJobEligible` is pure and returns true
+only for the one valid inbound combination, `message.direction === "inbound"`
+with `message.senderType === "customer"`. The schema itself rejects a customer
+outbound message or a non-customer inbound message; outbound messages must use
+`loopdesk`, `xiaofei`, or `system`. Eligibility neither queues work nor grants
+AI or send authority.
+
 `index.ts` is the public package boundary. Consumers should import from
 `@repo/xiaofei`, not from internal files.
 
