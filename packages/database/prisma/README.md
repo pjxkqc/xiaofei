@@ -57,6 +57,25 @@ are not retained; `bodyText` is the durable extracted content.
 - document create, list, get, update, and delete by workspace.
 - inbound event acceptance, workspace-scoped metadata lists, and full detail reads.
 
+### Email mirror ledger
+
+`acceptMirroredEmailMessage` is the email persistence boundary and accepts only
+the kernel's `EmailMessageIngestV1` DTO. It resolves an active binding by
+`companyId + email + channelAccount.id/address` before opening its write
+transaction. Missing, disabled, or split ID/address bindings are typed failures
+and write no ledger rows. The transaction creates the inbound event, customer,
+conversation, normalized message, monotonic conversation projection, and only
+for customer inbound traffic one `mirrored` job. A replay returns the existing
+locators; a changed stable business payload fails closed.
+
+The email business hash canonicalizes object keys and lowercases email addresses.
+It includes the immutable envelope, routing account, conversation, and message
+facts, but excludes `source.topic`, `source.partition`, `source.offset`, and
+`source.workerVersion`. Those fields remain tracing data and may differ during a
+replay without becoming a conflict. Message list projections intentionally omit
+body, raw HTML, and attachment URLs; those are available only through a
+workspace-scoped detail read.
+
 Organization query helpers are the merchant boundary for new Xiaofei work:
 
 - configuration and customer get/list/create/update calls take `organizationId`;

@@ -146,6 +146,7 @@ model Organization {
   purchases          Purchase[]
   xiaofeiConfig      XiaofeiOrganizationConfig?
   xiaofeiCustomers   XiaofeiCustomer[]
+  xiaofeiChannelBindings XiaofeiChannelBinding[]
 
   @@unique([slug])
   @@map("organization")
@@ -289,6 +290,9 @@ model XiaofeiWorkspace {
   knowledgeEntries   XiaofeiKnowledgeEntry[]
   knowledgeUnits     XiaofeiKnowledgeUnit[]
   inboundEvents      XiaofeiInboundEvent[]
+  channelBindings    XiaofeiChannelBinding[]
+  conversationMessages XiaofeiConversationMessage[]
+  processingJobs     XiaofeiProcessingJob[]
 
   @@map("xiaofei_workspace")
 }
@@ -313,11 +317,35 @@ model XiaofeiConversation {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
+  conversationMessages XiaofeiConversationMessage[]
+  processingJobs     XiaofeiProcessingJob[]
+
   @@unique([workspaceId, externalId])
   @@index([workspaceId])
   @@index([workspaceId, updatedAt])
   @@index([customerId])
   @@map("xiaofei_conversation")
+}
+
+model XiaofeiChannelBinding {
+  id               String           @id @default(cuid())
+  organizationId   String
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspaceId      String
+  workspace        XiaofeiWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  companyId        String
+  channel          String
+  channelAccountId String
+  address          String
+  status           String           @default("active")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([companyId, channel, channelAccountId])
+  @@unique([companyId, channel, address])
+  @@index([workspaceId, status])
+  @@index([organizationId, status])
+  @@map("xiaofei_channel_binding")
 }
 
 model XiaofeiInboundEvent {
@@ -346,6 +374,9 @@ model XiaofeiInboundEvent {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  conversationMessage XiaofeiConversationMessage?
+  processingJobs     XiaofeiProcessingJob[]
+
   @@unique([workspaceId, source, eventId])
   @@unique([workspaceId, id])
   @@index([workspaceId, createdAt, id])
@@ -353,6 +384,63 @@ model XiaofeiInboundEvent {
   @@index([workspaceId, status, createdAt, id])
   @@index([workspaceId, topic, createdAt, id])
   @@map("xiaofei_inbound_event")
+}
+
+model XiaofeiConversationMessage {
+  id                 String                    @id @default(cuid())
+  workspaceId        String
+  workspace          XiaofeiWorkspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversationId     String
+  conversation       XiaofeiConversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  inboundEventId     String                    @unique
+  inboundEvent       XiaofeiInboundEvent       @relation(fields: [inboundEventId], references: [id], onDelete: Cascade)
+  sourceMessageId    String
+  providerMessageId  String?
+  replyToSourceMessageId String?
+  direction          String
+  senderType         String
+  fromAddress        String
+  fromName           String?
+  toRecipients       Json
+  subject            String?
+  contentType        String
+  contentValue       String                     @db.Text
+  attachments        Json?
+  labels             Json?
+  sourceSendType     Int?
+  occurredAt         DateTime
+  ingestedAt         DateTime                   @default(now())
+  createdAt          DateTime                   @default(now())
+
+  processingJob XiaofeiProcessingJob?
+
+  @@unique([workspaceId, sourceMessageId])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, conversationId, occurredAt, id])
+  @@map("xiaofei_conversation_message")
+}
+
+model XiaofeiProcessingJob {
+  id                 String                    @id @default(cuid())
+  workspaceId        String
+  workspace          XiaofeiWorkspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inboundEventId     String
+  inboundEvent       XiaofeiInboundEvent       @relation(fields: [inboundEventId], references: [id], onDelete: Cascade)
+  conversationId     String
+  conversation       XiaofeiConversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationMessageId String                  @unique
+  conversationMessage XiaofeiConversationMessage @relation(fields: [conversationMessageId], references: [id], onDelete: Cascade)
+  kind               String                    @default("mirrored")
+  status             String                    @default("mirrored")
+  attempts           Int                       @default(0)
+  ownerEpoch         Int?
+  nextRunAt          DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([workspaceId, inboundEventId, kind])
+  @@index([workspaceId, status, nextRunAt])
+  @@map("xiaofei_processing_job")
 }
 
 enum XiaofeiKnowledgeDocumentFileType {
