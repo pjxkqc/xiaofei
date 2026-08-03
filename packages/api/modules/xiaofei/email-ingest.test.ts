@@ -11,7 +11,11 @@ vi.mock("@repo/database", () => ({
 
 import { acceptMirroredEmailMessage } from "@repo/database";
 
-import { ingestEmailMessage, isValidEmailIngestAuthorization } from "./email-ingest";
+import {
+	ingestEmailMessage,
+	isValidEmailIngestAuthorization,
+	mapEmailIngestError,
+} from "./email-ingest";
 
 const valid = {
 	schemaVersion: "email.message.v1",
@@ -74,5 +78,44 @@ describe("email mirror ingress", () => {
 			} as never);
 		expect((await ingestEmailMessage(valid, valid.eventId)).status).toBe(202);
 		expect((await ingestEmailMessage(valid, valid.eventId)).status).toBe(200);
+	});
+	it("maps every persistence failure to a named safe response", async () => {
+		const database = await import("@repo/database");
+		expect(mapEmailIngestError(new database.XiaofeiChannelBindingNotFoundError("company"))).toEqual(
+			{
+				status: 404,
+				body: { error: "binding_not_found" },
+			},
+		);
+		expect(mapEmailIngestError(new database.XiaofeiChannelBindingDisabledError("company"))).toEqual(
+			{
+				status: 409,
+				body: { error: "binding_disabled" },
+			},
+		);
+		expect(mapEmailIngestError(new database.XiaofeiChannelBindingConflictError("company"))).toEqual(
+			{
+				status: 409,
+				body: { error: "binding_conflict" },
+			},
+		);
+		expect(
+			mapEmailIngestError(
+				new database.XiaofeiEmailConversationConflictError("workspace", "conversation"),
+			),
+		).toEqual({
+			status: 409,
+			body: { error: "conversation_conflict" },
+		});
+		expect(
+			mapEmailIngestError(new database.XiaofeiEmailMirrorConflictError("workspace", "event")),
+		).toEqual({
+			status: 409,
+			body: { error: "event_conflict" },
+		});
+		expect(mapEmailIngestError(new Error("postgres secret body"))).toEqual({
+			status: 500,
+			body: { error: "internal_error" },
+		});
 	});
 });

@@ -20,6 +20,8 @@ import {
 	simulateIntegrationEventProcedure,
 	runMockWorkerProcedure,
 	runMockEmailMirrorProcedure,
+	listEmailMirrorMetadataProcedure,
+	getEmailMirrorDetailProcedure,
 } from "./procedures/integration-events";
 import {
 	createKnowledgeDocumentProcedure,
@@ -66,6 +68,8 @@ export const xiaofeiRouter = {
 	simulateIntegrationEvent: simulateIntegrationEventProcedure,
 	runMockWorker: runMockWorkerProcedure,
 	runMockEmailMirror: runMockEmailMirrorProcedure,
+	listEmailMirrorMetadata: listEmailMirrorMetadataProcedure,
+	getEmailMirrorDetail: getEmailMirrorDetailProcedure,
 	listEmailBindings: listEmailBindingsProcedure,
 	createEmailBinding: createEmailBindingProcedure,
 	updateEmailBinding: updateEmailBindingProcedure,

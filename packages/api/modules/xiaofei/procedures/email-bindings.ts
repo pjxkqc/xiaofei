@@ -17,9 +17,14 @@ const bindingInput = z.object({
 	status: z.enum(["active", "disabled"]).optional(),
 });
 
-export const listEmailBindingsProcedure = supportProcedure.handler(async ({ context }) =>
-	listXiaofeiOrganizationEmailChannelBindings(await getXiaofeiOrganizationId(context)),
-);
+export const listEmailBindingsProcedure = supportProcedure.handler(async ({ context }) => {
+	const organizationId = await getXiaofeiOrganizationId(context);
+	const tenantKey = await requireXiaofeiOrganizationAdmin(context).catch(() => null);
+	return {
+		items: await listXiaofeiOrganizationEmailChannelBindings(organizationId),
+		canManage: tenantKey !== null,
+	};
+});
 export const createEmailBindingProcedure = supportProcedure
 	.input(bindingInput)
 	.handler(async ({ context, input }) => {

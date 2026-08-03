@@ -1238,6 +1238,68 @@ export async function listXiaofeiOrganizationInboundEvents(
 	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
 	return listInboundEvents(workspace.id, options);
 }
+
+/** Email mirror list deliberately excludes payload, body, and attachment fields. */
+export async function listXiaofeiOrganizationEmailMirrorMetadata(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiInboundEvent.findMany({
+		where: { workspaceId: workspace.id, source: "email" },
+		select: {
+			id: true,
+			eventId: true,
+			status: true,
+			occurredAt: true,
+			firstReceivedAt: true,
+			lastReceivedAt: true,
+			deliveryCount: true,
+			conversationMessage: {
+				select: {
+					id: true,
+					conversationId: true,
+					direction: true,
+					senderType: true,
+					fromAddress: true,
+					subject: true,
+					occurredAt: true,
+					ingestedAt: true,
+					processingJob: { select: { id: true, status: true } },
+				},
+			},
+		},
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+export async function getXiaofeiOrganizationEmailMirrorDetail(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiInboundEvent.findFirst({
+		where: { id, workspaceId: workspace.id, source: "email" },
+		select: {
+			id: true,
+			eventId: true,
+			status: true,
+			occurredAt: true,
+			firstReceivedAt: true,
+			lastReceivedAt: true,
+			deliveryCount: true,
+			conversationMessage: {
+				select: {
+					id: true,
+					conversationId: true,
+					direction: true,
+					senderType: true,
+					fromAddress: true,
+					subject: true,
+					contentType: true,
+					contentValue: true,
+					attachments: true,
+					occurredAt: true,
+					ingestedAt: true,
+					processingJob: { select: { id: true, status: true } },
+				},
+			},
+		},
+	});
+}
 export async function acceptXiaofeiOrganizationInboundEvent(
 	organizationId: string,
 	input: AcceptInboundEventInput,

@@ -180,6 +180,12 @@ members read them, while owners/admins create, edit, enable, or disable them.
 The active Organization is resolved on the server and no binding request has a
 workspace field.
 
+The browser Email mirror simulator first resolves an active-Organization scoped
+binding and requires an exact company/account/address match before it calls the
+persistence service. Foreign or fabricated tuples fail before any write. The
+event monitor's Email list selects metadata only; body and attachment metadata
+are available only through an Organization-scoped detail read.
+
 `POST /api/xiaofei/integrations/events` accepts at most 1 MiB of JSON with a
 `ChannelEnvelope v1` body and `Authorization: Bearer <XIAOFEI_INGEST_API_KEY>`.
 The caller never chooses a workspace. Metadata headers are optional correlation data;

@@ -7,6 +7,8 @@ import {
 	listIntegrationEvents,
 	runMockWorker,
 	runMockEmailMirror,
+	listEmailMirrorMetadata,
+	getEmailMirrorDetail,
 	simulateOrganizationChannelEnvelope,
 } from "../integration-events";
 
@@ -70,3 +72,9 @@ export const runMockEmailMirrorProcedure = supportProcedure
 		}),
 	)
 	.handler(async ({ context, input }) => runMockEmailMirror(context, input));
+export const listEmailMirrorMetadataProcedure = supportProcedure.handler(({ context }) =>
+	listEmailMirrorMetadata(context),
+);
+export const getEmailMirrorDetailProcedure = supportProcedure
+	.input(z.object({ id: z.string().min(1) }))
+	.handler(({ context, input }) => getEmailMirrorDetail(context, input.id));

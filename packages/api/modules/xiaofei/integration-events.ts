@@ -14,7 +14,11 @@ import {
 	updateXiaofeiSupportConversation,
 	upsertXiaofeiSupportConversation,
 	XiaofeiInboundEventConflictError,
+	listXiaofeiOrganizationEmailMirrorMetadata,
+	getXiaofeiOrganizationEmailMirrorDetail,
 	acceptMirroredEmailMessage,
+	listXiaofeiOrganizationEmailChannelBindings,
+	XiaofeiChannelBindingNotFoundError,
 	type Prisma,
 } from "@repo/database";
 import {
@@ -31,7 +35,7 @@ import {
 	createKnowledgeWorkspaceBinding,
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	getOrCreateXiaofeiWorkspace,
-	getXiaofeiTenantKey,
+	getXiaofeiOrganizationId,
 	type XiaofeiAuthContext,
 } from "./service";
 
@@ -291,7 +295,7 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 /** Browser-safe mirror simulation: it constructs the shared DTO and calls the
  * persistence service directly. It never holds an ingest token or invokes AI. */
 export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unknown) {
-	const organizationId = await getXiaofeiTenantKey(context);
+	const organizationId = await getXiaofeiOrganizationId(context);
 	const payload = z
 		.object({
 			companyId: z.string().trim().min(1).max(100),
@@ -303,6 +307,15 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 			text: z.string().trim().min(1).max(10_000),
 		})
 		.parse(input);
+	const binding = (await listXiaofeiOrganizationEmailChannelBindings(organizationId)).find(
+		(item) =>
+			item.companyId === payload.companyId &&
+			item.channelAccountId === payload.channelAccountId &&
+			item.address === payload.address.trim().toLowerCase(),
+	);
+	// Do not pass a foreign or fabricated tuple into the global persistence
+	// boundary: that would allow an authenticated member to select another tenant.
+	if (!binding) throw new XiaofeiChannelBindingNotFoundError(payload.companyId);
 	const outbound = payload.scenario !== "inbound_customer";
 	const message = EmailMessageIngestV1Schema.parse({
 		schemaVersion: "email.message.v1",
@@ -336,7 +349,7 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 			topic: "mock.email",
 			partition: 0,
 			offset: 0,
-			workerVersion: organizationId,
+			workerVersion: `organization:${organizationId}`,
 		},
 	});
 	return acceptMirroredEmailMessage(message);
@@ -384,6 +397,12 @@ export async function listIntegrationEvents(
 export async function getIntegrationEvent(context: XiaofeiAuthContext, id: string) {
 	const { workspace } = await getOrCreateXiaofeiWorkspace(context);
 	return await getInboundEvent(workspace.id, id);
+}
+export async function listEmailMirrorMetadata(context: XiaofeiAuthContext) {
+	return listXiaofeiOrganizationEmailMirrorMetadata(await getXiaofeiOrganizationId(context));
+}
+export async function getEmailMirrorDetail(context: XiaofeiAuthContext, id: string) {
+	return getXiaofeiOrganizationEmailMirrorDetail(await getXiaofeiOrganizationId(context), id);
 }
 
 export function isValidIngestApiKey(authorization: string | undefined): boolean {

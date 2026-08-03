@@ -15,12 +15,16 @@ vi.mock("@repo/database", () => ({
 	updateXiaofeiSupportConversation: vi.fn(),
 	upsertXiaofeiSupportConversation: vi.fn(),
 	XiaofeiInboundEventConflictError: class XiaofeiInboundEventConflictError extends Error {},
+	XiaofeiChannelBindingNotFoundError: class XiaofeiChannelBindingNotFoundError extends Error {},
+	listXiaofeiOrganizationEmailChannelBindings: vi.fn(),
+	acceptMirroredEmailMessage: vi.fn(),
 }));
 vi.mock("@repo/ai", () => ({ runXiaofeiTurn: vi.fn() }));
 vi.mock("./service", () => ({
 	getOrCreatePublicXiaofeiWorkspace: vi.fn(),
 	getOrCreateXiaofeiWorkspace: vi.fn(),
 	getOrCreateXiaofeiWorkspaceByTenantKey: vi.fn(),
+	getXiaofeiOrganizationId: vi.fn(),
 	createKnowledgeWorkspaceBinding: vi.fn(),
 }));
 
@@ -32,12 +36,15 @@ import {
 	getXiaofeiConversation,
 	updateXiaofeiCustomer,
 	updateXiaofeiInboundEventStatus,
+	listXiaofeiOrganizationEmailChannelBindings,
+	acceptMirroredEmailMessage,
 } from "@repo/database";
 
 import {
 	channelEnvelopeSchema,
 	ingestChannelEnvelope,
 	runMockWorker,
+	runMockEmailMirror,
 	isValidIngestApiKey,
 	MAX_INBOUND_EVENT_BYTES,
 	safeInboundHeaders,
@@ -46,6 +53,7 @@ import {
 	getOrCreatePublicXiaofeiWorkspace,
 	getOrCreateXiaofeiWorkspace,
 	getOrCreateXiaofeiWorkspaceByTenantKey,
+	getXiaofeiOrganizationId,
 } from "./service";
 
 describe("ChannelEnvelope v1", () => {
@@ -285,5 +293,52 @@ describe("organization mock worker", () => {
 			"event-a",
 			expect.objectContaining({ status: "conversation_conflict" }),
 		);
+	});
+});
+
+describe("email mirror mock tenant boundary", () => {
+	const context = { session: { activeOrganizationId: "org-a" }, user: { id: "user-a" } };
+	const input = {
+		companyId: "company-a",
+		channelAccountId: "account-a",
+		address: "support@example.com",
+		externalConversationId: "email:company-a:pair",
+		eventId: "email:company-a:1",
+		scenario: "inbound_customer" as const,
+		text: "hello",
+	};
+	beforeEach(() => {
+		vi.mocked(getXiaofeiOrganizationId).mockResolvedValue("org-a");
+		vi.mocked(acceptMirroredEmailMessage).mockResolvedValue({
+			status: "accepted",
+			conversationId: "c",
+			messageId: "m",
+			jobId: "j",
+		} as never);
+	});
+	it("rejects a foreign or fabricated binding before persistence", async () => {
+		vi.mocked(listXiaofeiOrganizationEmailChannelBindings).mockResolvedValue([
+			{
+				companyId: "company-b",
+				channelAccountId: "account-b",
+				address: "other@example.com",
+				status: "active",
+			},
+		] as never);
+		await expect(runMockEmailMirror(context, input)).rejects.toThrow();
+		expect(acceptMirroredEmailMessage).not.toHaveBeenCalled();
+	});
+	it("uses only the active Organization exact binding and never invokes AI", async () => {
+		vi.mocked(listXiaofeiOrganizationEmailChannelBindings).mockResolvedValue([
+			{
+				companyId: input.companyId,
+				channelAccountId: input.channelAccountId,
+				address: input.address,
+				status: "active",
+			},
+		] as never);
+		await runMockEmailMirror(context, input);
+		expect(acceptMirroredEmailMessage).toHaveBeenCalledOnce();
+		expect(runXiaofeiTurn).not.toHaveBeenCalled();
 	});
 });

@@ -26,6 +26,14 @@ The product surface is deliberately kept to small, focused pages:
   WhatsApp simulator. It resolves the configured external merchant server-side,
   binds the customer/conversation, and records the Xiaofei delivery plus its
   ignored echo in the same event monitor.
+- Its Email mirror panel selects only bindings returned for the active
+  Organization and exercises inbound, outbound, duplicate, conflict, missing,
+  and disabled-binding outcomes through the same persistence service. It never
+  receives an ingest credential or calls the public HTTP route.
+- `/integrations/events` includes an Email mirror metadata list (event,
+  normalized direction/sender, conversation/job locators, and receipt times).
+  It does not load payload, body, or attachment references until a scoped detail
+  row is selected.
 - `/integrations/email-bindings` lists the active Organization's Email company,
   account, address, and status. Members are read-only; owner/admin mutations
   are enforced on the server. No browser receives the Email ingest service key.

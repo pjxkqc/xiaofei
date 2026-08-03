@@ -34,6 +34,8 @@ export function IntegrationEvents() {
 	const [status, setStatus] = useState("");
 	const [topic, setTopic] = useState("");
 	const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+	const [emailMirrors, setEmailMirrors] = useState<Record<string, any>[]>([]);
+	const [emailDetail, setEmailDetail] = useState<Record<string, unknown> | null>(null);
 	const [notice, setNotice] = useState("Loading event metadata…");
 
 	async function load() {
@@ -46,9 +48,21 @@ export function IntegrationEvents() {
 				limit: 25,
 			});
 			setItems(page.items as EventSummary[]);
+			setEmailMirrors(
+				(await orpcClient.xiaofei.listEmailMirrorMetadata()) as Record<string, any>[],
+			);
 			setNotice(page.items.length ? "" : "No events match these filters.");
 		} catch {
 			setNotice("Unable to load integration events.");
+		}
+	}
+	async function showEmailDetail(id: string) {
+		try {
+			setEmailDetail(
+				(await orpcClient.xiaofei.getEmailMirrorDetail({ id })) as Record<string, unknown>,
+			);
+		} catch {
+			setNotice("Unable to load Email mirror detail.");
 		}
 	}
 	useEffect(() => {
@@ -174,6 +188,44 @@ export function IntegrationEvents() {
 					</div>
 				</CardContent>
 			</Card>
+			<Card>
+				<CardHeader>
+					<CardTitle>Email mirror</CardTitle>
+					<CardDescription>
+						Organization-scoped metadata only. Body and attachment references load only after
+						selecting a row.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<div className="divide-y rounded-md border">
+						{emailMirrors.map((event) => {
+							const message = event.conversationMessage;
+							return (
+								<button
+									key={event.id}
+									type="button"
+									className="gap-2 p-3 md:grid-cols-5 grid w-full text-left hover:bg-muted/50"
+									onClick={() => void showEmailDetail(event.id)}
+								>
+									<span className="font-mono text-xs">{event.eventId}</span>
+									<span>
+										{message?.direction ?? "—"} / {message?.senderType ?? "—"}
+									</span>
+									<span>{message?.conversationId ?? "—"}</span>
+									<span>
+										{message?.processingJob
+											? `${message.processingJob.status} · ${message.processingJob.id}`
+											: "outbound · no job"}
+									</span>
+									<span>
+										{event.deliveryCount} deliveries · {formatDateTime(message?.ingestedAt ?? null)}
+									</span>
+								</button>
+							);
+						})}
+					</div>
+				</CardContent>
+			</Card>
 			{selected && (
 				<Card>
 					<CardHeader>
@@ -183,6 +235,19 @@ export function IntegrationEvents() {
 					<CardContent>
 						<pre className="max-h-96 rounded p-4 text-xs overflow-auto bg-muted">
 							{JSON.stringify(selected, null, 2)}
+						</pre>
+					</CardContent>
+				</Card>
+			)}
+			{emailDetail && (
+				<Card>
+					<CardHeader>
+						<CardTitle>Email mirror detail</CardTitle>
+						<CardDescription>Scoped, on-demand content and attachment metadata.</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<pre className="max-h-96 rounded p-4 text-xs overflow-auto bg-muted">
+							{JSON.stringify(emailDetail, null, 2)}
 						</pre>
 					</CardContent>
 				</Card>
