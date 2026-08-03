@@ -296,6 +296,9 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
  * persistence service directly. It never holds an ingest token or invokes AI. */
 export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unknown) {
 	const organizationId = await getXiaofeiOrganizationId(context);
+	// The Email mirror can be the first Xiaofei surface used by an Organization.
+	// Ensure the server-derived workspace exists before binding resolution.
+	await getOrCreateXiaofeiWorkspace(context);
 	const payload = z
 		.object({
 			companyId: z.string().trim().min(1).max(100),
@@ -399,10 +402,14 @@ export async function getIntegrationEvent(context: XiaofeiAuthContext, id: strin
 	return await getInboundEvent(workspace.id, id);
 }
 export async function listEmailMirrorMetadata(context: XiaofeiAuthContext) {
-	return listXiaofeiOrganizationEmailMirrorMetadata(await getXiaofeiOrganizationId(context));
+	const organizationId = await getXiaofeiOrganizationId(context);
+	await getOrCreateXiaofeiWorkspace(context);
+	return listXiaofeiOrganizationEmailMirrorMetadata(organizationId);
 }
 export async function getEmailMirrorDetail(context: XiaofeiAuthContext, id: string) {
-	return getXiaofeiOrganizationEmailMirrorDetail(await getXiaofeiOrganizationId(context), id);
+	const organizationId = await getXiaofeiOrganizationId(context);
+	await getOrCreateXiaofeiWorkspace(context);
+	return getXiaofeiOrganizationEmailMirrorDetail(organizationId, id);
 }
 
 export function isValidIngestApiKey(authorization: string | undefined): boolean {

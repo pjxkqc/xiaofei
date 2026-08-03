@@ -9,7 +9,11 @@ import {
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import { getXiaofeiOrganizationId, requireXiaofeiOrganizationAdmin } from "../service";
+import {
+	getOrCreateXiaofeiWorkspace,
+	getXiaofeiOrganizationId,
+	requireXiaofeiOrganizationAdmin,
+} from "../service";
 
 const bindingInput = z.object({
 	companyId: z.string().trim().min(1).max(120),
@@ -20,6 +24,10 @@ const bindingInput = z.object({
 
 export const listEmailBindingsProcedure = supportProcedure.handler(async ({ context }) => {
 	const organizationId = await getXiaofeiOrganizationId(context);
+	// A newly-created Organization may not have opened another Xiaofei surface
+	// yet. Binding management is itself a valid first entry point, so establish
+	// the Organization workspace before the database query requires it.
+	await getOrCreateXiaofeiWorkspace(context);
 	let canManage = false;
 	try {
 		await requireXiaofeiOrganizationAdmin(context);
@@ -36,6 +44,7 @@ export const createEmailBindingProcedure = supportProcedure
 	.input(bindingInput)
 	.handler(async ({ context, input }) => {
 		await requireXiaofeiOrganizationAdmin(context);
+		await getOrCreateXiaofeiWorkspace(context);
 		return createXiaofeiOrganizationEmailChannelBinding(
 			await getXiaofeiOrganizationId(context),
 			input,
@@ -45,6 +54,7 @@ export const updateEmailBindingProcedure = supportProcedure
 	.input(z.object({ id: z.string().min(1), data: bindingInput.partial() }))
 	.handler(async ({ context, input }) => {
 		await requireXiaofeiOrganizationAdmin(context);
+		await getOrCreateXiaofeiWorkspace(context);
 		return updateXiaofeiOrganizationEmailChannelBinding(
 			await getXiaofeiOrganizationId(context),
 			input.id,
@@ -55,6 +65,7 @@ export const enableEmailBindingProcedure = supportProcedure
 	.input(z.object({ id: z.string().min(1) }))
 	.handler(async ({ context, input }) => {
 		await requireXiaofeiOrganizationAdmin(context);
+		await getOrCreateXiaofeiWorkspace(context);
 		return enableXiaofeiOrganizationEmailChannelBinding(
 			await getXiaofeiOrganizationId(context),
 			input.id,
@@ -64,6 +75,7 @@ export const disableEmailBindingProcedure = supportProcedure
 	.input(z.object({ id: z.string().min(1) }))
 	.handler(async ({ context, input }) => {
 		await requireXiaofeiOrganizationAdmin(context);
+		await getOrCreateXiaofeiWorkspace(context);
 		return disableXiaofeiOrganizationEmailChannelBinding(
 			await getXiaofeiOrganizationId(context),
 			input.id,

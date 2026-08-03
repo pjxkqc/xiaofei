@@ -17,6 +17,8 @@ vi.mock("@repo/database", () => ({
 	XiaofeiInboundEventConflictError: class XiaofeiInboundEventConflictError extends Error {},
 	XiaofeiChannelBindingNotFoundError: class XiaofeiChannelBindingNotFoundError extends Error {},
 	listXiaofeiOrganizationEmailChannelBindings: vi.fn(),
+	listXiaofeiOrganizationEmailMirrorMetadata: vi.fn(),
+	getXiaofeiOrganizationEmailMirrorDetail: vi.fn(),
 	acceptMirroredEmailMessage: vi.fn(),
 }));
 vi.mock("@repo/ai", () => ({ runXiaofeiTurn: vi.fn() }));
@@ -37,6 +39,8 @@ import {
 	updateXiaofeiCustomer,
 	updateXiaofeiInboundEventStatus,
 	listXiaofeiOrganizationEmailChannelBindings,
+	listXiaofeiOrganizationEmailMirrorMetadata,
+	getXiaofeiOrganizationEmailMirrorDetail,
 	acceptMirroredEmailMessage,
 } from "@repo/database";
 
@@ -45,6 +49,8 @@ import {
 	ingestChannelEnvelope,
 	runMockWorker,
 	runMockEmailMirror,
+	listEmailMirrorMetadata,
+	getEmailMirrorDetail,
 	isValidIngestApiKey,
 	MAX_INBOUND_EVENT_BYTES,
 	safeInboundHeaders,
@@ -308,7 +314,11 @@ describe("email mirror mock tenant boundary", () => {
 		text: "hello",
 	};
 	beforeEach(() => {
+		vi.clearAllMocks();
 		vi.mocked(getXiaofeiOrganizationId).mockResolvedValue("org-a");
+		vi.mocked(getOrCreateXiaofeiWorkspace).mockResolvedValue({
+			workspace: { id: "workspace-a" },
+		} as never);
 		vi.mocked(acceptMirroredEmailMessage).mockResolvedValue({
 			status: "accepted",
 			conversationId: "c",
@@ -338,7 +348,19 @@ describe("email mirror mock tenant boundary", () => {
 			},
 		] as never);
 		await runMockEmailMirror(context, input);
+		expect(getOrCreateXiaofeiWorkspace).toHaveBeenCalledWith(context);
 		expect(acceptMirroredEmailMessage).toHaveBeenCalledOnce();
 		expect(runXiaofeiTurn).not.toHaveBeenCalled();
+	});
+	it("initializes a new Organization workspace before metadata list and detail reads", async () => {
+		vi.mocked(listXiaofeiOrganizationEmailMirrorMetadata).mockResolvedValue([] as never);
+		vi.mocked(getXiaofeiOrganizationEmailMirrorDetail).mockResolvedValue(null as never);
+
+		await expect(listEmailMirrorMetadata(context)).resolves.toEqual([]);
+		await expect(getEmailMirrorDetail(context, "event-a")).resolves.toBeNull();
+
+		expect(getOrCreateXiaofeiWorkspace).toHaveBeenCalledTimes(2);
+		expect(listXiaofeiOrganizationEmailMirrorMetadata).toHaveBeenCalledWith("org-a");
+		expect(getXiaofeiOrganizationEmailMirrorDetail).toHaveBeenCalledWith("org-a", "event-a");
 	});
 });
