@@ -1,10 +1,11 @@
-import { createUser, getUserByEmail } from "@repo/database";
+import { createUser, getUserByEmail, synchronizePreviewFixtures } from "@repo/database";
 import { APIError, createAuthEndpoint, formCsrfMiddleware } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 
 import {
 	createPreviewOperatorSession,
 	getOrCreatePreviewOperator,
+	initializePreviewFixtures,
 	isPreviewOneClickLoginEnabled,
 	previewOneClickLoginPath,
 	previewOperatorEmail,
@@ -24,6 +25,11 @@ export function previewOneClickLoginPlugin() {
 					if (!isPreviewOneClickLoginEnabled()) {
 						throw APIError.fromStatus("NOT_FOUND", { message: "Not found" });
 					}
+
+					await initializePreviewFixtures({
+						hashPassword: (password) => ctx.context.password.hash(password),
+						synchronizeFixtures: synchronizePreviewFixtures,
+					});
 
 					const user = await getOrCreatePreviewOperator({
 						findUserByEmail: getUserByEmail,

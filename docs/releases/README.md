@@ -96,18 +96,20 @@ maintained page, because every push creates a new one.
 
 ## Test access
 
-| Use case              | Environment        | Account or method                                                                                                                                   |
-| --------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Customer conversation | All                | No account. Open `/support`, enter an optional display name, and start a new conversation.                                                          |
-| Preview operator      | PR Preview and UAT | Click **Continue as Preview operator** on `/login`. The isolated account is `preview-operator@xiaofei.invalid`; no password is exposed or required. |
-| Normal test user      | Any environment    | Register a disposable email at `/signup`; email verification is disabled. Keep the chosen password private.                                         |
-| Production operator   | Production         | Use an individually owned account. No shared Production password or bypass account is maintained.                                                   |
-| Local developer       | Local              | Create a local user against the selected local database.                                                                                            |
+| Use case              | Environment        | Account or method                                                                                                                                                                                                  |
+| --------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Customer conversation | All                | No account. Open `/support`, enter an optional display name, and start a new conversation.                                                                                                                         |
+| Preview operator      | PR Preview and UAT | Click **Continue as Preview operator** on `/login` to idempotently initialize synthetic fixtures. `preview-operator@xiaofei.invalid` needs no password; then sign out and use the documented public fixture roles. |
+| Normal test user      | Any environment    | Register a disposable email at `/signup`; email verification is disabled. Keep the chosen password private.                                                                                                        |
+| Production operator   | Production         | Use an individually owned account. No shared Production password or bypass account is maintained.                                                                                                                  |
+| Local developer       | Local              | Create a local user against the selected local database.                                                                                                                                                           |
 
 The Preview operator is created independently inside each Preview database
-branch. Its email is a public identifier, not a credential. Never add a
-password, API key, session cookie, database URL, real customer data, or copied
-authorization header to this page, a GitHub Release, or a Multica issue.
+branch. Its email is a public identifier, not a credential. Only the explicitly
+documented Preview/UAT synthetic fixture passwords may be published; never add
+real, Production, or personal passwords, API keys, session cookies, database
+URLs, real customer data, or copied authorization headers to this page, a
+GitHub Release, or a Multica issue. Production has no shared test account.
 
 ## Recommended demo path
 

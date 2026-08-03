@@ -5,6 +5,7 @@ import { sessionQueryKey } from "@auth/lib/api";
 import { config } from "@config";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { OrganizationInvitationAlert } from "@organizations/components/OrganizationInvitationAlert";
+import { previewRoleAccounts } from "@repo/auth";
 import { authClient } from "@repo/auth/client";
 import { config as authConfig } from "@repo/auth/config";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
@@ -170,14 +171,33 @@ export function LoginForm({
 					{invitationId && <OrganizationInvitationAlert className="mb-6" />}
 
 					{previewOneClickLoginEnabled && (
-						<Button
-							className="mb-4 w-full"
-							type="button"
-							variant="secondary"
-							onClick={() => signInWithPreviewOperator()}
-						>
-							Continue as Preview operator
-						</Button>
+						<>
+							<Button
+								className="mb-4 w-full"
+								type="button"
+								variant="secondary"
+								onClick={() => signInWithPreviewOperator()}
+							>
+								Continue as Preview operator
+							</Button>
+							<Alert className="mb-4" variant="default">
+								<AlertTitle>Test role accounts</AlertTitle>
+								<AlertDescription>
+									<p className="mb-2">
+										First use the Preview operator to initialize fixtures. Then sign out and use the
+										email/password form.
+									</p>
+									<ul className="space-y-1 text-xs">
+										{previewRoleAccounts.map((account) => (
+											<li key={account.email}>
+												<strong>{account.role}</strong> — {account.email} / {account.password} (
+												{account.organization})
+											</li>
+										))}
+									</ul>
+								</AlertDescription>
+							</Alert>
+						</>
 					)}
 
 					<Form {...form}>

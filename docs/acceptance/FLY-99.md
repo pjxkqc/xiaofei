@@ -24,9 +24,10 @@ Production was not touched.
 
 ## Test access / 验收访问
 
-Follow the global [Test access](../releases/README.md#test-access) rules. Do
-not put passwords, session cookies, tokens, or database URLs in Git, the PR,
-or Multica.
+Follow the global [Test access](../releases/README.md#test-access) rules. The
+listed Preview/UAT fixture passwords are public synthetic-data credentials, not
+secrets. Do not put real, Production, or personal passwords, session cookies,
+tokens, or database URLs in Git, the PR, or Multica.
 
 - Login URL:
   [Preview login](https://xiaofei-preview-git-agent-fly-99-customer-c-0955d5-flyranking16.vercel.app/login)
@@ -50,6 +51,14 @@ A` and `FLY-99 验收商户 B`. This operator is the owner for both acceptance
   or admin account is asserted here.
 - If the current login session is incorrect, sign out, then return to `/login`
   and use the one-click operator again.
+- One-click initialization is idempotent: it repairs only these fixture users,
+  roles, Organizations, and customers while preserving unrelated data. Then
+  sign out and use the ordinary email/password form for Owner A
+  (`preview-owner@xiaofei.invalid` / `PreviewOnly-Owner-2026!`), Admin A
+  (`preview-admin@xiaofei.invalid` / `PreviewOnly-Admin-2026!`), Member A
+  (`preview-member@xiaofei.invalid` / `PreviewOnly-Member-2026!`), or Owner B
+  (`preview-owner-b@xiaofei.invalid` / `PreviewOnly-OwnerB-2026!`). These are
+  public Preview/UAT-only fixtures; Production has no shared test account.
 
 ## Preview acceptance data
 
