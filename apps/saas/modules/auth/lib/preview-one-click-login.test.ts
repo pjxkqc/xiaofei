@@ -114,6 +114,12 @@ describe("Preview one-click login", () => {
 		);
 		expect(loginFormSource).toContain("previewOneClickLoginEnabled &&");
 		expect(loginFormSource).toContain("Test role accounts");
+		expect(loginFormSource).not.toContain('from "@repo/auth"');
+		const loginPageSource = readFileSync(
+			path.resolve(import.meta.dirname, "../../../app/(unauthenticated)/login/page.tsx"),
+			"utf8",
+		);
+		expect(loginPageSource).toContain("previewOneClickLoginEnabled ? previewRoleAccounts : []");
 	});
 
 	it("creates the Better Auth session and writes its session cookie without returning a token", async () => {

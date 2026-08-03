@@ -242,7 +242,9 @@ For every infrastructure-affecting PR:
 10. Confirm the production deployment becomes Ready and the `main` quality
     workflow succeeds.
 
-Never put test passwords, API keys, database URLs, or response headers into a
+Only the synthetic Preview/UAT fixture passwords explicitly listed in repository
+documentation may be committed. Never put Production, real, or personal
+passwords, API keys, database URLs, or response headers into a
 PR description, Actions artifact, screenshot, or application log.
 
 ## Observed cleanup behavior

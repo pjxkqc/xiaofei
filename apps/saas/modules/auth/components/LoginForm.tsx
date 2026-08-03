@@ -5,7 +5,6 @@ import { sessionQueryKey } from "@auth/lib/api";
 import { config } from "@config";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { OrganizationInvitationAlert } from "@organizations/components/OrganizationInvitationAlert";
-import { previewRoleAccounts } from "@repo/auth";
 import { authClient } from "@repo/auth/client";
 import { config as authConfig } from "@repo/auth/config";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
@@ -53,8 +52,15 @@ const formSchema = z.union([
 
 export function LoginForm({
 	previewOneClickLoginEnabled = false,
+	previewRoleAccounts = [],
 }: {
 	previewOneClickLoginEnabled?: boolean;
+	previewRoleAccounts?: ReadonlyArray<{
+		role: string;
+		email: string;
+		password: string;
+		organization: string;
+	}>;
 }) {
 	const t = useTranslations();
 	const { getAuthErrorMessage } = useAuthErrorMessages();
