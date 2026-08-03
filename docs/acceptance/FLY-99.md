@@ -22,6 +22,35 @@ evidence-only; it does not change the accepted application behavior.
 
 Production was not touched.
 
+## Test access / 验收访问
+
+Follow the global [Test access](../releases/README.md#test-access) rules. Do
+not put passwords, session cookies, tokens, or database URLs in Git, the PR,
+or Multica.
+
+- Login URL:
+  [Preview login](https://xiaofei-preview-git-agent-fly-99-customer-c-0955d5-flyranking16.vercel.app/login)
+- Select **Continue as Preview operator** to create or reuse the Preview
+  acceptance account and sign in.
+- Account identifier: `preview-operator@xiaofei.invalid`. Password: **Not
+  required / 无需密码**. This is Preview-only one-click login, not a shared
+  password stored in the repository.
+- After sign-in, use the left Organization switcher to select `FLY-99 验收商户
+A` and `FLY-99 验收商户 B`. This operator is the owner for both acceptance
+  Organizations and can verify customer creation, editing, archiving, and
+  isolation.
+- In Organization A, the accepted customer is
+  `fly99-demo-customer-a`: `王小明（FLY-99 已编辑）`,
+  `fly99.customer@example.com`, WhatsApp `+8613800000099`, archived.
+- `/support` is the public customer entry point and does not require login.
+  A normal signup user may register with a disposable email and choose a
+  private password; FLY-99 did not create or use a fixed-password account.
+- Member read-only behavior and API authorization are covered by automated
+  tests. The real Preview manual acceptance used the owner operator; no member
+  or admin account is asserted here.
+- If the current login session is incorrect, sign out, then return to `/login`
+  and use the one-click operator again.
+
 ## Preview acceptance data
 
 - Organization A: `FLY-99 验收商户 A`
