@@ -306,6 +306,7 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 			address: z.string().trim().email(),
 			externalConversationId: z.string().trim().min(1),
 			eventId: z.string().trim().min(1),
+			occurredAt: z.iso.datetime(),
 			scenario: z.enum(["inbound_customer", "outbound_loopdesk", "outbound_xiaofei"]),
 			text: z.string().trim().min(1).max(10_000),
 		})
@@ -323,7 +324,7 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 	const message = EmailMessageIngestV1Schema.parse({
 		schemaVersion: "email.message.v1",
 		eventId: payload.eventId,
-		occurredAt: new Date().toISOString(),
+		occurredAt: payload.occurredAt,
 		tenant: { companyId: payload.companyId },
 		channel: "email",
 		channelAccount: { id: payload.channelAccountId, address: payload.address },
@@ -345,7 +346,7 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 			attachments: [],
 			labels: [],
 			sourceSendType: null,
-			sentAt: new Date().toISOString(),
+			sentAt: payload.occurredAt,
 		},
 		source: {
 			system: "xiaofei-mock",

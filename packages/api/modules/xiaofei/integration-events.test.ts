@@ -310,6 +310,7 @@ describe("email mirror mock tenant boundary", () => {
 		address: "support@example.com",
 		externalConversationId: "email:company-a:pair",
 		eventId: "email:company-a:1",
+		occurredAt: "2026-08-03T00:00:00.000Z",
 		scenario: "inbound_customer" as const,
 		text: "hello",
 	};
@@ -350,6 +351,12 @@ describe("email mirror mock tenant boundary", () => {
 		await runMockEmailMirror(context, input);
 		expect(getOrCreateXiaofeiWorkspace).toHaveBeenCalledWith(context);
 		expect(acceptMirroredEmailMessage).toHaveBeenCalledOnce();
+		expect(acceptMirroredEmailMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				occurredAt: input.occurredAt,
+				message: expect.objectContaining({ sentAt: input.occurredAt }),
+			}),
+		);
 		expect(runXiaofeiTurn).not.toHaveBeenCalled();
 	});
 	it("initializes a new Organization workspace before metadata list and detail reads", async () => {

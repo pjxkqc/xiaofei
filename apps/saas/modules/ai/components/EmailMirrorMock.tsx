@@ -65,12 +65,14 @@ export function EmailMirrorMock() {
 			return;
 		}
 		const eventId = `mock:email:${crypto.randomUUID()}`;
+		const occurredAt = new Date().toISOString();
 		const input = {
 			companyId: scenario === "missing_binding" ? "missing-company" : binding.companyId,
 			channelAccountId: binding.channelAccountId,
 			address: binding.address,
 			externalConversationId: `email:${binding.companyId}:mock-${crypto.randomUUID()}`,
 			eventId,
+			occurredAt,
 			scenario:
 				scenario === "outbound_loopdesk" || scenario === "outbound_xiaofei"
 					? scenario
