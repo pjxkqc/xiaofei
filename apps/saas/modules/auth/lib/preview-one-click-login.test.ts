@@ -65,11 +65,24 @@ describe("Preview one-click login", () => {
 			previewRoleAccounts.length,
 		);
 		const input = createPreviewFixtureInput({
+			"preview-global-admin@xiaofei.invalid": "global-admin-hash",
 			"preview-owner@xiaofei.invalid": "owner-hash",
 			"preview-admin@xiaofei.invalid": "admin-hash",
 			"preview-member@xiaofei.invalid": "member-hash",
 			"preview-owner-b@xiaofei.invalid": "owner-b-hash",
 		});
+		expect(input.users).toContainEqual(
+			expect.objectContaining({
+				email: "preview-global-admin@xiaofei.invalid",
+				role: "admin",
+				passwordHash: "global-admin-hash",
+			}),
+		);
+		expect(
+			input.memberships.some(
+				(membership) => membership.userEmail === "preview-global-admin@xiaofei.invalid",
+			),
+		).toBe(false);
 		expect(input.memberships).toEqual(
 			expect.arrayContaining([
 				{ organizationSlug: "fly-99-a", userEmail: "preview-owner@xiaofei.invalid", role: "owner" },
@@ -105,6 +118,10 @@ describe("Preview one-click login", () => {
 		).toBe(true);
 		expect(first.customers).toHaveLength(2);
 		expect(first).not.toHaveProperty("delete");
+		const globalAdmin = first.users.find(
+			(user) => user.email === "preview-global-admin@xiaofei.invalid",
+		);
+		expect(globalAdmin && "role" in globalAdmin ? globalAdmin.role : undefined).toBe("admin");
 	});
 
 	it("renders role accounts only behind the Preview login flag", () => {
@@ -120,6 +137,20 @@ describe("Preview one-click login", () => {
 			"utf8",
 		);
 		expect(loginPageSource).toContain("previewOneClickLoginEnabled ? previewRoleAccounts : []");
+	});
+
+	it("renders Preview initialization feedback independently from form submission", () => {
+		const loginFormSource = readFileSync(
+			path.resolve(import.meta.dirname, "../components/LoginForm.tsx"),
+			"utf8",
+		);
+		expect(loginFormSource).toContain("const [previewSignInPending, setPreviewSignInPending]");
+		expect(loginFormSource).toContain("if (previewSignInPending) return;");
+		expect(loginFormSource).toContain("loading={previewSignInPending}");
+		expect(loginFormSource).toContain("disabled={previewSignInPending}");
+		expect(loginFormSource).toContain("Initializing Preview operator…");
+		expect(loginFormSource).toContain('setPreviewSignInError("Preview sign-in is unavailable.")');
+		expect(loginFormSource).toContain("{previewSignInError && (");
 	});
 
 	it("creates the Better Auth session and writes its session cookie without returning a token", async () => {

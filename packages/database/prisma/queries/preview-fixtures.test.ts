@@ -87,7 +87,14 @@ describe("synchronizePreviewFixtures", () => {
 		);
 
 		await synchronizePreviewFixtures({
-			users: [{ email: "fixture@example.invalid", name: "Fixture", passwordHash: "new-hash" }],
+			users: [
+				{
+					email: "fixture@example.invalid",
+					name: "Fixture",
+					role: "admin",
+					passwordHash: "new-hash",
+				},
+			],
 			organizations: [],
 			memberships: [],
 			customers: [],
@@ -97,5 +104,8 @@ describe("synchronizePreviewFixtures", () => {
 			where: { id: "credential-account" },
 			data: { accountId: "fixture-user", password: "new-hash" },
 		});
+		expect(mocks.transaction.user.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({ update: expect.objectContaining({ role: "admin" }) }),
+		);
 	});
 });

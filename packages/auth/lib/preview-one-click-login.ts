@@ -3,28 +3,38 @@ export const previewOperatorEmail = "preview-operator@xiaofei.invalid";
 
 export const previewRoleAccounts = [
 	{
+		role: "Global Admin",
+		email: "preview-global-admin@xiaofei.invalid",
+		password: "PreviewOnly-GlobalAdmin-2026!",
+		applicationRole: "admin",
+	},
+	{
 		role: "Owner A",
 		email: "preview-owner@xiaofei.invalid",
 		password: "PreviewOnly-Owner-2026!",
 		organization: "FLY-99 验收商户 A",
+		applicationRole: "user",
 	},
 	{
 		role: "Admin A",
 		email: "preview-admin@xiaofei.invalid",
 		password: "PreviewOnly-Admin-2026!",
 		organization: "FLY-99 验收商户 A",
+		applicationRole: "user",
 	},
 	{
 		role: "Member A",
 		email: "preview-member@xiaofei.invalid",
 		password: "PreviewOnly-Member-2026!",
 		organization: "FLY-99 验收商户 A",
+		applicationRole: "user",
 	},
 	{
 		role: "Owner B",
 		email: "preview-owner-b@xiaofei.invalid",
 		password: "PreviewOnly-OwnerB-2026!",
 		organization: "FLY-99 验收商户 B",
+		applicationRole: "user",
 	},
 ] as const;
 
@@ -49,6 +59,7 @@ export function createPreviewFixtureInput(passwordHashes: Record<string, string>
 			...previewRoleAccounts.map((account) => ({
 				email: account.email,
 				name: account.role,
+				role: account.applicationRole,
 				passwordHash: passwordHashes[account.email],
 			})),
 		],

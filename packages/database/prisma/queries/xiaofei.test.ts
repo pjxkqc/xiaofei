@@ -41,9 +41,11 @@ const queryMocks = vi.hoisted(() => {
 		findDocumentInTransaction: transactionClient.xiaofeiKnowledgeDocument.findUnique,
 		listDocuments: vi.fn(),
 		queryRaw: transactionClient.$queryRaw,
-		transaction: vi.fn(async (callback: (client: typeof transactionClient) => unknown) => {
-			return await callback(transactionClient);
-		}),
+		transaction: vi.fn(
+			async (input: ((client: typeof transactionClient) => unknown) | unknown[]) => {
+				return Array.isArray(input) ? await Promise.all(input) : await input(transactionClient);
+			},
+		),
 		updateDocument: vi.fn(),
 		updateDocumentInTransaction: transactionClient.xiaofeiKnowledgeDocument.update,
 		createEntry: transactionClient.xiaofeiKnowledgeEntry.create,
@@ -56,6 +58,8 @@ const queryMocks = vi.hoisted(() => {
 		createUnit: transactionClient.xiaofeiKnowledgeUnit.create,
 		findUnit: vi.fn(),
 		listUnits: vi.fn(),
+		listAdminOrganizations: vi.fn(),
+		countAdminOrganizations: vi.fn(),
 		invalidateUnits: transactionClient.xiaofeiKnowledgeUnit.updateMany,
 		createInboundEvent: transactionClient.xiaofeiInboundEvent.create,
 		findInboundEventInTransaction: transactionClient.xiaofeiInboundEvent.findUnique,
@@ -81,6 +85,10 @@ const queryMocks = vi.hoisted(() => {
 vi.mock("../client", () => ({
 	db: {
 		$transaction: queryMocks.transaction,
+		organization: {
+			findMany: queryMocks.listAdminOrganizations,
+			count: queryMocks.countAdminOrganizations,
+		},
 		xiaofeiKnowledgeDocument: {
 			findMany: queryMocks.listDocuments,
 			findUnique: queryMocks.findDocument,
@@ -128,6 +136,7 @@ import {
 	getXiaofeiKnowledgeEntry,
 	listXiaofeiKnowledgeEntries,
 	listXiaofeiKnowledgeDocuments,
+	listAdminXiaofeiOrganizations,
 	MAX_XIAOFEI_KNOWLEDGE_DOCUMENT_BODY_BYTES_PER_WORKSPACE,
 	MAX_XIAOFEI_KNOWLEDGE_DOCUMENTS_PER_WORKSPACE,
 	MAX_XIAOFEI_KNOWLEDGE_ENTRIES_PER_WORKSPACE,
@@ -171,6 +180,28 @@ describe("Xiaofei Organization queries", () => {
 		expect(queryMocks.listCustomers).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { organizationId: "organization-a" },
+			}),
+		);
+	});
+
+	it("treats a missing config as disabled without widening an enabled query", async () => {
+		queryMocks.listAdminOrganizations.mockResolvedValue([]);
+		queryMocks.countAdminOrganizations.mockResolvedValue(0);
+		await listAdminXiaofeiOrganizations({ enabled: false, limit: 20, offset: 0 });
+		expect(queryMocks.listAdminOrganizations).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					OR: [
+						{ xiaofeiConfig: { is: null } },
+						{ xiaofeiConfig: { is: { xiaofeiEnabled: false } } },
+					],
+				},
+			}),
+		);
+		await listAdminXiaofeiOrganizations({ enabled: true, limit: 20, offset: 0 });
+		expect(queryMocks.listAdminOrganizations).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				where: { xiaofeiConfig: { is: { xiaofeiEnabled: true } } },
 			}),
 		);
 	});

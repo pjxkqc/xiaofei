@@ -3,6 +3,7 @@ import { db } from "../client";
 export interface PreviewFixtureUser {
 	email: string;
 	name: string;
+	role?: string;
 	passwordHash?: string;
 }
 
@@ -47,7 +48,7 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 					create: {
 						email: fixture.email,
 						name: fixture.name,
-						role: "user",
+						role: fixture.role ?? "user",
 						emailVerified: true,
 						onboardingComplete: true,
 						createdAt: new Date(),
@@ -55,7 +56,7 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 					},
 					update: {
 						name: fixture.name,
-						role: "user",
+						role: fixture.role ?? "user",
 						emailVerified: true,
 						onboardingComplete: true,
 					},

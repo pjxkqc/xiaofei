@@ -4,12 +4,9 @@ import { db } from "../client";
 import {
 	XiaofeiKnowledgeDocumentFileType,
 	XiaofeiKnowledgeDocumentSourceType,
-} from "../generated/client";
-import type {
 	Prisma,
-	XiaofeiInboundEvent,
-	XiaofeiKnowledgeDocumentCategory,
 } from "../generated/client";
+import type { XiaofeiInboundEvent, XiaofeiKnowledgeDocumentCategory } from "../generated/client";
 
 export interface UpsertXiaofeiOrganizationConfigInput {
 	externalMerchantId?: string | null;
@@ -309,6 +306,197 @@ export function upsertXiaofeiOrganizationConfig(
 		create: { organizationId, ...input },
 		update: input,
 	});
+}
+
+const ORGANIZATION_TENANT_PREFIX = "organization:";
+
+export interface ListAdminXiaofeiOrganizationsOptions {
+	query?: string;
+	enabled?: boolean;
+	limit: number;
+	offset: number;
+}
+
+/**
+ * Bounded cross-organization read for the global Admin surface. This deliberately
+ * does not use a caller-selected active Organization or iterate organization-by-
+ * organization: all tenant keys are derived from the page of Organization rows.
+ */
+export async function listAdminXiaofeiOrganizations(options: ListAdminXiaofeiOrganizationsOptions) {
+	const where = {
+		...(options.enabled === undefined
+			? {}
+			: options.enabled
+				? { xiaofeiConfig: { is: { xiaofeiEnabled: true } } }
+				: {
+						OR: [
+							{ xiaofeiConfig: { is: null } },
+							{ xiaofeiConfig: { is: { xiaofeiEnabled: false } } },
+						],
+					}),
+		...(options.query
+			? {
+					AND: [
+						{
+							OR: [
+								{ name: { contains: options.query, mode: "insensitive" as const } },
+								{
+									xiaofeiConfig: {
+										is: {
+											externalMerchantId: { contains: options.query, mode: "insensitive" as const },
+										},
+									},
+								},
+							],
+						},
+					],
+				}
+			: {}),
+	};
+	const [organizations, total] = await db.$transaction([
+		db.organization.findMany({
+			where,
+			select: {
+				id: true,
+				name: true,
+				slug: true,
+				xiaofeiConfig: {
+					select: { externalMerchantId: true, xiaofeiEnabled: true, updatedAt: true },
+				},
+				_count: { select: { members: true, xiaofeiCustomers: true } },
+			},
+			orderBy: { name: "asc" },
+			take: options.limit,
+			skip: options.offset,
+		}),
+		db.organization.count({ where }),
+	]);
+	return {
+		total,
+		organizations: organizations.map((organization) => ({
+			...organization,
+			membersCount: organization._count.members,
+			customersCount: organization._count.xiaofeiCustomers,
+		})),
+	};
+}
+
+export async function getAdminXiaofeiOverview() {
+	const organizationWorkspace = { tenantKey: { startsWith: ORGANIZATION_TENANT_PREFIX } };
+	const [
+		organizations,
+		enabled,
+		customers,
+		openConversations,
+		attentionConversations,
+		failedEvents,
+		recentEvents,
+	] = await db.$transaction([
+		db.organization.count(),
+		db.xiaofeiOrganizationConfig.count({ where: { xiaofeiEnabled: true } }),
+		db.xiaofeiCustomer.count(),
+		db.xiaofeiConversation.count({ where: { workspace: organizationWorkspace, status: "open" } }),
+		db.xiaofeiConversation.count({
+			where: {
+				workspace: organizationWorkspace,
+				state: { path: ["operatorAttention"], not: Prisma.JsonNull },
+			},
+		}),
+		db.xiaofeiInboundEvent.count({ where: { workspace: organizationWorkspace, status: "failed" } }),
+		db.xiaofeiInboundEvent.findMany({
+			where: { workspace: organizationWorkspace },
+			select: {
+				id: true,
+				eventType: true,
+				status: true,
+				createdAt: true,
+				workspace: { select: { tenantKey: true } },
+			},
+			orderBy: { createdAt: "desc" },
+			take: 8,
+		}),
+	]);
+	return {
+		organizations,
+		enabled,
+		customers,
+		openConversations,
+		attentionConversations,
+		failedEvents,
+		recentEvents,
+	};
+}
+
+export async function getAdminXiaofeiOrganizationDetail(organizationId: string) {
+	const organization = await db.organization.findUnique({
+		where: { id: organizationId },
+		select: {
+			id: true,
+			name: true,
+			slug: true,
+			xiaofeiConfig: {
+				select: { externalMerchantId: true, xiaofeiEnabled: true, updatedAt: true },
+			},
+			members: {
+				select: { id: true, role: true, user: { select: { name: true, email: true } } },
+				orderBy: { createdAt: "asc" },
+				take: 50,
+			},
+			_count: { select: { xiaofeiCustomers: true } },
+		},
+	});
+	if (!organization) return null;
+	const workspace = await db.xiaofeiWorkspace.findUnique({
+		where: { tenantKey: `${ORGANIZATION_TENANT_PREFIX}${organizationId}` },
+		select: {
+			id: true,
+			snapshot: true,
+			updatedAt: true,
+			_count: {
+				select: { knowledgeDocuments: true, knowledgeEntries: true, knowledgeUnits: true },
+			},
+		},
+	});
+	if (!workspace)
+		return {
+			organization,
+			workspace: null,
+			summary: {
+				customers: organization._count.xiaofeiCustomers,
+				openConversations: 0,
+				attentionConversations: 0,
+				failedEvents: 0,
+				recentEvents: [],
+			},
+		};
+	const [openConversations, attentionConversations, failedEvents, recentEvents] =
+		await db.$transaction([
+			db.xiaofeiConversation.count({ where: { workspaceId: workspace.id, status: "open" } }),
+			db.xiaofeiConversation.count({
+				where: {
+					workspaceId: workspace.id,
+					state: { path: ["operatorAttention"], not: Prisma.JsonNull },
+				},
+			}),
+			db.xiaofeiInboundEvent.count({ where: { workspaceId: workspace.id, status: "failed" } }),
+			db.xiaofeiInboundEvent.findMany({
+				select: { id: true, eventType: true, status: true, createdAt: true },
+				where: { workspaceId: workspace.id },
+				orderBy: { createdAt: "desc" },
+				take: 8,
+			}),
+		]);
+	return {
+		organization,
+		workspace,
+		summary: {
+			customers: organization._count.xiaofeiCustomers,
+			openConversations,
+			attentionConversations,
+			failedEvents,
+			recentEvents,
+		},
+	};
 }
 
 export function getXiaofeiCustomer(organizationId: string, externalCustomerId: string) {
