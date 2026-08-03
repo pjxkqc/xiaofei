@@ -440,6 +440,7 @@ model XiaofeiProcessingJob {
   updatedAt          DateTime                  @updatedAt
 
   @@unique([workspaceId, inboundEventId, kind])
+  @@unique([workspaceId, id])
   @@index([workspaceId, status, nextRunAt])
   @@map("xiaofei_processing_job")
 }

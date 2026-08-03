@@ -79,9 +79,7 @@ export interface ListInboundEventsOptions {
 	topic?: string;
 }
 
-export interface CreateXiaofeiChannelBindingInput {
-	organizationId: string;
-	workspaceId: string;
+interface CreateXiaofeiChannelBindingInput {
 	companyId: string;
 	channelAccountId: string;
 	address: string;
@@ -374,7 +372,7 @@ export function getXiaofeiWorkspace(tenantKey: string) {
 /** Organization-scoped binding mutations never accept a workspace ID from callers. */
 export async function createXiaofeiOrganizationEmailChannelBinding(
 	organizationId: string,
-	input: Omit<CreateXiaofeiChannelBindingInput, "organizationId" | "workspaceId">,
+	input: CreateXiaofeiChannelBindingInput,
 ) {
 	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
 	return db.xiaofeiChannelBinding.create({
@@ -451,14 +449,13 @@ async function resolveActiveXiaofeiEmailChannelBindingInClient(
 		)
 	)
 		throw new XiaofeiChannelBindingConflictError(input.companyId);
-	const active = bindings.filter((binding) => binding.status === "active");
-	const idBinding = active.find((binding) => binding.channelAccountId === input.channelAccountId);
-	const addressBinding = active.find((binding) => binding.address === address);
-	if (idBinding && addressBinding && idBinding.id !== addressBinding.id)
+	const sameBinding = idMatches.find((idBinding) =>
+		addressMatches.some((addressBinding) => addressBinding.id === idBinding.id),
+	);
+	if (!sameBinding && (idMatches.length || addressMatches.length))
 		throw new XiaofeiChannelBindingConflictError(input.companyId);
-	const binding = idBinding ?? addressBinding;
-	if (binding) return binding;
-	if (bindings.length) throw new XiaofeiChannelBindingDisabledError(input.companyId);
+	if (sameBinding?.status === "active") return sameBinding;
+	if (sameBinding) throw new XiaofeiChannelBindingDisabledError(input.companyId);
 	throw new XiaofeiChannelBindingNotFoundError(input.companyId);
 }
 export function upsertXiaofeiWorkspace(tenantKey: string, snapshot: Prisma.InputJsonValue) {
@@ -1119,8 +1116,10 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 			},
 			include: { conversationMessage: { include: { processingJob: true } } },
 		});
-		if (!existing || existing.payloadHash !== businessHash || !existing.conversationMessage)
-			throw error;
+		if (!existing) throw error;
+		if (existing.payloadHash !== businessHash)
+			throw new XiaofeiEmailMirrorConflictError(binding.workspaceId, input.eventId);
+		if (!existing.conversationMessage) throw error;
 		await db.xiaofeiInboundEvent.update({
 			where: {
 				workspaceId_source_eventId: {
@@ -1150,6 +1149,48 @@ export function listXiaofeiConversationMessages(workspaceId: string, conversatio
 export function getXiaofeiConversationMessage(workspaceId: string, id: string) {
 	return db.xiaofeiConversationMessage.findUnique({
 		where: { workspaceId_id: { workspaceId, id } },
+	});
+}
+export async function listXiaofeiOrganizationConversationMessages(
+	organizationId: string,
+	conversationId: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return listXiaofeiConversationMessages(workspace.id, conversationId);
+}
+export async function getXiaofeiOrganizationConversationMessage(
+	organizationId: string,
+	id: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return getXiaofeiConversationMessage(workspace.id, id);
+}
+const PROCESSING_JOB_LIST_SELECT = {
+	id: true,
+	workspaceId: true,
+	inboundEventId: true,
+	conversationId: true,
+	conversationMessageId: true,
+	kind: true,
+	status: true,
+	attempts: true,
+	ownerEpoch: true,
+	nextRunAt: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
+export async function listXiaofeiOrganizationProcessingJobs(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.findMany({
+		where: { workspaceId: workspace.id },
+		select: PROCESSING_JOB_LIST_SELECT,
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+export async function getXiaofeiOrganizationProcessingJob(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.findUnique({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
 	});
 }
 
@@ -1197,7 +1238,6 @@ export async function listXiaofeiOrganizationInboundEvents(
 	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
 	return listInboundEvents(workspace.id, options);
 }
-
 export async function acceptXiaofeiOrganizationInboundEvent(
 	organizationId: string,
 	input: AcceptInboundEventInput,
