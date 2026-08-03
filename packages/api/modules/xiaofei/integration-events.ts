@@ -14,12 +14,14 @@ import {
 	updateXiaofeiSupportConversation,
 	upsertXiaofeiSupportConversation,
 	XiaofeiInboundEventConflictError,
+	acceptMirroredEmailMessage,
 	type Prisma,
 } from "@repo/database";
 import {
 	ConversationStateSchema,
 	SupportMessageSchema,
 	TraceEventSchema,
+	EmailMessageIngestV1Schema,
 	createConversationState,
 } from "@repo/xiaofei";
 import { z } from "zod";
@@ -29,6 +31,7 @@ import {
 	createKnowledgeWorkspaceBinding,
 	getOrCreateXiaofeiWorkspaceByTenantKey,
 	getOrCreateXiaofeiWorkspace,
+	getXiaofeiTenantKey,
 	type XiaofeiAuthContext,
 } from "./service";
 
@@ -283,6 +286,60 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 		});
 		throw error;
 	}
+}
+
+/** Browser-safe mirror simulation: it constructs the shared DTO and calls the
+ * persistence service directly. It never holds an ingest token or invokes AI. */
+export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unknown) {
+	const organizationId = await getXiaofeiTenantKey(context);
+	const payload = z
+		.object({
+			companyId: z.string().trim().min(1).max(100),
+			channelAccountId: z.string().trim().min(1),
+			address: z.string().trim().email(),
+			externalConversationId: z.string().trim().min(1),
+			eventId: z.string().trim().min(1),
+			scenario: z.enum(["inbound_customer", "outbound_loopdesk", "outbound_xiaofei"]),
+			text: z.string().trim().min(1).max(10_000),
+		})
+		.parse(input);
+	const outbound = payload.scenario !== "inbound_customer";
+	const message = EmailMessageIngestV1Schema.parse({
+		schemaVersion: "email.message.v1",
+		eventId: payload.eventId,
+		occurredAt: new Date().toISOString(),
+		tenant: { companyId: payload.companyId },
+		channel: "email",
+		channelAccount: { id: payload.channelAccountId, address: payload.address },
+		conversation: { externalId: payload.externalConversationId, loopdeskSessionId: null },
+		message: {
+			sourceMessageId: `mock:${payload.eventId}`,
+			providerMessageId: null,
+			replyToSourceMessageId: null,
+			direction: outbound ? "outbound" : "inbound",
+			senderType: outbound
+				? payload.scenario === "outbound_xiaofei"
+					? "xiaofei"
+					: "loopdesk"
+				: "customer",
+			from: { address: outbound ? payload.address : "customer@example.test", name: null },
+			to: [{ address: outbound ? "customer@example.test" : payload.address, name: null }],
+			subject: "Mock email",
+			content: { type: "text/plain", value: payload.text },
+			attachments: [],
+			labels: [],
+			sourceSendType: null,
+			sentAt: new Date().toISOString(),
+		},
+		source: {
+			system: "xiaofei-mock",
+			topic: "mock.email",
+			partition: 0,
+			offset: 0,
+			workerVersion: organizationId,
+		},
+	});
+	return acceptMirroredEmailMessage(message);
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue {

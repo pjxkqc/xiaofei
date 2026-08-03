@@ -6,6 +6,7 @@ import {
 	getIntegrationEvent,
 	listIntegrationEvents,
 	runMockWorker,
+	runMockEmailMirror,
 	simulateOrganizationChannelEnvelope,
 } from "../integration-events";
 
@@ -55,3 +56,17 @@ export const runMockWorkerProcedure = supportProcedure
 		async ({ context, input }) =>
 			await runMockWorker(context, { ...input, direction: "inbound", origin: "customer" }),
 	);
+
+export const runMockEmailMirrorProcedure = supportProcedure
+	.input(
+		z.object({
+			companyId: z.string().min(1),
+			channelAccountId: z.string().min(1),
+			address: z.string().email(),
+			externalConversationId: z.string().min(1),
+			eventId: z.string().min(1),
+			scenario: z.enum(["inbound_customer", "outbound_loopdesk", "outbound_xiaofei"]),
+			text: z.string().min(1).max(10_000),
+		}),
+	)
+	.handler(async ({ context, input }) => runMockEmailMirror(context, input));

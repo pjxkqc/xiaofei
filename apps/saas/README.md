@@ -26,6 +26,9 @@ The product surface is deliberately kept to small, focused pages:
   WhatsApp simulator. It resolves the configured external merchant server-side,
   binds the customer/conversation, and records the Xiaofei delivery plus its
   ignored echo in the same event monitor.
+- `/integrations/email-bindings` lists the active Organization's Email company,
+  account, address, and status. Members are read-only; owner/admin mutations
+  are enforced on the server. No browser receives the Email ingest service key.
 - `/knowledge/entries` adds and manages normalized entries for the shared
   public-support workspace from a file, one public webpage, or manual Q&A.
   `/knowledge/documents` remains the source-document view with bounded metadata

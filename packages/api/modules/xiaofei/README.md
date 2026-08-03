@@ -148,6 +148,38 @@ clear `BAD_REQUEST` messages without exposing database details.
 
 ## External event ingress
 
+## Email mirror ingress (mirror-only)
+
+`POST /api/xiaofei/integrations/v1/email/messages` is the Worker-facing Email
+mirror boundary. It accepts only `application/json`, reads at most 1 MiB before
+JSON parsing, and requires `Authorization: Bearer <XIAOFEI_EMAIL_INGEST_API_KEY>`.
+This is a distinct service credential; it is compared in constant time and is
+never persisted, logged, or sent to a browser. `Idempotency-Key` is required
+and must exactly equal the parsed `eventId`.
+
+The body must be `EmailMessageIngestV1Schema`; caller-selected workspace,
+ownership, AI, and provider fields are rejected by that strict schema. The
+route calls `acceptMirroredEmailMessage` only. It returns `202 accepted` after
+the transaction commits, `200 duplicate`, and `409 event_conflict`. Stable safe
+errors are `401 unauthorized`, `400 invalid_json|invalid_request|idempotency_key_mismatch`,
+`413 payload_too_large`, `415 unsupported_media_type`, `404 binding_not_found`,
+and `409 binding_disabled|binding_conflict|conversation_conflict`. Unexpected
+failures return only `500 internal_error`.
+
+```bash
+curl --fail-with-body -X POST "$XIAOFEI_API_URL/api/xiaofei/integrations/v1/email/messages" \
+  -H 'Authorization: Bearer <XIAOFEI_EMAIL_INGEST_API_KEY>' \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: email:42:example' \
+  --data @email-message.v1.json
+```
+
+Mirror mode persists events/messages and may create a durable mirrored job for
+customer inbound mail, but starts no consumer, model, sender, or provider call.
+Organization Email bindings are available at `/integrations/email-bindings`:
+members read them, while owners/admins create, edit, enable, or disable them.
+The active Organization is resolved on the server and no binding request has a
+workspace field.
+
 `POST /api/xiaofei/integrations/events` accepts at most 1 MiB of JSON with a
 `ChannelEnvelope v1` body and `Authorization: Bearer <XIAOFEI_INGEST_API_KEY>`.
 The caller never chooses a workspace. Metadata headers are optional correlation data;

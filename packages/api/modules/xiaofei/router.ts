@@ -5,6 +5,13 @@ import {
 	listCustomers,
 	updateCustomer,
 } from "./procedures/customers";
+import {
+	createEmailBindingProcedure,
+	disableEmailBindingProcedure,
+	enableEmailBindingProcedure,
+	listEmailBindingsProcedure,
+	updateEmailBindingProcedure,
+} from "./procedures/email-bindings";
 import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
 import {
@@ -12,6 +19,7 @@ import {
 	listIntegrationEventsProcedure,
 	simulateIntegrationEventProcedure,
 	runMockWorkerProcedure,
+	runMockEmailMirrorProcedure,
 } from "./procedures/integration-events";
 import {
 	createKnowledgeDocumentProcedure,
@@ -57,6 +65,12 @@ export const xiaofeiRouter = {
 	getIntegrationEvent: getIntegrationEventProcedure,
 	simulateIntegrationEvent: simulateIntegrationEventProcedure,
 	runMockWorker: runMockWorkerProcedure,
+	runMockEmailMirror: runMockEmailMirrorProcedure,
+	listEmailBindings: listEmailBindingsProcedure,
+	createEmailBinding: createEmailBindingProcedure,
+	updateEmailBinding: updateEmailBindingProcedure,
+	enableEmailBinding: enableEmailBindingProcedure,
+	disableEmailBinding: disableEmailBindingProcedure,
 	getConfig: getXiaofeiConfig,
 	saveAgentSettings: saveXiaofeiAgentSettings,
 	saveConfig: saveXiaofeiConfig,
