@@ -65,11 +65,24 @@ describe("Preview one-click login", () => {
 			previewRoleAccounts.length,
 		);
 		const input = createPreviewFixtureInput({
+			"preview-global-admin@xiaofei.invalid": "global-admin-hash",
 			"preview-owner@xiaofei.invalid": "owner-hash",
 			"preview-admin@xiaofei.invalid": "admin-hash",
 			"preview-member@xiaofei.invalid": "member-hash",
 			"preview-owner-b@xiaofei.invalid": "owner-b-hash",
 		});
+		expect(input.users).toContainEqual(
+			expect.objectContaining({
+				email: "preview-global-admin@xiaofei.invalid",
+				role: "admin",
+				passwordHash: "global-admin-hash",
+			}),
+		);
+		expect(
+			input.memberships.some(
+				(membership) => membership.userEmail === "preview-global-admin@xiaofei.invalid",
+			),
+		).toBe(false);
 		expect(input.memberships).toEqual(
 			expect.arrayContaining([
 				{ organizationSlug: "fly-99-a", userEmail: "preview-owner@xiaofei.invalid", role: "owner" },
@@ -105,6 +118,9 @@ describe("Preview one-click login", () => {
 		).toBe(true);
 		expect(first.customers).toHaveLength(2);
 		expect(first).not.toHaveProperty("delete");
+		expect(
+			first.users.find((user) => user.email === "preview-global-admin@xiaofei.invalid")?.role,
+		).toBe("admin");
 	});
 
 	it("renders role accounts only behind the Preview login flag", () => {

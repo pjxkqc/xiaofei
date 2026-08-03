@@ -59,7 +59,7 @@ export function LoginForm({
 		role: string;
 		email: string;
 		password: string;
-		organization: string;
+		organization?: string;
 	}>;
 }) {
 	const t = useTranslations();
@@ -197,7 +197,9 @@ export function LoginForm({
 										{previewRoleAccounts.map((account) => (
 											<li key={account.email}>
 												<strong>{account.role}</strong> — {account.email} / {account.password} (
-												{account.organization})
+												{account.organization
+													? `(${account.organization})`
+													: "(no Organization membership)"}
 											</li>
 										))}
 									</ul>

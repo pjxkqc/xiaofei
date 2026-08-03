@@ -54,20 +54,21 @@ quality runs Node.js 22, and the repository declares Node.js 22 or newer.
 
 ### What differs today
 
-| Capability                                                                                    | Production | UAT |
-| --------------------------------------------------------------------------------------------- | ---------- | --- |
-| Supastarter auth, signup, organizations, account surfaces                                     | Yes        | Yes |
-| Public `/support` customer page and authenticated `/inbox`                                    | Yes        | Yes |
-| Mastra generation, LangGraph state, Guardrail, ownership, and Neon persistence                | Yes        | Yes |
-| MD/TXT, PDF/DOCX/XLSX, one-page web, and manual-Q&A ingestion                                 | Yes        | Yes |
-| Entry CRUD, KU generation/review/publish, capability review, and deterministic Eval           | Yes        | Yes |
-| Nine-category default knowledge and source-grounded generated KUs                             | Yes        | Yes |
-| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | Yes        | Yes |
-| Direct scenario-evidence ranking for overlapping product KUs                                  | Yes        | Yes |
-| Shared public-support governance workspace and four-step knowledge-to-conversation navigation | Yes        | Yes |
-| Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | Yes        | Yes |
-| Split Agent general, fallback/handoff, and runtime-status settings pages                      | Yes        | Yes |
-| Preview fixtures and one-click operator                                                       | Hidden     | Yes |
+| Capability                                                                                    | Production | UAT                    |
+| --------------------------------------------------------------------------------------------- | ---------- | ---------------------- |
+| Supastarter auth, signup, organizations, account surfaces                                     | Yes        | Yes                    |
+| Public `/support` customer page and authenticated `/inbox`                                    | Yes        | Yes                    |
+| Mastra generation, LangGraph state, Guardrail, ownership, and Neon persistence                | Yes        | Yes                    |
+| MD/TXT, PDF/DOCX/XLSX, one-page web, and manual-Q&A ingestion                                 | Yes        | Yes                    |
+| Entry CRUD, KU generation/review/publish, capability review, and deterministic Eval           | Yes        | Yes                    |
+| Nine-category default knowledge and source-grounded generated KUs                             | Yes        | Yes                    |
+| Contextual short follow-ups plus operator-visible knowledge-miss attention without auto-exit  | Yes        | Yes                    |
+| Direct scenario-evidence ranking for overlapping product KUs                                  | Yes        | Yes                    |
+| Shared public-support governance workspace and four-step knowledge-to-conversation navigation | Yes        | Yes                    |
+| Immediate customer-message display and readable Markdown in `/support` and `/inbox`           | Yes        | Yes                    |
+| Split Agent general, fallback/handoff, and runtime-status settings pages                      | Yes        | Yes                    |
+| Preview fixtures and one-click operator                                                       | Hidden     | Yes                    |
+| Global Admin Xiaofei overview and per-Organization read/configuration                         | No         | Pending FLY-100 review |
 
 Production and UAT run the same release code. Their users, workspaces,
 knowledge, Eval evidence, and conversations are intentionally independent.
@@ -89,6 +90,7 @@ same paths apply to both stable base URLs:
 | Agent general settings      | [`/agent-settings/general`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/general)   | Authenticated            |
 | Fallback and handoff policy | [`/agent-settings/fallback`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/fallback) | Authenticated            |
 | Agent runtime status        | [`/agent-settings/status`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/agent-settings/status)     | Authenticated            |
+| Global Xiaofei Admin        | [`/admin/xiaofei`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/admin/xiaofei)                     | Application `admin` only |
 | API communication demo      | [`/api-demo`](https://xiaofei-preview-git-uat-flyranking16.vercel.app/api-demo)                               | Authenticated            |
 
 Immutable Vercel deployment URLs belong in PR acceptance evidence, not in this

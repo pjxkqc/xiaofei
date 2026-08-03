@@ -26,7 +26,7 @@ import {
 	getPaginationRowModel,
 	useReactTable,
 } from "@tanstack/react-table";
-import { EditIcon, MoreVerticalIcon, PlusIcon, TrashIcon } from "lucide-react";
+import { BotIcon, EditIcon, MoreVerticalIcon, PlusIcon, TrashIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
@@ -155,6 +155,12 @@ export function OrganizationList() {
 										<Link href={getOrganizationEditPath(id)} className="flex items-center">
 											<EditIcon className="mr-2 size-4" />
 											{t("admin.organizations.edit")}
+										</Link>
+									</DropdownMenuItem>
+									<DropdownMenuItem asChild>
+										<Link href={getAdminPath(`/xiaofei/${id}`)} className="flex items-center">
+											<BotIcon className="mr-2 size-4" />
+											Xiaofei 总览
 										</Link>
 									</DropdownMenuItem>
 									<DropdownMenuItem

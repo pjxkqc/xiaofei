@@ -3,7 +3,7 @@ import { config } from "@repo/auth/config";
 import { Logo } from "@repo/ui";
 import { SettingsMenu } from "@settings/components/SettingsMenu";
 import { PageHeader } from "@shared/components/PageHeader";
-import { Building2Icon, UsersIcon } from "lucide-react";
+import { BotIcon, Building2Icon, UsersIcon } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { redirect } from "next/navigation";
 import type { PropsWithChildren } from "react";
@@ -31,6 +31,11 @@ export default async function AdminLayout({ children }: PropsWithChildren) {
 						avatar: <Logo className="size-8" withLabel={false} />,
 						title: t("title"),
 						items: [
+							{
+								title: "Xiaofei",
+								href: "/admin/xiaofei",
+								icon: <BotIcon className="size-4 opacity-50" />,
+							},
 							{
 								title: t("menu.users"),
 								href: "/admin/users",
