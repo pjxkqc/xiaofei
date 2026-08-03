@@ -52,8 +52,15 @@ const formSchema = z.union([
 
 export function LoginForm({
 	previewOneClickLoginEnabled = false,
+	previewRoleAccounts = [],
 }: {
 	previewOneClickLoginEnabled?: boolean;
+	previewRoleAccounts?: ReadonlyArray<{
+		role: string;
+		email: string;
+		password: string;
+		organization: string;
+	}>;
 }) {
 	const t = useTranslations();
 	const { getAuthErrorMessage } = useAuthErrorMessages();
@@ -170,14 +177,33 @@ export function LoginForm({
 					{invitationId && <OrganizationInvitationAlert className="mb-6" />}
 
 					{previewOneClickLoginEnabled && (
-						<Button
-							className="mb-4 w-full"
-							type="button"
-							variant="secondary"
-							onClick={() => signInWithPreviewOperator()}
-						>
-							Continue as Preview operator
-						</Button>
+						<>
+							<Button
+								className="mb-4 w-full"
+								type="button"
+								variant="secondary"
+								onClick={() => signInWithPreviewOperator()}
+							>
+								Continue as Preview operator
+							</Button>
+							<Alert className="mb-4" variant="default">
+								<AlertTitle>Test role accounts</AlertTitle>
+								<AlertDescription>
+									<p className="mb-2">
+										First use the Preview operator to initialize fixtures. Then sign out and use the
+										email/password form.
+									</p>
+									<ul className="space-y-1 text-xs">
+										{previewRoleAccounts.map((account) => (
+											<li key={account.email}>
+												<strong>{account.role}</strong> — {account.email} / {account.password} (
+												{account.organization})
+											</li>
+										))}
+									</ul>
+								</AlertDescription>
+							</Alert>
+						</>
 					)}
 
 					<Form {...form}>

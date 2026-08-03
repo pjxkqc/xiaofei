@@ -72,9 +72,12 @@ PREVIEW_ONE_CLICK_LOGIN_ENABLED=true
 
 Set `PREVIEW_ONE_CLICK_LOGIN_ENABLED=true` only in Vercel's Preview environment,
 then redeploy the intended Preview. The button calls same-origin
-`POST /api/auth/preview-one-click-login`; it creates or reuses the isolated
-Preview operator and uses Better Auth to set the normal session cookie. It does
-not expose a password, API key, or session token to the browser.
+`POST /api/auth/preview-one-click-login`; it idempotently creates or corrects
+synthetic FLY-99 role fixtures and uses Better Auth to set the normal operator
+session cookie. After signing out, reviewers can use the Preview-only public
+fixture credentials documented in `docs/releases/README.md`; they are not
+secrets and must never be reused for real systems. Production has no shared
+test account, and API keys/session tokens are never exposed to the browser.
 
 To roll back immediately, remove the Preview variable or set it to any value
 other than `true`, then redeploy. Production and development deployments stay

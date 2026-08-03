@@ -1,3 +1,10 @@
+import {
+	archiveCustomer,
+	createCustomer,
+	getCustomer,
+	listCustomers,
+	updateCustomer,
+} from "./procedures/customers";
 import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
 import {
@@ -39,6 +46,11 @@ import {
 } from "./procedures/support-conversations";
 
 export const xiaofeiRouter = {
+	listCustomers,
+	getCustomer,
+	createCustomer,
+	updateCustomer,
+	archiveCustomer,
 	status: getXiaofeiStatus,
 	listIntegrationEvents: listIntegrationEventsProcedure,
 	getIntegrationEvent: getIntegrationEventProcedure,

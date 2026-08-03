@@ -17,6 +17,7 @@ rules remain visible where changes are made.
 | [`releases/README.md`](./releases/README.md)                                           | Finding the current version, environments, URLs, and test access   |
 | [`repository-structure.md`](./repository-structure.md)                                 | Finding code ownership, allowed dependencies, and validation scope |
 | [`multica/README.md`](./multica/README.md)                                             | Importing this repository into a Multica project and Agent squad   |
+| [`acceptance/FLY-99.md`](./acceptance/FLY-99.md)                                       | Reviewing the durable FLY-99 Preview acceptance evidence           |
 
 ## Boundary documentation
 

@@ -31,7 +31,13 @@ import {
 const ONLINE_WINDOW_MS = 30_000;
 const MAX_MESSAGES = 160;
 
-type SupportConversationRecord = NonNullable<Awaited<ReturnType<typeof getXiaofeiConversation>>>;
+type SupportConversationRecord = Omit<
+	NonNullable<Awaited<ReturnType<typeof getXiaofeiConversation>>>,
+	"customer"
+> & {
+	// Writes return the base record; list/get queries include this relation for display.
+	customer?: { name: string | null } | null;
+};
 
 export async function startPublicSupportConversation(customerName: string) {
 	const { workspace, snapshot } = await getOrCreatePublicXiaofeiWorkspace();
@@ -209,7 +215,9 @@ function toSummary(record: SupportConversationRecord): SupportConversationSummar
 	const lastMessage = messages[messages.length - 1];
 	return SupportConversationSummarySchema.parse({
 		id: record.externalId,
-		customerName: record.customerName ?? "访客",
+		customerId: record.customerId,
+		customerName: record.customer?.name ?? record.customerName ?? "访客",
+		channel: record.channel,
 		status: record.status,
 		ownerType: state.ownerType,
 		stage: state.stage,

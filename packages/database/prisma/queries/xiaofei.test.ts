@@ -186,6 +186,7 @@ describe("Xiaofei Organization queries", () => {
 			where: {
 				workspaceId_externalId: { workspaceId: "workspace-a", externalId: "conversation-a" },
 			},
+			include: { customer: true },
 		});
 	});
 

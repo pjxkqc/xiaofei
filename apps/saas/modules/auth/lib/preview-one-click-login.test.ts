@@ -4,8 +4,11 @@ import path from "node:path";
 import { getBetterAuthErrorLogFields } from "@repo/auth/lib/better-auth-error-log";
 import {
 	createPreviewOperatorSession,
+	createPreviewFixtureInput,
 	getOrCreatePreviewOperator,
+	initializePreviewFixtures,
 	isPreviewOneClickLoginEnabled,
+	previewRoleAccounts,
 } from "@repo/auth/lib/preview-one-click-login";
 import { describe, expect, it, vi } from "vitest";
 
@@ -55,6 +58,68 @@ describe("Preview one-click login", () => {
 		);
 
 		expect(createUser).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the public role manifest unique and maps fixed Organization roles", () => {
+		expect(new Set(previewRoleAccounts.map((account) => account.email)).size).toBe(
+			previewRoleAccounts.length,
+		);
+		const input = createPreviewFixtureInput({
+			"preview-owner@xiaofei.invalid": "owner-hash",
+			"preview-admin@xiaofei.invalid": "admin-hash",
+			"preview-member@xiaofei.invalid": "member-hash",
+			"preview-owner-b@xiaofei.invalid": "owner-b-hash",
+		});
+		expect(input.memberships).toEqual(
+			expect.arrayContaining([
+				{ organizationSlug: "fly-99-a", userEmail: "preview-owner@xiaofei.invalid", role: "owner" },
+				{ organizationSlug: "fly-99-a", userEmail: "preview-admin@xiaofei.invalid", role: "admin" },
+				{
+					organizationSlug: "fly-99-a",
+					userEmail: "preview-member@xiaofei.invalid",
+					role: "member",
+				},
+				{
+					organizationSlug: "fly-99-b",
+					userEmail: "preview-owner-b@xiaofei.invalid",
+					role: "owner",
+				},
+			]),
+		);
+	});
+
+	it("reconciles fixed hashes and roles on repeated initialization without deleting unrelated data", async () => {
+		const hashPassword = vi.fn(async (password: string) => `hash:${password}`);
+		const synchronizeFixtures = vi.fn(
+			async (_input: ReturnType<typeof createPreviewFixtureInput>) => undefined,
+		);
+		await initializePreviewFixtures({ hashPassword, synchronizeFixtures });
+		await initializePreviewFixtures({ hashPassword, synchronizeFixtures });
+		expect(hashPassword).toHaveBeenCalledTimes(previewRoleAccounts.length * 2);
+		expect(synchronizeFixtures).toHaveBeenCalledTimes(2);
+		const first = synchronizeFixtures.mock.calls[0][0];
+		expect(
+			first.users
+				.slice(1)
+				.every((user) => "passwordHash" in user && user.passwordHash.startsWith("hash:")),
+		).toBe(true);
+		expect(first.customers).toHaveLength(2);
+		expect(first).not.toHaveProperty("delete");
+	});
+
+	it("renders role accounts only behind the Preview login flag", () => {
+		const loginFormSource = readFileSync(
+			path.resolve(import.meta.dirname, "../components/LoginForm.tsx"),
+			"utf8",
+		);
+		expect(loginFormSource).toContain("previewOneClickLoginEnabled &&");
+		expect(loginFormSource).toContain("Test role accounts");
+		expect(loginFormSource).not.toContain('from "@repo/auth"');
+		const loginPageSource = readFileSync(
+			path.resolve(import.meta.dirname, "../../../app/(unauthenticated)/login/page.tsx"),
+			"utf8",
+		);
+		expect(loginPageSource).toContain("previewOneClickLoginEnabled ? previewRoleAccounts : []");
 	});
 
 	it("creates the Better Auth session and writes its session cookie without returning a token", async () => {

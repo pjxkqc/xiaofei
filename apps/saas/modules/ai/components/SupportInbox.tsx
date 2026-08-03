@@ -1,5 +1,6 @@
 "use client";
 
+import { useActiveOrganization } from "@organizations/hooks/use-active-organization";
 import { cn } from "@repo/ui";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -10,6 +11,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@repo/ui/components/card";
+import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import type {
@@ -32,33 +34,55 @@ import {
 import Link from "next/link";
 
 import "streamdown/styles.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 
+import {
+	filterSupportConversations,
+	isSelectedConversationVisible,
+	nextSelectedConversationId,
+} from "../lib/support-inbox-state";
+
 export function SupportInbox() {
+	const { activeOrganization } = useActiveOrganization();
 	const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [conversation, setConversation] = useState<SupportConversation | null>(null);
+	const [conversationOrganizationId, setConversationOrganizationId] = useState<
+		string | undefined
+	>();
 	const [input, setInput] = useState("");
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
+	const [customerFilter, setCustomerFilter] = useState("");
+	const [channelFilter, setChannelFilter] = useState("all");
+	const [ownerFilter, setOwnerFilter] = useState("all");
+	const [statusFilter, setStatusFilter] = useState("all");
 	const messagesRef = useRef<HTMLDivElement>(null);
+	const activeOrganizationIdRef = useRef(activeOrganization?.id);
+	activeOrganizationIdRef.current = activeOrganization?.id;
 
 	const refreshList = useCallback(async () => {
+		const requestedOrganizationId = activeOrganizationIdRef.current;
 		const items = await orpcClient.xiaofei.listAgentConversations();
+		if (activeOrganizationIdRef.current !== requestedOrganizationId) return;
 		setConversations(items);
 		setSelectedId((current) => current ?? items[0]?.id ?? null);
 	}, []);
 
 	const refreshSelected = useCallback(async (conversationId: string) => {
-		setConversation(
-			await orpcClient.xiaofei.getAgentConversation({
-				conversationId,
-			}),
-		);
+		const requestedOrganizationId = activeOrganizationIdRef.current;
+		const nextConversation = await orpcClient.xiaofei.getAgentConversation({ conversationId });
+		if (activeOrganizationIdRef.current !== requestedOrganizationId) return;
+		setConversation(nextConversation);
+		setConversationOrganizationId(requestedOrganizationId);
 	}, []);
 
 	useEffect(() => {
+		setSelectedId(null);
+		setConversation(null);
+		setConversationOrganizationId(undefined);
+		setConversations([]);
 		void refreshList()
 			.catch(() => toastError("无法读取客户会话"))
 			.finally(() => setLoading(false));
@@ -66,11 +90,12 @@ export function SupportInbox() {
 			void refreshList().catch(() => undefined);
 		}, 3_000);
 		return () => globalThis.clearInterval(interval);
-	}, [refreshList]);
+	}, [activeOrganization?.id, refreshList]);
 
 	useEffect(() => {
 		if (!selectedId) {
 			setConversation(null);
+			setConversationOrganizationId(undefined);
 			return;
 		}
 		void refreshSelected(selectedId).catch(() => toastError("无法读取会话详情"));
@@ -124,6 +149,26 @@ export function SupportInbox() {
 			setBusy(false);
 		}
 	};
+	const filteredConversations = useMemo(
+		() =>
+			filterSupportConversations(conversations, {
+				customer: customerFilter,
+				channel: channelFilter,
+				owner: ownerFilter,
+				status: statusFilter,
+			}),
+		[conversations, customerFilter, channelFilter, ownerFilter, statusFilter],
+	);
+	const visibleConversation =
+		conversation &&
+		conversationOrganizationId === activeOrganization?.id &&
+		isSelectedConversationVisible(conversation.id, selectedId, filteredConversations)
+			? conversation
+			: null;
+
+	useEffect(() => {
+		setSelectedId((current) => nextSelectedConversationId(filteredConversations, current));
+	}, [filteredConversations]);
 
 	return (
 		<div className="gap-6 flex flex-col">
@@ -163,17 +208,58 @@ export function SupportInbox() {
 						<div className="gap-2 flex items-center justify-between">
 							<div>
 								<CardTitle>客户会话</CardTitle>
-								<CardDescription>{conversations.length} 个最近会话</CardDescription>
+								<CardDescription>{filteredConversations.length} 个会话</CardDescription>
 							</div>
 							<Badge status="info">{conversations.filter((item) => item.online).length} 在线</Badge>
 						</div>
 					</CardHeader>
+					<div className="gap-2 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4 grid border-b">
+						<Input
+							aria-label="Filter customer"
+							value={customerFilter}
+							onChange={(event) => setCustomerFilter(event.target.value)}
+							placeholder="客户"
+						/>
+						<select
+							aria-label="Filter channel"
+							className="px-3 text-sm rounded-md border bg-background"
+							value={channelFilter}
+							onChange={(event) => setChannelFilter(event.target.value)}
+						>
+							<option value="all">全部渠道</option>
+							{[...new Set(conversations.map((item) => item.channel))].map((channel) => (
+								<option key={channel} value={channel}>
+									{channel}
+								</option>
+							))}
+						</select>
+						<select
+							aria-label="Filter owner"
+							className="px-3 text-sm rounded-md border bg-background"
+							value={ownerFilter}
+							onChange={(event) => setOwnerFilter(event.target.value)}
+						>
+							<option value="all">全部 Owner</option>
+							<option value="ai">小飞</option>
+							<option value="human">人工</option>
+						</select>
+						<select
+							aria-label="Filter status"
+							className="px-3 text-sm rounded-md border bg-background"
+							value={statusFilter}
+							onChange={(event) => setStatusFilter(event.target.value)}
+						>
+							<option value="all">全部状态</option>
+							<option value="open">Open</option>
+							<option value="closed">Closed</option>
+						</select>
+					</div>
 					<CardContent className="p-2 gap-1 flex max-h-[680px] flex-col overflow-y-auto">
 						{loading ? (
 							<div className="py-20 flex justify-center">
 								<LoaderCircleIcon className="size-5 animate-spin text-primary" />
 							</div>
-						) : conversations.length === 0 ? (
+						) : filteredConversations.length === 0 ? (
 							<div className="px-5 py-20 text-center">
 								<MessageSquareTextIcon className="size-8 mb-3 mx-auto text-muted-foreground" />
 								<p className="text-sm font-medium">还没有客户会话</p>
@@ -182,7 +268,7 @@ export function SupportInbox() {
 								</p>
 							</div>
 						) : (
-							conversations.map((item) => (
+							filteredConversations.map((item) => (
 								<ConversationItem
 									key={item.id}
 									conversation={item}
@@ -195,17 +281,17 @@ export function SupportInbox() {
 				</Card>
 
 				<Card className="min-w-0 overflow-hidden">
-					{conversation ? (
+					{visibleConversation ? (
 						<>
 							<CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between border-b">
 								<div>
 									<div className="gap-2 flex flex-wrap items-center">
-										<CardTitle>{conversation.customerName}</CardTitle>
-										<Badge status={conversation.online ? "success" : "warning"}>
-											{conversation.online ? "在线" : "离线"}
+										<CardTitle>{visibleConversation.customerName}</CardTitle>
+										<Badge status={visibleConversation.online ? "success" : "warning"}>
+											{visibleConversation.online ? "在线" : "离线"}
 										</Badge>
-										<OwnerBadge conversation={conversation} />
-										{conversation.attentionRequired && (
+										<OwnerBadge conversation={visibleConversation} />
+										{visibleConversation.attentionRequired && (
 											<Badge status="warning">
 												<BellRingIcon className="mr-1 size-3" />
 												待人工关注
@@ -213,25 +299,27 @@ export function SupportInbox() {
 										)}
 									</div>
 									<CardDescription className="mt-1">
-										{conversation.attentionRequired
+										{visibleConversation.attentionRequired
 											? "知识暂未命中；小飞仍在接待并会继续尝试匹配，人工可旁观或主动接管。"
-											: conversation.handoffReason
-												? `转人工原因：${conversation.handoffReason}`
+											: visibleConversation.handoffReason
+												? `转人工原因：${visibleConversation.handoffReason}`
 												: "Organization 消息接入"}
 									</CardDescription>
 								</div>
 								<Button
 									size="sm"
-									variant={conversation.ownerType === "ai" ? "primary" : "outline"}
-									disabled={busy || conversation.status === "closed"}
-									onClick={() => void setOwner(conversation.ownerType === "ai" ? "human" : "ai")}
+									variant={visibleConversation.ownerType === "ai" ? "primary" : "outline"}
+									disabled={busy || visibleConversation.status === "closed"}
+									onClick={() =>
+										void setOwner(visibleConversation.ownerType === "ai" ? "human" : "ai")
+									}
 								>
-									{conversation.ownerType === "ai" ? (
+									{visibleConversation.ownerType === "ai" ? (
 										<UserRoundCheckIcon className="mr-2 size-4" />
 									) : (
 										<BotIcon className="mr-2 size-4" />
 									)}
-									{conversation.ownerType === "ai" ? "人工接管" : "交还小飞"}
+									{visibleConversation.ownerType === "ai" ? "人工接管" : "交还小飞"}
 								</Button>
 							</CardHeader>
 
@@ -240,7 +328,7 @@ export function SupportInbox() {
 									ref={messagesRef}
 									className="gap-4 px-5 py-5 flex h-[520px] flex-col overflow-y-auto"
 								>
-									{conversation.messages.map((message) => (
+									{visibleConversation.messages.map((message) => (
 										<AgentMessageBubble key={message.id} message={message} />
 									))}
 								</div>
@@ -250,12 +338,12 @@ export function SupportInbox() {
 										value={input}
 										onChange={(event) => setInput(event.target.value)}
 										placeholder={
-											conversation.ownerType === "human"
+											visibleConversation.ownerType === "human"
 												? "输入真人客服回复…"
 												: "请先点击“人工接管”再回复"
 										}
 										className="min-h-16 pr-14 resize-none"
-										disabled={conversation.ownerType !== "human" || busy}
+										disabled={visibleConversation.ownerType !== "human" || busy}
 										onKeyDown={(event) => {
 											if (event.key === "Enter" && !event.shiftKey) {
 												event.preventDefault();
@@ -267,7 +355,7 @@ export function SupportInbox() {
 										type="submit"
 										size="icon"
 										className="right-7 bottom-7 absolute"
-										disabled={!input.trim() || busy || conversation.ownerType !== "human"}
+										disabled={!input.trim() || busy || visibleConversation.ownerType !== "human"}
 										aria-label="发送客服回复"
 									>
 										{busy ? (
@@ -321,6 +409,7 @@ function ConversationItem({
 					aria-label={conversation.online ? "在线" : "离线"}
 				/>
 			</div>
+			<p className="mt-1 text-[11px] text-muted-foreground">{conversation.channel}</p>
 			<p className="mt-1 text-xs truncate text-muted-foreground">
 				{conversation.lastMessage ? plainTextMessagePreview(conversation.lastMessage) : "新会话"}
 			</p>

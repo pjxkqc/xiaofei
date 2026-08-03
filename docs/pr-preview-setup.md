@@ -175,7 +175,10 @@ does not create `uat`, change cloud configuration, or alter production):
    `quality` workflow runs for the push.
 2. Confirm the stable Vercel `uat` branch alias is Ready and Neon has
    `preview/uat`.
-3. Use Preview one-click login for a minimal smoke test. Trigger one `uat`
+3. Use Preview one-click login for a minimal smoke test. It idempotently
+   initializes documented synthetic role fixtures without deleting unrelated
+   Preview data; sign out and use the public Preview/UAT fixture roles to check
+   owner/admin/member behavior. Trigger one `uat`
    redeployment and confirm its UAT data remains present.
 4. Confirm Vercel Production remains on `main` and Neon `main` is unchanged.
 
@@ -239,7 +242,9 @@ For every infrastructure-affecting PR:
 10. Confirm the production deployment becomes Ready and the `main` quality
     workflow succeeds.
 
-Never put test passwords, API keys, database URLs, or response headers into a
+Only the synthetic Preview/UAT fixture passwords explicitly listed in repository
+documentation may be committed. Never put Production, real, or personal
+passwords, API keys, database URLs, or response headers into a
 PR description, Actions artifact, screenshot, or application log.
 
 ## Observed cleanup behavior
