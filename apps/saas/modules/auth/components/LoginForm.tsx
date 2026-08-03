@@ -70,6 +70,8 @@ export function LoginForm({
 	const { user, loaded: sessionLoaded } = useSession();
 
 	const [showPassword, setShowPassword] = useState(false);
+	const [previewSignInPending, setPreviewSignInPending] = useState(false);
+	const [previewSignInError, setPreviewSignInError] = useState<string | null>(null);
 	const invitationId = searchParams.get("invitationId");
 	const email = searchParams.get("email");
 	const redirectTo = searchParams.get("redirectTo");
@@ -150,12 +152,14 @@ export function LoginForm({
 	};
 
 	const signInWithPreviewOperator = async () => {
+		if (previewSignInPending) return;
+		setPreviewSignInPending(true);
+		setPreviewSignInError(null);
 		try {
 			await completePreviewOneClickLogin({ redirectPath });
 		} catch {
-			form.setError("root", {
-				message: "Preview sign-in is unavailable.",
-			});
+			setPreviewSignInError("Preview sign-in is unavailable.");
+			setPreviewSignInPending(false);
 		}
 	};
 
@@ -182,10 +186,20 @@ export function LoginForm({
 								className="mb-4 w-full"
 								type="button"
 								variant="secondary"
+								loading={previewSignInPending}
+								disabled={previewSignInPending}
 								onClick={() => signInWithPreviewOperator()}
 							>
-								Continue as Preview operator
+								{previewSignInPending
+									? "Initializing Preview operator…"
+									: "Continue as Preview operator"}
 							</Button>
+							{previewSignInError && (
+								<Alert className="mb-4" variant="error">
+									<AlertTriangleIcon />
+									<AlertTitle>{previewSignInError}</AlertTitle>
+								</Alert>
+							)}
 							<Alert className="mb-4" variant="default">
 								<AlertTitle>Test role accounts</AlertTitle>
 								<AlertDescription>

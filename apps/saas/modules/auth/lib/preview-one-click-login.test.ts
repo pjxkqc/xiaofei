@@ -139,6 +139,20 @@ describe("Preview one-click login", () => {
 		expect(loginPageSource).toContain("previewOneClickLoginEnabled ? previewRoleAccounts : []");
 	});
 
+	it("renders Preview initialization feedback independently from form submission", () => {
+		const loginFormSource = readFileSync(
+			path.resolve(import.meta.dirname, "../components/LoginForm.tsx"),
+			"utf8",
+		);
+		expect(loginFormSource).toContain("const [previewSignInPending, setPreviewSignInPending]");
+		expect(loginFormSource).toContain("if (previewSignInPending) return;");
+		expect(loginFormSource).toContain("loading={previewSignInPending}");
+		expect(loginFormSource).toContain("disabled={previewSignInPending}");
+		expect(loginFormSource).toContain("Initializing Preview operator…");
+		expect(loginFormSource).toContain('setPreviewSignInError("Preview sign-in is unavailable.")');
+		expect(loginFormSource).toContain("{previewSignInError && (");
+	});
+
 	it("creates the Better Auth session and writes its session cookie without returning a token", async () => {
 		const session = { id: "session-id", token: "server-only-token" };
 		const createSession = vi.fn().mockResolvedValue(session);
