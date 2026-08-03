@@ -19,10 +19,11 @@ merged. Cloud credentials are never committed to the repository.
 5. The Vercel Git integration builds `apps/saas`. The Neon integration creates
    `preview/<git-branch>` from the Neon `main` branch and injects that branch's
    pooled and unpooled connection strings into the Preview build.
-6. `scripts/vercel-build.mjs` applies the known lossless Email-mirror composite
-   indexes and then the Prisma schema with the unpooled URL, restores the pooled
-   runtime URL, and builds the application. Existing duplicate rows fail the
-   build; the workflow never enables a broad data-loss override.
+6. `scripts/vercel-build.mjs` applies the known lossless Email-mirror
+   compatibility step and then the Prisma schema with the unpooled URL,
+   restores the pooled runtime URL, and builds the application. Unmappable or
+   duplicate rows fail the build; the workflow never enables a broad data-loss
+   override.
 7. The Preview must pass the manual smoke checks below. A new push cancels stale
    GitHub work and replaces the branch alias with the latest deployment.
 8. Reviewers pin UI feedback with Vercel Toolbar comments. Every unresolved
