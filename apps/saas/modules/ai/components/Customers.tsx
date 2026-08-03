@@ -14,7 +14,7 @@ import { Input } from "@repo/ui/components/input";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import type { Customer, SupportConversationSummary } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
-import { ArchiveIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ArchiveIcon, PencilIcon, PlusIcon, SaveIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -26,6 +26,11 @@ export function Customers() {
 	const [creating, setCreating] = useState(false);
 	const [externalCustomerId, setExternalCustomerId] = useState("");
 	const [name, setName] = useState("");
+	const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+	const [editName, setEditName] = useState("");
+	const [editEmail, setEditEmail] = useState("");
+	const [editWhatsappNumber, setEditWhatsappNumber] = useState("");
+	const [saving, setSaving] = useState(false);
 
 	async function load() {
 		try {
@@ -77,6 +82,36 @@ export function Customers() {
 		}
 	}
 
+	function startEditing(customer: Customer) {
+		setEditingCustomer(customer);
+		setEditName(customer.name ?? "");
+		setEditEmail(customer.email ?? "");
+		setEditWhatsappNumber(customer.whatsappNumber ?? "");
+	}
+
+	async function saveCustomer(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		if (!editingCustomer) return;
+		setSaving(true);
+		try {
+			await orpcClient.xiaofei.updateCustomer({
+				externalCustomerId: editingCustomer.externalCustomerId,
+				data: {
+					name: editName.trim() || null,
+					email: editEmail.trim() || null,
+					whatsappNumber: editWhatsappNumber.trim() || null,
+				},
+			});
+			setEditingCustomer(null);
+			await load();
+			toastSuccess("客户资料已更新");
+		} catch {
+			toastError("更新客户资料失败；请检查邮箱格式。");
+		} finally {
+			setSaving(false);
+		}
+	}
+
 	return (
 		<div className="space-y-6">
 			<Card>
@@ -108,6 +143,47 @@ export function Customers() {
 					</CardContent>
 				)}
 			</Card>
+			{isOrganizationAdmin && editingCustomer && (
+				<Card>
+					<CardHeader>
+						<CardTitle>编辑客户：{editingCustomer.externalCustomerId}</CardTitle>
+						<CardDescription>仅 Organization owner/admin 可保存这些资料。</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<form onSubmit={saveCustomer} className="gap-3 md:grid-cols-3 grid">
+							<Input
+								aria-label="Edit customer name"
+								value={editName}
+								onChange={(event) => setEditName(event.target.value)}
+								placeholder="名称"
+							/>
+							<Input
+								aria-label="Edit customer email"
+								type="email"
+								value={editEmail}
+								onChange={(event) => setEditEmail(event.target.value)}
+								placeholder="邮箱"
+							/>
+							<Input
+								aria-label="Edit customer WhatsApp number"
+								value={editWhatsappNumber}
+								onChange={(event) => setEditWhatsappNumber(event.target.value)}
+								placeholder="WhatsApp"
+							/>
+							<div className="gap-2 md:col-span-3 flex justify-end">
+								<Button type="button" variant="outline" onClick={() => setEditingCustomer(null)}>
+									<XIcon className="mr-2 size-4" />
+									取消
+								</Button>
+								<Button type="submit" disabled={saving}>
+									<SaveIcon className="mr-2 size-4" />
+									保存
+								</Button>
+							</div>
+						</form>
+					</CardContent>
+				</Card>
+			)}
 			<Card>
 				<CardHeader>
 					<CardTitle>客户</CardTitle>
@@ -127,7 +203,7 @@ export function Customers() {
 					{visible.map((customer) => (
 						<div
 							key={customer.id}
-							className="gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] grid items-center rounded-lg border"
+							className="gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] grid items-center rounded-lg border"
 						>
 							<div className="min-w-0">
 								<Link
@@ -144,11 +220,19 @@ export function Customers() {
 							<Badge status={customer.status === "active" ? "success" : "warning"}>
 								{customer.status === "active" ? "活跃" : "已归档"}
 							</Badge>
-							{isOrganizationAdmin && customer.status === "active" && (
-								<Button variant="outline" size="sm" onClick={() => void archive(customer)}>
-									<ArchiveIcon className="mr-2 size-4" />
-									归档
-								</Button>
+							{isOrganizationAdmin && (
+								<div className="gap-2 flex">
+									<Button variant="outline" size="sm" onClick={() => startEditing(customer)}>
+										<PencilIcon className="mr-2 size-4" />
+										编辑
+									</Button>
+									{customer.status === "active" && (
+										<Button variant="outline" size="sm" onClick={() => void archive(customer)}>
+											<ArchiveIcon className="mr-2 size-4" />
+											归档
+										</Button>
+									)}
+								</div>
 							)}
 						</div>
 					))}
@@ -181,6 +265,22 @@ export function CustomerDetail({ externalCustomerId }: { externalCustomerId: str
 						{customer?.email || "未提供邮箱"} · 外部 ID：{externalCustomerId}
 					</CardDescription>
 				</CardHeader>
+				<CardContent className="gap-3 sm:grid-cols-3 text-sm grid">
+					<div>
+						<span className="block text-muted-foreground">状态</span>
+						<Badge status={customer?.status === "archived" ? "warning" : "success"}>
+							{customer?.status === "archived" ? "已归档" : "活跃"}
+						</Badge>
+					</div>
+					<div>
+						<span className="block text-muted-foreground">邮箱</span>
+						{customer?.email || "未提供"}
+					</div>
+					<div>
+						<span className="block text-muted-foreground">WhatsApp</span>
+						{customer?.whatsappNumber || "未提供"}
+					</div>
+				</CardContent>
 			</Card>
 			<Card>
 				<CardHeader>

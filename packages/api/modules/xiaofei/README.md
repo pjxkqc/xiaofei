@@ -56,6 +56,12 @@ customer. Customer IDs are resolved with the Organization selector before any
 conversation query, so a customer from another Organization cannot be bound or
 read. Legacy conversations with a null customer remain visible in `/inbox`.
 
+The current product UI can create and maintain customers, but it intentionally
+does not manufacture a customer-bound channel conversation. Preview acceptance
+therefore verifies the history API/render contract with an existing
+same-Organization binding; real channel-to-customer binding belongs to the
+separately scoped FLY-101 Mock Worker.
+
 Customers receive a random UUID conversation token; they cannot list
 conversations or choose a workspace. Inbox and governance procedures use
 `supportProcedure`, which accepts the existing Supa `user` role, an explicit

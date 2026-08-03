@@ -1,3 +1,4 @@
+import { createConversationState } from "@repo/xiaofei";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const database = vi.hoisted(() => ({
@@ -70,12 +71,38 @@ describe("Organization customer service", () => {
 		service.getOrCreateXiaofeiWorkspace.mockResolvedValue({ workspace: { id: "workspace-a" } });
 		database.getXiaofeiCustomer.mockResolvedValue(customer);
 		database.getXiaofeiCustomerById.mockResolvedValue(customer);
-		database.listXiaofeiCustomerConversations.mockResolvedValue([]);
-		await getOrganizationCustomer(context, "external-1");
+		database.listXiaofeiCustomerConversations.mockResolvedValue([
+			{
+				externalId: "conversation-1",
+				customerId: "customer-1",
+				customerName: "Ada",
+				channel: "whatsapp",
+				status: "open",
+				assignedUserName: null,
+				lastCustomerSeenAt: null,
+				lastMessageAt: new Date("2026-08-02T00:00:00.000Z"),
+				updatedAt: new Date("2026-08-02T00:00:00.000Z"),
+				state: createConversationState({
+					id: "conversation-1",
+					tenantId: "organization:org-a",
+					agentId: "agent-a",
+					maxFollowUps: 3,
+				}),
+				messages: [],
+			},
+		]);
+		const result = await getOrganizationCustomer(context, "external-1");
 		expect(database.getXiaofeiCustomer).toHaveBeenCalledWith("org-a", "external-1");
 		expect(database.listXiaofeiCustomerConversations).toHaveBeenCalledWith(
 			"workspace-a",
 			"customer-1",
 		);
+		expect(result.conversations).toEqual([
+			expect.objectContaining({
+				id: "conversation-1",
+				customerId: "customer-1",
+				channel: "whatsapp",
+			}),
+		]);
 	});
 });
