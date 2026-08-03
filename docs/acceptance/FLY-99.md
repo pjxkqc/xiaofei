@@ -5,16 +5,18 @@
 **PASS WITH FOLLOW-UP**
 
 This record captures acceptance of the application head
-`a2b10ee4214cdb3daf89c6ce02e9acf6b2519a1b`. The commit that adds this file is
-evidence-only; it does not change the accepted application behavior.
+`5ad7accae209593f2ff0bc2a645303005226ea17`. This final documentation commit
+is evidence-only; it does not change the accepted application behavior.
 
 ## Delivery evidence
 
 - Pull request: [#33](https://github.com/pjxkqc/xiaofei/pull/33)
 - Base: `uat`
 - Branch: `agent/FLY-99-customer-conversations`
-- GitHub Quality: run `30778037181` — success
-- Vercel deployment: `61U3JD7osH4znkSJ8Y7EyAVxDVex` — success
+- GitHub Quality: run `30790424059` — success
+- Vercel deployment: `dpl_7AuR8Gen6nEzqxfhE2L8FT4JK2fR` — Ready
+- Immutable Preview:
+  `https://xiaofei-preview-9xi2hzabg-flyranking16.vercel.app`
 - Stable Preview alias:
   `https://xiaofei-preview-git-agent-fly-99-customer-c-0955d5-flyranking16.vercel.app`
 - Neon Preview branch: `preview/agent/FLY-99-customer-conversations`
@@ -46,9 +48,9 @@ A` and `FLY-99 验收商户 B`. This operator is the owner for both acceptance
 - `/support` is the public customer entry point and does not require login.
   A normal signup user may register with a disposable email and choose a
   private password; FLY-99 did not create or use a fixed-password account.
-- Member read-only behavior and API authorization are covered by automated
-  tests. The real Preview manual acceptance used the owner operator; no member
-  or admin account is asserted here.
+- Preview acceptance exercised Owner A, Admin A, Member A, and Owner B. The
+  fixture credentials remain documented here only and are intentionally not
+  repeated in the PR body.
 - If the current login session is incorrect, sign out, then return to `/login`
   and use the one-click operator again.
 - One-click initialization is idempotent: it repairs only these fixture users,
@@ -72,6 +74,15 @@ A` and `FLY-99 验收商户 B`. This operator is the owner for both acceptance
 
 ## Passed scenarios
 
+- Consecutive one-click initialization calls both returned HTTP 200 and
+  preserved the fixture contract (idempotent repair).
+- Owner A and Admin A each saw only Organization A and its customer data, with
+  create and edit controls available.
+- Member A saw only Organization A, could read customer A, and had no create,
+  edit, or archive controls.
+- Owner B saw only Organization B and customer B. Direct access to
+  `/customers/fly99-demo-customer-a` showed only the inaccessible/not-found
+  state and did not disclose A's name, email, or WhatsApp number.
 - Organization owner/admin edits customer details and the changes persist.
 - Archiving preserves the customer record and audit history.
 - Inbox shows the filtered count and does not render stale detail after the
