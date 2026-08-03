@@ -70,13 +70,13 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 					if (account) {
 						await transaction.account.update({
 							where: { id: account.id },
-							data: { accountId: fixture.email, password: fixture.passwordHash },
+							data: { accountId: user.id, password: fixture.passwordHash },
 						});
 					} else {
 						await transaction.account.create({
 							data: {
 								userId: user.id,
-								accountId: fixture.email,
+								accountId: user.id,
 								providerId: "credential",
 								password: fixture.passwordHash,
 								createdAt: new Date(),

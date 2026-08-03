@@ -53,7 +53,13 @@ describe("synchronizePreviewFixtures", () => {
 
 		expect(mocks.transaction.user.upsert).toHaveBeenCalledTimes(2);
 		expect(mocks.transaction.account.create).toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ password: "hash" }) }),
+			expect.objectContaining({
+				data: expect.objectContaining({
+					accountId: "owner",
+					password: "hash",
+					providerId: "credential",
+				}),
+			}),
 		);
 		expect(mocks.transaction.member.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({ update: { role: "owner" } }),
@@ -62,5 +68,30 @@ describe("synchronizePreviewFixtures", () => {
 			expect.objectContaining({ update: expect.objectContaining({ status: "active" }) }),
 		);
 		expect(mocks.transaction).not.toHaveProperty("delete");
+	});
+
+	it("repairs an existing credential account with the Better Auth user ID account key", async () => {
+		mocks.transaction.user.upsert.mockReset().mockResolvedValue({ id: "fixture-user" });
+		mocks.transaction.account.findFirst.mockReset().mockResolvedValue({ id: "credential-account" });
+		mocks.transaction.account.update.mockReset();
+		mocks.transaction.organization.upsert.mockReset();
+		mocks.transaction.member.upsert.mockReset();
+		mocks.transaction.xiaofeiCustomer.upsert.mockReset();
+		mocks.db.$transaction.mockImplementation(
+			async (callback: (transaction: typeof mocks.transaction) => unknown) =>
+				callback(mocks.transaction),
+		);
+
+		await synchronizePreviewFixtures({
+			users: [{ email: "fixture@example.invalid", name: "Fixture", passwordHash: "new-hash" }],
+			organizations: [],
+			memberships: [],
+			customers: [],
+		});
+
+		expect(mocks.transaction.account.update).toHaveBeenCalledWith({
+			where: { id: "credential-account" },
+			data: { accountId: "fixture-user", password: "new-hash" },
+		});
 	});
 });
