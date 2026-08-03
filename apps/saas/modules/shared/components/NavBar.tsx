@@ -380,9 +380,9 @@ export function NavBar() {
 			},
 			{
 				label: "Integrations",
-				href: "/integrations/events",
+				href: "/integrations/mock-worker",
 				icon: CableIcon,
-				isActive: pathname.startsWith("/integrations/events"),
+				isActive: pathname.startsWith("/integrations/"),
 			},
 			{
 				label: t("app.menu.knowledgeGovernance"),

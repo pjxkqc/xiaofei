@@ -32,7 +32,7 @@ export interface UpdateXiaofeiCustomerInput {
 }
 
 export interface UpdateXiaofeiInboundEventStatusInput {
-	status: "processing" | "processed" | "failed";
+	status: string;
 	processedAt?: Date | null;
 	lastError?: string | null;
 }
@@ -505,6 +505,14 @@ export function getXiaofeiCustomer(organizationId: string, externalCustomerId: s
 	});
 }
 
+/** Resolve channel credentials on the server; callers never choose a workspace. */
+export function getXiaofeiOrganizationConfigByExternalMerchantId(externalMerchantId: string) {
+	return db.xiaofeiOrganizationConfig.findUnique({
+		where: { externalMerchantId },
+		select: { organizationId: true, xiaofeiEnabled: true },
+	});
+}
+
 export function listXiaofeiCustomers(organizationId: string) {
 	return db.xiaofeiCustomer.findMany({
 		where: { organizationId },
@@ -613,6 +621,8 @@ export function listXiaofeiCustomerConversations(workspaceId: string, customerId
 export function upsertXiaofeiSupportConversation(input: {
 	workspaceId: string;
 	externalId: string;
+	customerId?: string | null;
+	channel?: string;
 	customerName: string;
 	state: Prisma.InputJsonValue;
 	traceEvents: Prisma.InputJsonValue;
@@ -625,7 +635,12 @@ export function upsertXiaofeiSupportConversation(input: {
 			workspaceId_externalId: { workspaceId: input.workspaceId, externalId: input.externalId },
 		},
 		create: input,
-		update: { customerName: input.customerName, lastCustomerSeenAt: input.lastCustomerSeenAt },
+		update: {
+			customerId: input.customerId,
+			channel: input.channel,
+			customerName: input.customerName,
+			lastCustomerSeenAt: input.lastCustomerSeenAt,
+		},
 	});
 }
 export function updateXiaofeiSupportConversation(
@@ -648,6 +663,7 @@ export function updateXiaofeiSupportConversation(
 		data,
 	});
 }
+
 export function upsertXiaofeiConversation(input: {
 	workspaceId: string;
 	externalId: string;
