@@ -12,6 +12,15 @@ import {
 	listEmailBindingsProcedure,
 	updateEmailBindingProcedure,
 } from "./procedures/email-bindings";
+import {
+	getEmailDeliverySettingsProcedure,
+	getEmailOutboundDeliveryProcedure,
+	listEmailOutboundDeliveriesProcedure,
+	processMirroredEmailJobProcedure,
+	retryEmailOutboundDeliveryProcedure,
+	saveEmailDeliverySettingsProcedure,
+	sendEmailCallbackTestProcedure,
+} from "./procedures/email-delivery";
 import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
 import {
@@ -75,6 +84,13 @@ export const xiaofeiRouter = {
 	updateEmailBinding: updateEmailBindingProcedure,
 	enableEmailBinding: enableEmailBindingProcedure,
 	disableEmailBinding: disableEmailBindingProcedure,
+	getEmailDeliverySettings: getEmailDeliverySettingsProcedure,
+	saveEmailDeliverySettings: saveEmailDeliverySettingsProcedure,
+	listEmailOutboundDeliveries: listEmailOutboundDeliveriesProcedure,
+	getEmailOutboundDelivery: getEmailOutboundDeliveryProcedure,
+	processMirroredEmailJob: processMirroredEmailJobProcedure,
+	sendEmailCallbackTest: sendEmailCallbackTestProcedure,
+	retryEmailOutboundDelivery: retryEmailOutboundDeliveryProcedure,
 	getConfig: getXiaofeiConfig,
 	saveAgentSettings: saveXiaofeiAgentSettings,
 	saveConfig: saveXiaofeiConfig,

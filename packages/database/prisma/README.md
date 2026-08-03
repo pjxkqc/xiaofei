@@ -76,6 +76,21 @@ replay without becoming a conflict. Message list projections intentionally omit
 body, raw HTML, and attachment URLs; those are available only through a
 workspace-scoped detail read.
 
+The same transaction also projects a bounded, readable support message into
+`XiaofeiConversation.messages`, under a per-conversation advisory lock. This is
+the bridge that makes a Worker-delivered Email immediately visible in `/inbox`
+without weakening the normalized message ledger; raw HTML and attachment URLs
+remain in the restricted detail record.
+
+`XiaofeiOutboundDelivery` is the reply/status Outbox. The guarded reply and
+trace, immutable `xiaofei.email.delivery.v1` payload, destination mode, and
+`delivery_pending` job transition are committed before any Receiver HTTP call.
+Every attempt stores only status, attempt count, HTTP status, timestamps, and a
+safe error. A failed row is retained and can be retargeted to the Organization's
+current Receiver setting; a delivered row is not replayed by the operator UI.
+The Organization config stores only `mock`/`webhook` mode and the validated
+callback URL—P0 does not persist callback credentials.
+
 Organization query helpers are the merchant boundary for new Xiaofei work:
 
 - configuration and customer get/list/create/update calls take `organizationId`;

@@ -1,8 +1,13 @@
-import { ConversationStateSchema, type EmailMessageIngestV1 } from "@repo/xiaofei";
+import {
+	ConversationStateSchema,
+	createConversationState,
+	type EmailMessageIngestV1,
+} from "@repo/xiaofei";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
 	const transaction = {
+		$executeRaw: vi.fn(),
 		xiaofeiChannelBinding: { findMany: vi.fn() },
 		xiaofeiInboundEvent: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
 		xiaofeiCustomer: { upsert: vi.fn(), updateMany: vi.fn() },
@@ -10,10 +15,17 @@ const mocks = vi.hoisted(() => {
 			upsert: vi.fn(),
 			findUnique: vi.fn(),
 			create: vi.fn(),
+			update: vi.fn(),
 			updateMany: vi.fn(),
 		},
 		xiaofeiConversationMessage: { create: vi.fn() },
-		xiaofeiProcessingJob: { create: vi.fn() },
+		xiaofeiProcessingJob: {
+			create: vi.fn(),
+			findFirst: vi.fn(),
+			update: vi.fn(),
+			updateMany: vi.fn(),
+		},
+		xiaofeiOutboundDelivery: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
 	};
 	const root = {
 		xiaofeiWorkspace: { findUnique: vi.fn() },
@@ -44,6 +56,7 @@ vi.mock("../client", () => ({
 
 import {
 	acceptMirroredEmailMessage,
+	completeXiaofeiEmailReplyProcessing,
 	createXiaofeiOrganizationEmailChannelBinding,
 	getXiaofeiOrganizationConversationMessage,
 	getXiaofeiOrganizationInboundEvent,
@@ -59,6 +72,7 @@ import {
 	XiaofeiChannelBindingNotFoundError,
 	XiaofeiChannelBindingWorkspaceMismatchError,
 	XiaofeiEmailMirrorConflictError,
+	XiaofeiEmailProcessingLeaseConflictError,
 } from "./xiaofei";
 
 const email: EmailMessageIngestV1 = {
@@ -122,9 +136,14 @@ describe("email mirror persistence", () => {
 		mocks.xiaofeiCustomer.upsert.mockResolvedValue({ id: "customer-a", name: "Customer" });
 		mocks.xiaofeiConversation.findUnique.mockResolvedValue(null);
 		mocks.xiaofeiConversation.create.mockResolvedValue({ id: "conversation-a" });
+		mocks.xiaofeiConversation.update.mockResolvedValue({ id: "conversation-a" });
+		mocks.$executeRaw.mockResolvedValue(0);
 		mocks.xiaofeiInboundEvent.create.mockResolvedValue({ id: "event-a" });
 		mocks.xiaofeiConversationMessage.create.mockResolvedValue({ id: "message-a" });
 		mocks.xiaofeiProcessingJob.create.mockResolvedValue({ id: "job-a" });
+		mocks.xiaofeiProcessingJob.findFirst.mockResolvedValue({ id: "job-a" });
+		mocks.xiaofeiProcessingJob.update.mockResolvedValue({ id: "job-a" });
+		mocks.xiaofeiOutboundDelivery.create.mockResolvedValue({ id: "delivery:job-a" });
 		mocks.root.xiaofeiInboundEvent.findMany.mockResolvedValue([]);
 		mocks.root.xiaofeiConversationMessage.findMany.mockResolvedValue([]);
 		mocks.root.xiaofeiProcessingJob.findMany.mockResolvedValue([]);
@@ -239,6 +258,19 @@ describe("email mirror persistence", () => {
 		expect(mocks.xiaofeiInboundEvent.create).toHaveBeenCalledTimes(1);
 		expect(mocks.xiaofeiConversationMessage.create).toHaveBeenCalledTimes(1);
 		expect(mocks.xiaofeiProcessingJob.create).toHaveBeenCalledTimes(1);
+		expect(mocks.xiaofeiConversation.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					messages: [
+						expect.objectContaining({
+							id: `email-source:${email.message.sourceMessageId}`,
+							role: "customer",
+							text: "body",
+						}),
+					],
+				}),
+			}),
+		);
 	});
 
 	it("does not create a job for outbound email and returns the durable duplicate locator", async () => {
@@ -266,6 +298,34 @@ describe("email mirror persistence", () => {
 			messageId: "message-old",
 			jobId: "job-old",
 		});
+	});
+
+	it("keeps a Xiaofei source-message echo out of the visible Inbox projection", async () => {
+		mocks.xiaofeiConversation.findUnique.mockResolvedValueOnce({
+			id: "conversation-a",
+			customerId: "customer-a",
+			channel: "email",
+			messages: [
+				{
+					id: `email-source:${outboundEmail.message.sourceMessageId}`,
+					role: "ai",
+					authorName: "Xiaofei",
+					text: "Already visible reply",
+					createdAt: outboundEmail.occurredAt,
+				},
+			],
+		});
+		await acceptMirroredEmailMessage({
+			...outboundEmail,
+			message: { ...outboundEmail.message, senderType: "xiaofei" },
+		});
+		expect(mocks.xiaofeiConversation.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					messages: [expect.objectContaining({ text: "Already visible reply", role: "ai" })],
+				}),
+			}),
+		);
 	});
 
 	it("uses the outbound recipient as customer and never advances customer seen", async () => {
@@ -345,6 +405,13 @@ describe("email mirror persistence", () => {
 			},
 			data: { lastSeenAt: occurredAt },
 		});
+		expect(mocks.xiaofeiConversation.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					messages: [expect.objectContaining({ role: "customer", text: "body" })],
+				}),
+			}),
+		);
 	});
 
 	it("increments receipt metadata for an in-transaction duplicate without another message or job", async () => {
@@ -440,6 +507,94 @@ describe("email mirror persistence", () => {
 		await expect(acceptMirroredEmailMessage(email)).rejects.toBe(writeFailure);
 		expect(mocks.xiaofeiConversationMessage.create).not.toHaveBeenCalled();
 		expect(mocks.xiaofeiProcessingJob.create).not.toHaveBeenCalled();
+	});
+
+	it("commits a reply Outbox only while the captured AI owner lease is current", async () => {
+		const state = createConversationState({
+			id: email.conversation.externalId,
+			tenantId: "organization:organization-a",
+			agentId: "agent-a",
+			maxFollowUps: 3,
+		});
+		mocks.xiaofeiConversation.findUnique.mockResolvedValueOnce({ state });
+		const payload = {
+			schemaVersion: "xiaofei.email.delivery.v1" as const,
+			deliveryId: "delivery:job-a",
+			occurredAt: "2026-08-04T03:22:00.000Z",
+			tenant: email.tenant,
+			channel: "email" as const,
+			channelAccount: email.channelAccount,
+			conversation: email.conversation,
+			event: {
+				type: "message.reply.requested" as const,
+				message: {
+					sourceMessageId: "xiaofei:job-a",
+					replyToSourceMessageId: email.message.sourceMessageId,
+					senderType: "xiaofei" as const,
+					from: { address: "support@example.com", name: "Xiaofei" },
+					to: [email.message.from],
+					subject: "Re: Help",
+					content: { type: "text/plain" as const, value: "Safe reply" },
+				},
+			},
+			source: { system: "xiaofei" as const, environment: "test" },
+		};
+		await expect(
+			completeXiaofeiEmailReplyProcessing({
+				workspaceId: "workspace-a",
+				jobId: "job-a",
+				conversationId: "conversation-a",
+				expectedOwnerEpoch: state.ownerEpoch,
+				state,
+				messages: [],
+				traceEvents: [],
+				lastMessageAt: new Date(payload.occurredAt),
+				delivery: {
+					id: payload.deliveryId,
+					workspaceId: "workspace-a",
+					conversationId: "conversation-a",
+					processingJobId: "job-a",
+					eventType: payload.event.type,
+					senderType: "xiaofei",
+					destinationMode: "mock",
+					payload,
+				},
+			}),
+		).resolves.toEqual({ id: "delivery:job-a" });
+		expect(mocks.xiaofeiOutboundDelivery.create).toHaveBeenCalledTimes(1);
+		expect(mocks.xiaofeiProcessingJob.update).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { status: "delivery_pending", lastError: null } }),
+		);
+
+		vi.clearAllMocks();
+		mocks.transaction.mockImplementation(async (callback) => callback(mocks));
+		mocks.xiaofeiProcessingJob.findFirst.mockResolvedValue({ id: "job-a" });
+		mocks.xiaofeiConversation.findUnique.mockResolvedValue({
+			state: { ...state, ownerType: "human", ownerEpoch: state.ownerEpoch + 1 },
+		});
+		await expect(
+			completeXiaofeiEmailReplyProcessing({
+				workspaceId: "workspace-a",
+				jobId: "job-a",
+				conversationId: "conversation-a",
+				expectedOwnerEpoch: state.ownerEpoch,
+				state,
+				messages: [],
+				traceEvents: [],
+				lastMessageAt: new Date(payload.occurredAt),
+				delivery: {
+					id: payload.deliveryId,
+					workspaceId: "workspace-a",
+					conversationId: "conversation-a",
+					processingJobId: "job-a",
+					eventType: payload.event.type,
+					senderType: "xiaofei",
+					destinationMode: "mock",
+					payload,
+				},
+			}),
+		).rejects.toBeInstanceOf(XiaofeiEmailProcessingLeaseConflictError);
+		expect(mocks.xiaofeiOutboundDelivery.create).not.toHaveBeenCalled();
 	});
 
 	it("derives binding writes from the Organization workspace and rejects cross-tenant updates", async () => {

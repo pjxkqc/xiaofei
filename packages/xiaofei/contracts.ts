@@ -146,6 +146,88 @@ export const EmailMessageIngestV1Schema = z
 			});
 	});
 
+export const EmailDeliveryEventTypeSchema = z.enum([
+	"message.reply.requested",
+	"conversation.status.changed",
+]);
+export const EmailDeliverySenderTypeSchema = z.enum(["xiaofei", "loopdesk", "system"]);
+export const EmailConversationDeliveryStatusSchema = z.enum([
+	"xiaofei_received",
+	"xiaofei_processing",
+	"xiaofei_replied",
+	"human_attention_required",
+	"closed",
+]);
+
+const EmailReplyDeliveryEventSchema = z
+	.object({
+		type: z.literal("message.reply.requested"),
+		message: z
+			.object({
+				sourceMessageId: StableExternalIdSchema,
+				replyToSourceMessageId: StableExternalIdSchema.nullable(),
+				senderType: EmailDeliverySenderTypeSchema,
+				from: EmailParticipantSchema,
+				to: z.array(EmailParticipantSchema).min(1),
+				subject: z.string().nullable(),
+				content: EmailMessageContentSchema,
+			})
+			.strict(),
+	})
+	.strict();
+
+const EmailStatusDeliveryEventSchema = z
+	.object({
+		type: z.literal("conversation.status.changed"),
+		status: EmailConversationDeliveryStatusSchema,
+		reason: z.string().max(500).nullable(),
+	})
+	.strict();
+
+/**
+ * Stable callback envelope emitted by Xiaofei after a reply or observable
+ * conversation status is durably queued. The receiver can replay by
+ * `deliveryId`; transport attempts never change the business envelope.
+ */
+export const EmailDeliveryV1Schema = z
+	.object({
+		schemaVersion: z.literal("xiaofei.email.delivery.v1"),
+		deliveryId: StableExternalIdSchema,
+		occurredAt: z.string().datetime({ offset: true }),
+		tenant: z.object({ companyId: CompanyIdSchema }).strict(),
+		channel: z.literal("email"),
+		channelAccount: z.object({ id: StableExternalIdSchema, address: z.string().email() }).strict(),
+		conversation: EmailConversationReferenceSchema,
+		event: z.discriminatedUnion("type", [
+			EmailReplyDeliveryEventSchema,
+			EmailStatusDeliveryEventSchema,
+		]),
+		source: z
+			.object({
+				system: z.literal("xiaofei"),
+				environment: z.string().min(1).max(80),
+			})
+			.strict(),
+	})
+	.strict()
+	.superRefine((delivery, context) => {
+		const expectedPrefix = `email:${delivery.tenant.companyId}:`;
+		if (!delivery.conversation.externalId.startsWith(expectedPrefix))
+			context.addIssue({
+				code: "custom",
+				path: ["conversation", "externalId"],
+				message: `Expected an external conversation ID prefixed with ${expectedPrefix}.`,
+			});
+	});
+
+export const EmailDeliveryAcceptanceV1Schema = z
+	.object({
+		status: z.enum(["accepted", "duplicate"]),
+		deliveryId: StableExternalIdSchema,
+		receivedAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
+
 /**
  * A pure admission predicate for an outer worker. It does not enqueue work,
  * resolve a workspace, or grant any reply/send authority.
@@ -500,6 +582,9 @@ export const SupportConversationSummarySchema = z.object({
 	attentionSince: z.string().nullable().default(null),
 	online: z.boolean(),
 	assignedUserName: z.string().nullable(),
+	processingJobId: z.string().nullable().default(null),
+	processingStatus: z.string().nullable().default(null),
+	deliveryStatus: z.string().nullable().default(null),
 	lastMessage: z.string(),
 	lastMessageAt: z.string().nullable(),
 	updatedAt: z.string().min(1),
@@ -561,6 +646,11 @@ export type EmailMessageSource = z.infer<typeof EmailMessageSourceSchema>;
 export type EmailConversationReference = z.infer<typeof EmailConversationReferenceSchema>;
 export type EmailMessageFacts = z.infer<typeof EmailMessageFactsSchema>;
 export type EmailMessageIngestV1 = z.infer<typeof EmailMessageIngestV1Schema>;
+export type EmailDeliveryEventType = z.infer<typeof EmailDeliveryEventTypeSchema>;
+export type EmailDeliverySenderType = z.infer<typeof EmailDeliverySenderTypeSchema>;
+export type EmailConversationDeliveryStatus = z.infer<typeof EmailConversationDeliveryStatusSchema>;
+export type EmailDeliveryV1 = z.infer<typeof EmailDeliveryV1Schema>;
+export type EmailDeliveryAcceptanceV1 = z.infer<typeof EmailDeliveryAcceptanceV1Schema>;
 export type FallbackPolicy = z.infer<typeof FallbackPolicySchema>;
 export type HandoffPackage = z.infer<typeof HandoffPackageSchema>;
 export type ConversationAttention = z.infer<typeof ConversationAttentionSchema>;

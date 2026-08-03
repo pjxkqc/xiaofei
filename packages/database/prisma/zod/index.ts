@@ -54,7 +54,7 @@ export type OrganizationScalarFieldEnum = z.infer<typeof OrganizationScalarField
 
 // File: XiaofeiOrganizationConfigScalarFieldEnum.schema.ts
 
-export const XiaofeiOrganizationConfigScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'externalMerchantId', 'xiaofeiEnabled', 'createdAt', 'updatedAt'])
+export const XiaofeiOrganizationConfigScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'externalMerchantId', 'xiaofeiEnabled', 'emailDeliveryMode', 'emailCallbackUrl', 'createdAt', 'updatedAt'])
 
 export type XiaofeiOrganizationConfigScalarFieldEnum = z.infer<typeof XiaofeiOrganizationConfigScalarFieldEnumSchema>;
 
@@ -126,9 +126,15 @@ export type XiaofeiConversationMessageScalarFieldEnum = z.infer<typeof XiaofeiCo
 
 // File: XiaofeiProcessingJobScalarFieldEnum.schema.ts
 
-export const XiaofeiProcessingJobScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'inboundEventId', 'conversationId', 'conversationMessageId', 'kind', 'status', 'attempts', 'ownerEpoch', 'nextRunAt', 'createdAt', 'updatedAt'])
+export const XiaofeiProcessingJobScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'inboundEventId', 'conversationId', 'conversationMessageId', 'kind', 'status', 'attempts', 'ownerEpoch', 'nextRunAt', 'lastError', 'createdAt', 'updatedAt'])
 
 export type XiaofeiProcessingJobScalarFieldEnum = z.infer<typeof XiaofeiProcessingJobScalarFieldEnumSchema>;
+
+// File: XiaofeiOutboundDeliveryScalarFieldEnum.schema.ts
+
+export const XiaofeiOutboundDeliveryScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'conversationId', 'processingJobId', 'eventType', 'senderType', 'destinationMode', 'destinationUrl', 'payload', 'status', 'attempts', 'responseStatus', 'lastError', 'firstAttemptAt', 'deliveredAt', 'createdAt', 'updatedAt'])
+
+export type XiaofeiOutboundDeliveryScalarFieldEnum = z.infer<typeof XiaofeiOutboundDeliveryScalarFieldEnumSchema>;
 
 // File: XiaofeiKnowledgeDocumentScalarFieldEnum.schema.ts
 
@@ -352,6 +358,8 @@ export const XiaofeiOrganizationConfigSchema = z.object({
   organizationId: z.string(),
   externalMerchantId: z.string().nullish(),
   xiaofeiEnabled: z.boolean(),
+  emailDeliveryMode: z.string().default("mock"),
+  emailCallbackUrl: z.string().nullish(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -580,11 +588,37 @@ export const XiaofeiProcessingJobSchema = z.object({
   attempts: z.number().int(),
   ownerEpoch: z.number().int().nullish(),
   nextRunAt: z.date().nullish(),
+  lastError: z.string().nullish(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
 
 export type XiaofeiProcessingJobType = z.infer<typeof XiaofeiProcessingJobSchema>;
+
+
+// File: XiaofeiOutboundDelivery.schema.ts
+
+export const XiaofeiOutboundDeliverySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  conversationId: z.string(),
+  processingJobId: z.string().nullish(),
+  eventType: z.string(),
+  senderType: z.string(),
+  destinationMode: z.string(),
+  destinationUrl: z.string().nullish(),
+  payload: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  status: z.string().default("pending"),
+  attempts: z.number().int(),
+  responseStatus: z.number().int().nullish(),
+  lastError: z.string().nullish(),
+  firstAttemptAt: z.date().nullish(),
+  deliveredAt: z.date().nullish(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiOutboundDeliveryType = z.infer<typeof XiaofeiOutboundDeliverySchema>;
 
 
 // File: XiaofeiKnowledgeDocument.schema.ts

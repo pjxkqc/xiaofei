@@ -308,6 +308,8 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 			eventId: z.string().trim().min(1),
 			occurredAt: z.iso.datetime(),
 			scenario: z.enum(["inbound_customer", "outbound_loopdesk", "outbound_xiaofei"]),
+			customerEmail: z.string().trim().email().default("customer@example.test"),
+			subject: z.string().trim().max(300).nullable().default("Mock email"),
 			text: z.string().trim().min(1).max(10_000),
 		})
 		.parse(input);
@@ -339,9 +341,9 @@ export async function runMockEmailMirror(context: XiaofeiAuthContext, input: unk
 					? "xiaofei"
 					: "loopdesk"
 				: "customer",
-			from: { address: outbound ? payload.address : "customer@example.test", name: null },
-			to: [{ address: outbound ? "customer@example.test" : payload.address, name: null }],
-			subject: "Mock email",
+			from: { address: outbound ? payload.address : payload.customerEmail, name: null },
+			to: [{ address: outbound ? payload.customerEmail : payload.address, name: null }],
+			subject: payload.subject,
 			content: { type: "text/plain", value: payload.text },
 			attachments: [],
 			labels: [],

@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
 
 import {
+	ConversationStateSchema,
+	EmailDeliveryV1Schema,
+	SupportMessageSchema,
 	createConversationState,
 	isCustomerInboundEmailJobEligible,
+	type EmailDeliveryV1,
 	type EmailMessageIngestV1,
+	type SupportMessage,
 } from "@repo/xiaofei";
+import { z } from "zod";
 
 import { db } from "../client";
 import {
@@ -17,6 +23,20 @@ import type { XiaofeiInboundEvent, XiaofeiKnowledgeDocumentCategory } from "../g
 export interface UpsertXiaofeiOrganizationConfigInput {
 	externalMerchantId?: string | null;
 	xiaofeiEnabled?: boolean;
+	emailDeliveryMode?: "mock" | "webhook";
+	emailCallbackUrl?: string | null;
+}
+
+export interface CreateXiaofeiOutboundDeliveryInput {
+	id: string;
+	workspaceId: string;
+	conversationId: string;
+	processingJobId?: string | null;
+	eventType: EmailDeliveryV1["event"]["type"];
+	senderType: "xiaofei" | "loopdesk" | "system";
+	destinationMode: "mock" | "webhook";
+	destinationUrl?: string | null;
+	payload: EmailDeliveryV1;
 }
 
 export interface CreateXiaofeiCustomerInput {
@@ -117,6 +137,12 @@ export class XiaofeiEmailConversationConflictError extends Error {
 		readonly externalId: string,
 	) {
 		super("The existing email conversation has a different customer or channel.");
+	}
+}
+export class XiaofeiEmailProcessingLeaseConflictError extends Error {
+	readonly code = "EMAIL_PROCESSING_LEASE_CONFLICT";
+	constructor(readonly conversationId: string) {
+		super("The Email conversation owner changed while Xiaofei was processing.");
 	}
 }
 
@@ -481,6 +507,28 @@ export function upsertXiaofeiOrganizationConfig(
 	});
 }
 
+export async function getXiaofeiOrganizationEmailDeliveryConfig(organizationId: string) {
+	const config = await getXiaofeiOrganizationConfig(organizationId);
+	return {
+		mode: config?.emailDeliveryMode === "webhook" ? ("webhook" as const) : ("mock" as const),
+		callbackUrl: config?.emailCallbackUrl ?? null,
+	};
+}
+
+export async function saveXiaofeiOrganizationEmailDeliveryConfig(
+	organizationId: string,
+	input: { mode: "mock" | "webhook"; callbackUrl: string | null },
+) {
+	const config = await upsertXiaofeiOrganizationConfig(organizationId, {
+		emailDeliveryMode: input.mode,
+		emailCallbackUrl: input.callbackUrl,
+	});
+	return {
+		mode: config.emailDeliveryMode === "webhook" ? ("webhook" as const) : ("mock" as const),
+		callbackUrl: config.emailCallbackUrl,
+	};
+}
+
 const ORGANIZATION_TENANT_PREFIX = "organization:";
 
 export interface ListAdminXiaofeiOrganizationsOptions {
@@ -772,13 +820,29 @@ export async function upsertXiaofeiOrganizationConversation(input: {
 export function getXiaofeiConversation(workspaceId: string, externalId: string) {
 	return db.xiaofeiConversation.findUnique({
 		where: { workspaceId_externalId: { workspaceId, externalId } },
-		include: { customer: true },
+		include: {
+			customer: true,
+			processingJobs: {
+				select: { id: true, status: true },
+				orderBy: { createdAt: "desc" },
+				take: 1,
+			},
+			outboundDeliveries: { select: { status: true }, orderBy: { createdAt: "desc" }, take: 1 },
+		},
 	});
 }
 export function listXiaofeiConversations(workspaceId: string) {
 	return db.xiaofeiConversation.findMany({
 		where: { workspaceId },
-		include: { customer: true },
+		include: {
+			customer: true,
+			processingJobs: {
+				select: { id: true, status: true },
+				orderBy: { createdAt: "desc" },
+				take: 1,
+			},
+			outboundDeliveries: { select: { status: true }, orderBy: { createdAt: "desc" }, take: 1 },
+		},
 		orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
 		take: 50,
 	});
@@ -975,6 +1039,7 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 				},
 				update: { name: customerName, email: customerAddress },
 			});
+			await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${binding.workspaceId}:${input.conversation.externalId}`}, 0))`;
 			const currentConversation = await transaction.xiaofeiConversation.findUnique({
 				where: {
 					workspaceId_externalId: {
@@ -1006,7 +1071,7 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 							agentId: "email-mirror",
 							maxFollowUps: 0,
 						}),
-						messages: [],
+						messages: toEmailSupportMessages([], input),
 						traceEvents: [],
 						lastCustomerSeenAt: isInbound ? occurredAt : null,
 						lastMessageAt: occurredAt,
@@ -1064,6 +1129,14 @@ export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): P
 				},
 				data: { lastMessageAt: occurredAt },
 			});
+			if (currentConversation)
+				await transaction.xiaofeiConversation.update({
+					where: { id: conversation.id },
+					data: {
+						customerName: customer.name,
+						messages: toEmailSupportMessages(currentConversation.messages, input),
+					},
+				});
 			if (isInbound) {
 				await transaction.xiaofeiConversation.updateMany({
 					where: {
@@ -1176,6 +1249,7 @@ const PROCESSING_JOB_LIST_SELECT = {
 	attempts: true,
 	ownerEpoch: true,
 	nextRunAt: true,
+	lastError: true,
 	createdAt: true,
 	updatedAt: true,
 } as const;
@@ -1191,6 +1265,216 @@ export async function getXiaofeiOrganizationProcessingJob(organizationId: string
 	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
 	return db.xiaofeiProcessingJob.findUnique({
 		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+	});
+}
+
+export async function getXiaofeiOrganizationEmailProcessingContext(
+	organizationId: string,
+	id: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.findUnique({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+		include: {
+			inboundEvent: true,
+			conversationMessage: true,
+			conversation: { include: { customer: true } },
+		},
+	});
+}
+
+export async function claimXiaofeiOrganizationEmailProcessingJob(
+	organizationId: string,
+	id: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	const result = await db.xiaofeiProcessingJob.updateMany({
+		where: { workspaceId: workspace.id, id, status: { in: ["mirrored", "failed"] } },
+		data: {
+			status: "processing",
+			attempts: { increment: 1 },
+			lastError: null,
+			nextRunAt: null,
+		},
+	});
+	return result.count === 1;
+}
+
+export async function failXiaofeiOrganizationEmailProcessingJob(
+	organizationId: string,
+	id: string,
+	lastError: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.updateMany({
+		where: { workspaceId: workspace.id, id, status: "processing" },
+		data: { status: "failed", lastError },
+	});
+}
+
+export async function completeXiaofeiEmailReplyProcessing(input: {
+	workspaceId: string;
+	jobId: string;
+	conversationId: string;
+	expectedOwnerEpoch: number;
+	state: Prisma.InputJsonValue;
+	messages: Prisma.InputJsonValue;
+	traceEvents: Prisma.InputJsonValue;
+	lastMessageAt: Date;
+	delivery: CreateXiaofeiOutboundDeliveryInput;
+}) {
+	return db.$transaction(async (transaction) => {
+		const job = await transaction.xiaofeiProcessingJob.findFirst({
+			where: {
+				workspaceId: input.workspaceId,
+				id: input.jobId,
+				conversationId: input.conversationId,
+				status: "processing",
+			},
+		});
+		if (!job) throw new Error("Email processing job is not claimed.");
+		const conversation = await transaction.xiaofeiConversation.findUnique({
+			where: {
+				workspaceId_id: { workspaceId: input.workspaceId, id: input.conversationId },
+			},
+			select: { state: true },
+		});
+		if (!conversation) throw new Error("Email conversation not found.");
+		const currentState = ConversationStateSchema.parse(conversation.state);
+		if (currentState.ownerType !== "ai" || currentState.ownerEpoch !== input.expectedOwnerEpoch)
+			throw new XiaofeiEmailProcessingLeaseConflictError(input.conversationId);
+		await transaction.xiaofeiConversation.update({
+			where: {
+				workspaceId_id: { workspaceId: input.workspaceId, id: input.conversationId },
+			},
+			data: {
+				state: input.state,
+				messages: input.messages,
+				traceEvents: input.traceEvents,
+				lastMessageAt: input.lastMessageAt,
+			},
+		});
+		const payload = EmailDeliveryV1Schema.parse(input.delivery.payload);
+		const delivery = await transaction.xiaofeiOutboundDelivery.create({
+			data: {
+				...input.delivery,
+				payload: payload as Prisma.InputJsonValue,
+				status: "pending",
+			},
+		});
+		await transaction.xiaofeiProcessingJob.update({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.jobId } },
+			data: { status: "delivery_pending", lastError: null },
+		});
+		return delivery;
+	});
+}
+
+export async function createXiaofeiOutboundDelivery(input: CreateXiaofeiOutboundDeliveryInput) {
+	const payload = EmailDeliveryV1Schema.parse(input.payload);
+	return db.xiaofeiOutboundDelivery.create({
+		data: {
+			...input,
+			payload: payload as Prisma.InputJsonValue,
+			status: "pending",
+		},
+	});
+}
+
+export async function retargetXiaofeiOrganizationOutboundDelivery(
+	organizationId: string,
+	id: string,
+	input: { destinationMode: "mock" | "webhook"; destinationUrl: string | null },
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiOutboundDelivery.update({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+		data: {
+			destinationMode: input.destinationMode,
+			destinationUrl: input.destinationUrl,
+			status: "pending",
+			responseStatus: null,
+			lastError: null,
+		},
+	});
+}
+
+export async function recordXiaofeiOutboundDeliveryAttempt(input: {
+	workspaceId: string;
+	id: string;
+	status: "delivered" | "failed";
+	responseStatus: number | null;
+	lastError: string | null;
+}) {
+	const now = new Date();
+	return db.$transaction(async (transaction) => {
+		const current = await transaction.xiaofeiOutboundDelivery.findUnique({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.id } },
+			select: { firstAttemptAt: true },
+		});
+		if (!current) throw new Error("Outbound delivery not found.");
+		const delivery = await transaction.xiaofeiOutboundDelivery.update({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.id } },
+			data: {
+				status: input.status,
+				attempts: { increment: 1 },
+				responseStatus: input.responseStatus,
+				lastError: input.lastError,
+				firstAttemptAt: current.firstAttemptAt ?? now,
+				...(input.status === "delivered" ? { deliveredAt: now } : {}),
+			},
+		});
+		if (delivery.processingJobId)
+			await transaction.xiaofeiProcessingJob.updateMany({
+				where: { workspaceId: input.workspaceId, id: delivery.processingJobId },
+				data: {
+					status: input.status === "delivered" ? "delivered" : "delivery_failed",
+					lastError: input.lastError,
+				},
+			});
+		return delivery;
+	});
+}
+
+export async function listXiaofeiOrganizationOutboundDeliveries(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiOutboundDelivery.findMany({
+		where: { workspaceId: workspace.id },
+		select: {
+			id: true,
+			conversationId: true,
+			processingJobId: true,
+			eventType: true,
+			senderType: true,
+			destinationMode: true,
+			destinationUrl: true,
+			status: true,
+			attempts: true,
+			responseStatus: true,
+			lastError: true,
+			firstAttemptAt: true,
+			deliveredAt: true,
+			createdAt: true,
+			updatedAt: true,
+		},
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		take: 50,
+	});
+}
+
+export async function getXiaofeiOrganizationOutboundDelivery(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiOutboundDelivery.findUnique({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+	});
+}
+
+export async function getLatestXiaofeiOrganizationEmailMirrorContext(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiInboundEvent.findFirst({
+		where: { workspaceId: workspace.id, source: "email", conversationMessage: { isNot: null } },
+		include: { conversationMessage: { include: { conversation: true } } },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
 	});
 }
 
@@ -1746,6 +2030,60 @@ function hashJson(value: Prisma.InputJsonValue) {
 
 function normalizeEmailAddress(address: string) {
 	return address.trim().toLowerCase();
+}
+
+function toEmailSupportMessages(
+	existing: unknown,
+	input: EmailMessageIngestV1,
+): Prisma.InputJsonValue {
+	const current = z.array(SupportMessageSchema).catch([]).parse(existing);
+	const role: SupportMessage["role"] =
+		input.message.senderType === "customer"
+			? "customer"
+			: input.message.senderType === "xiaofei"
+				? "ai"
+				: "human";
+	const next = SupportMessageSchema.parse({
+		id: `email-source:${input.message.sourceMessageId}`,
+		role,
+		authorName:
+			input.message.from.name?.trim() || normalizeEmailAddress(input.message.from.address),
+		text: readableEmailContent(input.message.content.type, input.message.content.value),
+		createdAt: input.occurredAt,
+	});
+	const byId = new Map(current.map((message) => [message.id, message]));
+	if (!byId.has(next.id)) byId.set(next.id, next);
+	const messages = [...byId.values()]
+		.sort((left, right) =>
+			left.createdAt === right.createdAt
+				? left.id.localeCompare(right.id)
+				: left.createdAt.localeCompare(right.createdAt),
+		)
+		.slice(-160);
+	return JSON.parse(JSON.stringify(messages)) as Prisma.InputJsonValue;
+}
+
+function readableEmailContent(
+	type: EmailMessageIngestV1["message"]["content"]["type"],
+	value: string,
+) {
+	if (type === "text/plain") return value.trim() || "（空白邮件）";
+	return (
+		value
+			.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/giu, " ")
+			.replace(/<br\s*\/?>/giu, "\n")
+			.replace(/<\/p\s*>/giu, "\n")
+			.replace(/<[^>]+>/gu, " ")
+			.replace(/&nbsp;/giu, " ")
+			.replace(/&amp;/giu, "&")
+			.replace(/&lt;/giu, "<")
+			.replace(/&gt;/giu, ">")
+			.replace(/&quot;/giu, '"')
+			.replace(/&#39;/giu, "'")
+			.replace(/[ \t]+/gu, " ")
+			.replace(/\n\s*\n\s*\n+/gu, "\n\n")
+			.trim() || "（空白 HTML 邮件）"
+	);
 }
 
 /**

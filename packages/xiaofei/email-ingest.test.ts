@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { EmailMessageIngestV1Schema, isCustomerInboundEmailJobEligible } from "./index";
+import {
+	EmailDeliveryAcceptanceV1Schema,
+	EmailDeliveryV1Schema,
+	EmailMessageIngestV1Schema,
+	isCustomerInboundEmailJobEligible,
+} from "./index";
 
 const validEmail = {
 	schemaVersion: "email.message.v1",
@@ -182,5 +187,67 @@ describe("EmailMessageIngestV1", () => {
 					message: { ...validEmail.message, direction, senderType },
 				}),
 			).toThrow();
+	});
+});
+
+describe("EmailDeliveryV1", () => {
+	const replyDelivery = {
+		schemaVersion: "xiaofei.email.delivery.v1",
+		deliveryId: "delivery:reply:42:1",
+		occurredAt: "2026-08-04T03:20:00.000Z",
+		tenant: { companyId: "42" },
+		channel: "email",
+		channelAccount: { id: "mailbox_123", address: "support@example.com" },
+		conversation: { externalId: "email:42:1d56abc", loopdeskSessionId: null },
+		event: {
+			type: "message.reply.requested",
+			message: {
+				sourceMessageId: "xiaofei:reply:42:1",
+				replyToSourceMessageId: "email:987654321",
+				senderType: "xiaofei",
+				from: { address: "support@example.com", name: "小飞" },
+				to: [{ address: "customer@example.com", name: "Customer" }],
+				subject: "Re: Where is my order?",
+				content: { type: "text/plain", value: "Your reply is ready." },
+			},
+		},
+		source: { system: "xiaofei", environment: "preview" },
+	} as const;
+
+	it("accepts a reply request and the receiver acknowledgement", () => {
+		expect(EmailDeliveryV1Schema.parse(replyDelivery)).toEqual(replyDelivery);
+		expect(
+			EmailDeliveryAcceptanceV1Schema.parse({
+				status: "accepted",
+				deliveryId: replyDelivery.deliveryId,
+				receivedAt: replyDelivery.occurredAt,
+			}),
+		).toMatchObject({ deliveryId: replyDelivery.deliveryId });
+	});
+
+	it("supports a status event without pretending it is an email reply", () => {
+		expect(
+			EmailDeliveryV1Schema.parse({
+				...replyDelivery,
+				deliveryId: "delivery:status:42:1",
+				event: {
+					type: "conversation.status.changed",
+					status: "xiaofei_received",
+					reason: null,
+				},
+			}).event.type,
+		).toBe("conversation.status.changed");
+	});
+
+	it("rejects a cross-company conversation or internal transport fields", () => {
+		expect(() =>
+			EmailDeliveryV1Schema.parse({
+				...replyDelivery,
+				conversation: { ...replyDelivery.conversation, externalId: "email:99:pair" },
+			}),
+		).toThrow();
+		expect(() =>
+			EmailDeliveryV1Schema.parse({ ...replyDelivery, callbackUrl: "https://receiver.test" }),
+		).toThrow();
 	});
 });

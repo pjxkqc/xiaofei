@@ -1,3 +1,4 @@
+import { EmailIntegrationNav } from "@ai/components/EmailIntegrationNav";
 import { SupportInbox } from "@ai/components/SupportInbox";
 import { OrganizationRequired } from "@organizations/components/OrganizationRequired";
 import { PageHeader } from "@shared/components/PageHeader";
@@ -12,6 +13,7 @@ export default function SupportInboxPage() {
 			/>
 			<OrganizationRequired>
 				<div className="max-w-7xl mx-auto">
+					<EmailIntegrationNav current="conversation" />
 					<SupportInbox />
 				</div>
 			</OrganizationRequired>

@@ -13,6 +13,7 @@ rules remain visible where changes are made.
 | [`xiaofei-foundation.md`](./xiaofei-foundation.md)                                     | Changing ownership, state, handoff, or trace invariants            |
 | [`xiaofei-loopdesk-target-architecture.md`](./xiaofei-loopdesk-target-architecture.md) | Reviewing the proposed Xiaofei control plane and its P0 boundary   |
 | [`xiaofei-loopdesk-integration-plan.md`](./xiaofei-loopdesk-integration-plan.md)       | Planning the proposed Flyranking / LoopDesk integration            |
+| [`email-worker-integration.md`](./email-worker-integration.md)                         | Integrating and accepting the implemented Email Worker loop        |
 | [`pr-preview-setup.md`](./pr-preview-setup.md)                                         | Operating GitHub, Vercel, Neon, Preview databases, or CI/CD        |
 | [`releases/README.md`](./releases/README.md)                                           | Finding the current version, environments, URLs, and test access   |
 | [`repository-structure.md`](./repository-structure.md)                                 | Finding code ownership, allowed dependencies, and validation scope |

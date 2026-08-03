@@ -1,0 +1,44 @@
+{
+	"schemaVersion": "xiaofei.email.delivery.v1",
+	"deliveryId": "delivery:job:preview-001",
+	"occurredAt": "2026-08-04T03:22:00.000Z",
+	"tenant": {
+		"companyId": "fly103-preview-company"
+	},
+	"channel": "email",
+	"channelAccount": {
+		"id": "fly103-preview-mailbox-v2",
+		"address": "support.fly103@example.com"
+	},
+	"conversation": {
+		"externalId": "email:fly103-preview-company:customer-demo",
+		"loopdeskSessionId": null
+	},
+	"event": {
+		"type": "message.reply.requested",
+		"message": {
+			"sourceMessageId": "xiaofei:delivery:job:preview-001",
+			"replyToSourceMessageId": "email:987654321",
+			"senderType": "xiaofei",
+			"from": {
+				"address": "support.fly103@example.com",
+				"name": "小飞"
+			},
+			"to": [
+				{
+					"address": "customer@example.com",
+					"name": "Preview Customer"
+				}
+			],
+			"subject": "Re: C-Air Mini room recommendation",
+			"content": {
+				"type": "text/plain",
+				"value": "C-Air Mini 适合已审核资料中的房间范围；如果需要 Wi-Fi，我会继续按已发布知识推荐支持联网的型号。"
+			}
+		}
+	},
+	"source": {
+		"system": "xiaofei",
+		"environment": "preview"
+	}
+}

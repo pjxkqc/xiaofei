@@ -46,6 +46,15 @@ outbound message or a non-customer inbound message; outbound messages must use
 `loopdesk`, `xiaofei`, or `system`. Eligibility neither queues work nor grants
 AI or send authority.
 
+`EmailDeliveryV1Schema` is the reverse, Worker-facing callback envelope. It
+uses `deliveryId` as a stable replay key and carries either a
+`message.reply.requested` event with complete plain-text Email reply facts, or
+`conversation.status.changed` with an explicit status. It repeats the same
+tenant, channel-account, and company-prefixed conversation identity rather
+than exposing a Workspace or framework state. `EmailDeliveryAcceptanceV1Schema`
+defines the recommended Receiver acknowledgement. The kernel validates these
+facts but does not persist an Outbox or perform HTTP delivery.
+
 `index.ts` is the public package boundary. Consumers should import from
 `@repo/xiaofei`, not from internal files.
 

@@ -380,7 +380,7 @@ export function NavBar() {
 			},
 			{
 				label: "Integrations",
-				href: "/integrations/mock-worker",
+				href: "/integrations/email",
 				icon: CableIcon,
 				isActive: pathname.startsWith("/integrations/"),
 			},

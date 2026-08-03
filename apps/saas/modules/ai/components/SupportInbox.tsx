@@ -149,6 +149,28 @@ export function SupportInbox() {
 			setBusy(false);
 		}
 	};
+	const processEmail = async () => {
+		if (!conversation?.processingJobId) return;
+		setBusy(true);
+		try {
+			const result = await orpcClient.xiaofei.processMirroredEmailJob({
+				jobId: conversation.processingJobId,
+			});
+			await refreshSelected(conversation.id);
+			await refreshList();
+			if (result.status === "processed")
+				toastSuccess(
+					result.deliveryStatus === "delivered"
+						? "小飞已生成回复并完成回递"
+						: "小飞回复已保存；回递失败，可在回递管理页重试",
+				);
+			else toastSuccess("这条 Email 已经处理，无需重复执行");
+		} catch {
+			toastError("小飞处理失败，请检查知识能力、商户托管和回递设置");
+		} finally {
+			setBusy(false);
+		}
+	};
 	const filteredConversations = useMemo(
 		() =>
 			filterSupportConversations(conversations, {
@@ -297,6 +319,19 @@ export function SupportInbox() {
 												待人工关注
 											</Badge>
 										)}
+										{visibleConversation.processingStatus && (
+											<Badge
+												status={
+													visibleConversation.processingStatus === "delivered"
+														? "success"
+														: visibleConversation.processingStatus.includes("failed")
+															? "warning"
+															: "info"
+												}
+											>
+												Email · {processingStatusLabel(visibleConversation.processingStatus)}
+											</Badge>
+										)}
 									</div>
 									<CardDescription className="mt-1">
 										{visibleConversation.attentionRequired
@@ -306,21 +341,35 @@ export function SupportInbox() {
 												: "Organization 消息接入"}
 									</CardDescription>
 								</div>
-								<Button
-									size="sm"
-									variant={visibleConversation.ownerType === "ai" ? "primary" : "outline"}
-									disabled={busy || visibleConversation.status === "closed"}
-									onClick={() =>
-										void setOwner(visibleConversation.ownerType === "ai" ? "human" : "ai")
-									}
-								>
-									{visibleConversation.ownerType === "ai" ? (
-										<UserRoundCheckIcon className="mr-2 size-4" />
-									) : (
-										<BotIcon className="mr-2 size-4" />
-									)}
-									{visibleConversation.ownerType === "ai" ? "人工接管" : "交还小飞"}
-								</Button>
+								<div className="gap-2 flex flex-wrap">
+									{visibleConversation.channel === "email" &&
+									visibleConversation.processingJobId &&
+									["mirrored", "failed"].includes(visibleConversation.processingStatus ?? "") ? (
+										<Button
+											size="sm"
+											disabled={busy || visibleConversation.ownerType !== "ai"}
+											onClick={() => void processEmail()}
+										>
+											<BotIcon className="mr-2 size-4" />
+											让小飞处理并回递
+										</Button>
+									) : null}
+									<Button
+										size="sm"
+										variant={visibleConversation.ownerType === "ai" ? "primary" : "outline"}
+										disabled={busy || visibleConversation.status === "closed"}
+										onClick={() =>
+											void setOwner(visibleConversation.ownerType === "ai" ? "human" : "ai")
+										}
+									>
+										{visibleConversation.ownerType === "ai" ? (
+											<UserRoundCheckIcon className="mr-2 size-4" />
+										) : (
+											<BotIcon className="mr-2 size-4" />
+										)}
+										{visibleConversation.ownerType === "ai" ? "人工接管" : "交还小飞"}
+									</Button>
+								</div>
 							</CardHeader>
 
 							<CardContent className="p-0 min-h-0 flex flex-1 flex-col">
@@ -421,6 +470,11 @@ function ConversationItem({
 					{conversation.attentionRequired && (
 						<span className="font-medium text-warning text-[11px]">待关注</span>
 					)}
+					{conversation.processingStatus && (
+						<span className="font-medium text-info text-[11px]">
+							{processingStatusLabel(conversation.processingStatus)}
+						</span>
+					)}
 				</div>
 				<span className="text-[11px] text-muted-foreground">
 					{formatListTime(conversation.lastMessageAt ?? conversation.updatedAt)}
@@ -485,4 +539,17 @@ function formatListTime(value: string): string {
 		hour: "2-digit",
 		minute: "2-digit",
 	}).format(new Date(value));
+}
+
+function processingStatusLabel(value: string) {
+	return (
+		{
+			mirrored: "已接收，待小飞处理",
+			processing: "小飞处理中",
+			delivery_pending: "回复待回递",
+			delivered: "回复已回递",
+			delivery_failed: "回递失败",
+			failed: "处理失败",
+		}[value] ?? value
+	);
 }

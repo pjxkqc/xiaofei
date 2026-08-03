@@ -158,6 +158,8 @@ model XiaofeiOrganizationConfig {
   organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   externalMerchantId String?      @unique
   xiaofeiEnabled     Boolean      @default(false)
+  emailDeliveryMode  String       @default("mock")
+  emailCallbackUrl   String?      @db.Text
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -293,6 +295,7 @@ model XiaofeiWorkspace {
   channelBindings    XiaofeiChannelBinding[]
   conversationMessages XiaofeiConversationMessage[]
   processingJobs     XiaofeiProcessingJob[]
+  outboundDeliveries XiaofeiOutboundDelivery[]
 
   @@map("xiaofei_workspace")
 }
@@ -319,6 +322,7 @@ model XiaofeiConversation {
 
   conversationMessages XiaofeiConversationMessage[] @relation("MessageConversation")
   processingJobs     XiaofeiProcessingJob[] @relation("JobConversation")
+  outboundDeliveries XiaofeiOutboundDelivery[] @relation("DeliveryConversation")
 
   @@unique([workspaceId, externalId])
   @@unique([workspaceId, id])
@@ -438,6 +442,7 @@ model XiaofeiProcessingJob {
   attempts           Int                       @default(0)
   ownerEpoch         Int?
   nextRunAt          DateTime?
+  lastError          String?                   @db.Text
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
 
@@ -446,6 +451,34 @@ model XiaofeiProcessingJob {
   @@unique([workspaceId, id])
   @@index([workspaceId, status, nextRunAt])
   @@map("xiaofei_processing_job")
+}
+
+model XiaofeiOutboundDelivery {
+  id                 String              @id
+  workspaceId        String
+  workspace          XiaofeiWorkspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversationId     String
+  conversation       XiaofeiConversation @relation("DeliveryConversation", fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Cascade)
+  processingJobId    String?              @unique
+  eventType          String
+  senderType         String
+  destinationMode    String
+  destinationUrl     String?              @db.Text
+  payload            Json
+  status             String               @default("pending")
+  attempts           Int                  @default(0)
+  responseStatus     Int?
+  lastError          String?              @db.Text
+  firstAttemptAt     DateTime?
+  deliveredAt        DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, status, createdAt, id])
+  @@index([workspaceId, conversationId, createdAt, id])
+  @@map("xiaofei_outbound_delivery")
 }
 
 enum XiaofeiKnowledgeDocumentFileType {

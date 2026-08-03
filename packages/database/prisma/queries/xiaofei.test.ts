@@ -217,7 +217,19 @@ describe("Xiaofei Organization queries", () => {
 			where: {
 				workspaceId_externalId: { workspaceId: "workspace-a", externalId: "conversation-a" },
 			},
-			include: { customer: true },
+			include: {
+				customer: true,
+				processingJobs: {
+					select: { id: true, status: true },
+					orderBy: { createdAt: "desc" },
+					take: 1,
+				},
+				outboundDeliveries: {
+					select: { status: true },
+					orderBy: { createdAt: "desc" },
+					take: 1,
+				},
+			},
 		});
 	});
 

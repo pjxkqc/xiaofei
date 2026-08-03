@@ -69,6 +69,8 @@ export const runMockEmailMirrorProcedure = supportProcedure
 			eventId: z.string().min(1),
 			occurredAt: z.iso.datetime(),
 			scenario: z.enum(["inbound_customer", "outbound_loopdesk", "outbound_xiaofei"]),
+			customerEmail: z.string().email(),
+			subject: z.string().max(300).nullable(),
 			text: z.string().min(1).max(10_000),
 		}),
 	)
