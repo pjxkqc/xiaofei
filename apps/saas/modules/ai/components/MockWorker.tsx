@@ -104,6 +104,7 @@ export function MockWorker() {
 					placeholder="Message text"
 				/>
 				<Button
+					loading={isPending}
 					disabled={isPending || !merchant || !customer || !conversation || !message || !text}
 					onClick={() => void submit()}
 				>

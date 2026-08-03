@@ -19,6 +19,7 @@ describe("Mock Worker UI contract", () => {
 		expect(component).toContain('<option value="whatsapp">WhatsApp</option>');
 		expect(component).toContain("if (isPending) return;");
 		expect(component).toContain("disabled={isPending ||");
+		expect(component).toContain("loading={isPending}");
 		expect(component).toContain('aria-live="polite"');
 	});
 

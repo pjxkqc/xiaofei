@@ -27,6 +27,7 @@ vi.mock("./service", () => ({
 import { runXiaofeiTurn } from "@repo/ai";
 import {
 	getXiaofeiOrganizationConfigByExternalMerchantId,
+	createXiaofeiCustomer,
 	getXiaofeiCustomer,
 	getXiaofeiConversation,
 	updateXiaofeiCustomer,
@@ -195,6 +196,25 @@ describe("organization mock worker", () => {
 			"event-a",
 			expect.objectContaining({ status: "ai_disabled" }),
 		);
+		expect(updateXiaofeiCustomer).toHaveBeenCalledWith(
+			"org-a",
+			"customer-a",
+			expect.objectContaining({ lastSeenAt: expect.any(Date) }),
+		);
+	});
+	it("creates a missing customer for the resolved organization", async () => {
+		vi.mocked(getXiaofeiCustomer).mockResolvedValue(null);
+		vi.mocked(createXiaofeiCustomer).mockResolvedValue({ id: "customer-row", name: "A" } as never);
+		await expect(runMockWorker(context, payload)).resolves.toMatchObject({
+			outcome: "ai_disabled",
+		});
+		expect(createXiaofeiCustomer).toHaveBeenCalledWith(
+			expect.objectContaining({
+				organizationId: "org-a",
+				externalCustomerId: "customer-a",
+				lastSeenAt: expect.any(Date),
+			}),
+		);
 	});
 	it("does not run twice for a duplicate external message", async () => {
 		vi.mocked(acceptInboundEvent).mockResolvedValue({
@@ -220,12 +240,21 @@ describe("organization mock worker", () => {
 			reply: "reply",
 			metadata: { traces: [] },
 		} as never);
+		vi.mocked(acceptInboundEvent)
+			.mockResolvedValueOnce({ kind: "created", event: { id: "event-a" } } as never)
+			.mockResolvedValueOnce({ kind: "created", event: { id: "echo-event" } } as never);
 		await expect(runMockWorker(context, payload)).resolves.toMatchObject({
 			outcome: "mock_delivered",
 		});
 		expect(runXiaofeiTurn).toHaveBeenCalledTimes(1);
 		expect(runXiaofeiTurn).toHaveBeenCalledWith(
 			expect.objectContaining({ message: "Subject\n\nBody" }),
+		);
+		expect(runXiaofeiTurn).toHaveBeenCalledTimes(1);
+		expect(updateXiaofeiInboundEventStatus).toHaveBeenCalledWith(
+			"workspace-a",
+			"echo-event",
+			expect.objectContaining({ status: "echo_ignored" }),
 		);
 	});
 	it("ignores an echoed Xiaofei source message without AI", async () => {
