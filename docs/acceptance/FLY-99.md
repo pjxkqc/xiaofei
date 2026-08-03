@@ -27,7 +27,7 @@ Production was not touched.
 - Organization A: `FLY-99 验收商户 A`
 - Organization B: `FLY-99 验收商户 B`
 - Customer external ID: `fly99-demo-customer-a`
-- Final name: `王小明` (edited during FLY-99 acceptance)
+- Final name: `王小明（FLY-99 已编辑）`
 - Email: `fly99.customer@example.com`
 - WhatsApp: `+8613800000099`
 - Status: archived
