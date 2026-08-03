@@ -32,7 +32,19 @@ export interface UpdateXiaofeiCustomerInput {
 }
 
 export interface UpdateXiaofeiInboundEventStatusInput {
-	status: string;
+	status:
+		| "processing"
+		| "processed"
+		| "failed"
+		| "organization_resolved"
+		| "customer_upserted"
+		| "conversation_updated"
+		| "ai_replied"
+		| "ai_disabled"
+		| "mock_delivered"
+		| "echo_ignored"
+		| "merchant_unknown"
+		| "conversation_conflict";
 	processedAt?: Date | null;
 	lastError?: string | null;
 }

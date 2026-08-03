@@ -10,6 +10,7 @@ import {
 	getInboundEvent,
 	listInboundEvents,
 	updateXiaofeiInboundEventStatus,
+	updateXiaofeiCustomer,
 	updateXiaofeiSupportConversation,
 	upsertXiaofeiSupportConversation,
 	XiaofeiInboundEventConflictError,
@@ -152,6 +153,10 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 				externalCustomerId: payload.externalCustomerId,
 				lastSeenAt: new Date(),
 			});
+		else
+			customer = await updateXiaofeiCustomer(config.organizationId, payload.externalCustomerId, {
+				lastSeenAt: new Date(),
+			});
 		await updateXiaofeiInboundEventStatus(workspace.id, event.id, { status: "customer_upserted" });
 		if (payload.origin === "xiaofei") {
 			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
@@ -162,7 +167,16 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 		}
 		const loaded = await getOrCreateXiaofeiWorkspaceByTenantKey(workspace.tenantKey);
 		const current = await getXiaofeiConversation(workspace.id, payload.externalConversationId);
+		if (current && (current.customerId !== customer.id || current.channel !== payload.channel)) {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "conversation_conflict",
+				processedAt: new Date(),
+				lastError: "Conversation customer or channel binding mismatch.",
+			});
+			return { ...accepted, outcome: "conversation_conflict" as const };
+		}
 		const now = new Date();
+		const inboundText = normalizeInboundText(payload.title, payload.text);
 		const state = current
 			? ConversationStateSchema.parse(current.state)
 			: createConversationState({
@@ -177,7 +191,7 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			id: payload.externalMessageId,
 			role: "customer",
 			authorName: customer.name ?? payload.externalCustomerId,
-			text: `${payload.title ? `${payload.title}\n` : ""}${payload.text}`,
+			text: inboundText,
 			createdAt: now.toISOString(),
 		});
 		const traces = current ? z.array(TraceEventSchema).parse(current.traceEvents) : [];
@@ -213,7 +227,7 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			return { ...accepted, outcome: "ai_disabled" as const };
 		}
 		const result = await runXiaofeiTurn({
-			message: payload.text,
+			message: inboundText,
 			state,
 			snapshot: loaded.snapshot,
 			knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
@@ -235,6 +249,9 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			traceEvents: toJson([...traces, ...result.metadata.traces].slice(-80)),
 			messages: toJson([...messages, inbound, reply].slice(-160)),
 			lastMessageAt: new Date(),
+		});
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "ai_replied",
 		});
 		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
 			status: "mock_delivered",
@@ -270,6 +287,10 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 
 function toJson(value: unknown): Prisma.InputJsonValue {
 	return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function normalizeInboundText(title: string | undefined, text: string) {
+	return [title?.trim(), text.trim()].filter(Boolean).join("\n\n");
 }
 
 async function acceptEnvelope(workspaceId: string, envelope: ChannelEnvelope) {

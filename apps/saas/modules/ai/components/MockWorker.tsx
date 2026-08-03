@@ -22,7 +22,10 @@ export function MockWorker() {
 	const [title, setTitle] = useState("Mock inbound message");
 	const [text, setText] = useState("您好，我需要帮助。 ");
 	const [notice, setNotice] = useState("");
+	const [isPending, setIsPending] = useState(false);
 	async function submit() {
+		if (isPending) return;
+		setIsPending(true);
 		setNotice("Sending mock inbound message…");
 		try {
 			const result = await orpcClient.xiaofei.runMockWorker({
@@ -39,6 +42,8 @@ export function MockWorker() {
 			setNotice(
 				"Worker could not accept this message. Verify the active Organization merchant ID.",
 			);
+		} finally {
+			setIsPending(false);
 		}
 	}
 	return (
@@ -53,17 +58,20 @@ export function MockWorker() {
 			<CardContent className="space-y-3">
 				<div className="gap-3 md:grid-cols-2 grid">
 					<Input
+						disabled={isPending}
 						value={merchant}
 						onChange={(event) => setMerchant(event.target.value)}
 						placeholder="externalMerchantId"
 					/>
 					<Input
+						disabled={isPending}
 						value={customer}
 						onChange={(event) => setCustomer(event.target.value)}
 						placeholder="externalCustomerId"
 					/>
 					<select
 						className="px-3 rounded-md border bg-background"
+						disabled={isPending}
 						value={channel}
 						onChange={(event) => setChannel(event.target.value as "email" | "whatsapp")}
 					>
@@ -71,16 +79,19 @@ export function MockWorker() {
 						<option value="whatsapp">WhatsApp</option>
 					</select>
 					<Input
+						disabled={isPending}
 						value={conversation}
 						onChange={(event) => setConversation(event.target.value)}
 						placeholder="externalConversationId"
 					/>
 					<Input
+						disabled={isPending}
 						value={message}
 						onChange={(event) => setMessage(event.target.value)}
 						placeholder="externalMessageId"
 					/>
 					<Input
+						disabled={isPending}
 						value={title}
 						onChange={(event) => setTitle(event.target.value)}
 						placeholder="Title (Email)"
@@ -88,16 +99,21 @@ export function MockWorker() {
 				</div>
 				<Textarea
 					value={text}
+					disabled={isPending}
 					onChange={(event) => setText(event.target.value)}
 					placeholder="Message text"
 				/>
 				<Button
-					disabled={!merchant || !customer || !conversation || !message || !text}
+					disabled={isPending || !merchant || !customer || !conversation || !message || !text}
 					onClick={() => void submit()}
 				>
-					Run mock inbound
+					{isPending ? "Sending…" : "Run mock inbound"}
 				</Button>
-				{notice ? <p className="text-sm text-muted-foreground">{notice}</p> : null}
+				{notice ? (
+					<p aria-live="polite" className="text-sm text-muted-foreground">
+						{notice}
+					</p>
+				) : null}
 			</CardContent>
 		</Card>
 	);
