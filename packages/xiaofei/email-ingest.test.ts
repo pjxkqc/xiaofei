@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { EmailMessageIngestV1Schema, isCustomerInboundEmailJobEligible } from "./index";
@@ -42,6 +44,16 @@ const validEmail = {
 };
 
 describe("EmailMessageIngestV1", () => {
+	it("keeps the committed Worker handoff fixture valid", () => {
+		const fixture = JSON.parse(
+			readFileSync(
+				new URL("../../docs/acceptance/email-message.v1.example.json", import.meta.url),
+				"utf8",
+			),
+		);
+		expect(EmailMessageIngestV1Schema.parse(fixture).eventId).toBe(fixture.eventId);
+	});
+
 	it("accepts every required envelope and message fact field", () => {
 		const message = EmailMessageIngestV1Schema.parse(validEmail);
 

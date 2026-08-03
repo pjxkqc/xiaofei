@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
 	acceptMirroredEmailMessage: vi.fn(),
@@ -48,6 +48,11 @@ const valid = {
 		workerVersion: "test",
 	},
 };
+
+afterEach(() => {
+	delete process.env.XIAOFEI_EMAIL_INGEST_API_KEY;
+	vi.clearAllMocks();
+});
 
 describe("email mirror ingress", () => {
 	it("requires a distinct constant-time service credential", () => {

@@ -13,10 +13,11 @@ import { orpcClient } from "@shared/lib/orpc-client";
 import { useEffect, useState } from "react";
 
 interface Binding {
+	id: string;
 	companyId: string;
 	channelAccountId: string;
 	address: string;
-	status: string;
+	status: "active" | "disabled";
 }
 type Scenario =
 	| "inbound_customer"
@@ -33,21 +34,34 @@ export function EmailMirrorMock() {
 	const [scenario, setScenario] = useState<Scenario>("inbound_customer");
 	const [notice, setNotice] = useState("");
 	const [text, setText] = useState("Mock email body");
+	const [running, setRunning] = useState(false);
 	useEffect(() => {
 		void (async () => {
 			try {
 				const result = (await orpcClient.xiaofei.listEmailBindings()) as { items: Binding[] };
 				setBindings(result.items);
-				setSelected(result.items[0]?.channelAccountId ?? "");
+				setSelected(
+					(result.items.find((item) => item.status === "active") ?? result.items[0])?.id ?? "",
+				);
 			} catch {
 				setNotice("Unable to load Organization Email bindings.");
 			}
 		})();
 	}, []);
 	async function run() {
-		const binding = bindings.find((item) => item.channelAccountId === selected);
+		const selectedBinding = bindings.find((item) => item.id === selected);
+		const binding =
+			scenario === "disabled_binding"
+				? bindings.find((item) => item.status === "disabled")
+				: selectedBinding?.status === "active"
+					? selectedBinding
+					: bindings.find((item) => item.status === "active");
 		if (!binding) {
-			setNotice("Select an Organization binding first.");
+			setNotice(
+				scenario === "disabled_binding"
+					? "Create and disable an Organization binding before running this scenario."
+					: "Create or select an active Organization binding first.",
+			);
 			return;
 		}
 		const eventId = `mock:email:${crypto.randomUUID()}`;
@@ -63,14 +77,23 @@ export function EmailMirrorMock() {
 					: ("inbound_customer" as const),
 			text,
 		};
+		setRunning(true);
 		try {
 			const first = await orpcClient.xiaofei.runMockEmailMirror(input);
-			if (scenario === "duplicate") await orpcClient.xiaofei.runMockEmailMirror(input);
+			if (scenario === "duplicate") {
+				const duplicate = await orpcClient.xiaofei.runMockEmailMirror(input);
+				setNotice(
+					`First: ${first.status}; replay: ${duplicate.status}; job: ${duplicate.jobId ?? "none"}.`,
+				);
+				return;
+			}
 			if (scenario === "payload_conflict")
 				await orpcClient.xiaofei.runMockEmailMirror({ ...input, text: `${text} changed` });
 			setNotice(`Mirror result: ${first.status}; job: ${first.jobId ?? "none"}.`);
 		} catch {
 			setNotice(`Expected observable ${scenario} outcome: request rejected safely.`);
+		} finally {
+			setRunning(false);
 		}
 	}
 	return (
@@ -90,7 +113,7 @@ export function EmailMirrorMock() {
 						onChange={(e) => setSelected(e.target.value)}
 					>
 						{bindings.map((binding) => (
-							<option key={binding.channelAccountId} value={binding.channelAccountId}>
+							<option key={binding.id} value={binding.id}>
 								{binding.companyId} · {binding.address} · {binding.status}
 							</option>
 						))}
@@ -114,8 +137,8 @@ export function EmailMirrorMock() {
 							</option>
 						))}
 					</select>
-					<Button onClick={() => void run()} disabled={!selected}>
-						Run email scenario
+					<Button onClick={() => void run()} disabled={!selected || running}>
+						{running ? "Running…" : "Run email scenario"}
 					</Button>
 				</div>
 				<Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Email text" />

@@ -1267,6 +1267,7 @@ export async function listXiaofeiOrganizationEmailMirrorMetadata(organizationId:
 			},
 		},
 		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		take: 50,
 	});
 }
 export async function getXiaofeiOrganizationEmailMirrorDetail(organizationId: string, id: string) {

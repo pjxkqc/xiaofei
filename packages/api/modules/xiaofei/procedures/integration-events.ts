@@ -77,4 +77,8 @@ export const listEmailMirrorMetadataProcedure = supportProcedure.handler(({ cont
 );
 export const getEmailMirrorDetailProcedure = supportProcedure
 	.input(z.object({ id: z.string().min(1) }))
-	.handler(({ context, input }) => getEmailMirrorDetail(context, input.id));
+	.handler(async ({ context, input }) => {
+		const event = await getEmailMirrorDetail(context, input.id);
+		if (!event) throw new ORPCError("NOT_FOUND", { message: "Email mirror event not found." });
+		return event;
+	});

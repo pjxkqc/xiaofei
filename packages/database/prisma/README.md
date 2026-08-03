@@ -196,8 +196,11 @@ history.
 Preview builds use a pooled `DATABASE_URL` for runtime traffic and
 `DATABASE_URL_UNPOOLED` or `DIRECT_URL` for schema work.
 `scripts/vercel-build.mjs` temporarily supplies the direct URL to Prisma,
-generates the client, restores the pooled runtime URL, and then builds the SaaS
-application.
+applies the known lossless Email-mirror composite indexes, runs the normal
+schema push, generates the client, restores the pooled runtime URL, and then
+builds the SaaS application. The index preparation never deletes or rewrites a
+row: PostgreSQL fails the deployment if existing rows violate a new unique
+key. Do not replace this guard with a broad `--accept-data-loss` flag.
 
 Never print a connection string in build output. See
 [`../../../docs/pr-preview-setup.md`](../../../docs/pr-preview-setup.md) for the

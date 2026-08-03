@@ -169,9 +169,15 @@ failures return only `500 internal_error`.
 ```bash
 curl --fail-with-body -X POST "$XIAOFEI_API_URL/api/xiaofei/integrations/v1/email/messages" \
   -H 'Authorization: Bearer <XIAOFEI_EMAIL_INGEST_API_KEY>' \
-  -H 'Content-Type: application/json' -H 'Idempotency-Key: email:42:example' \
-  --data @email-message.v1.json
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: email:realtime:42:987654321:examplehash' \
+  --data @docs/acceptance/email-message.v1.example.json
 ```
+
+The committed request fixture contains fictional addresses and IDs and is safe
+to hand to the Worker developer. Change the fixture's tenant/account tuple to
+an active binding for the target environment, keep the idempotency header equal
+to `eventId`, and retain the same event ID across every retry.
 
 Mirror mode persists events/messages and may create a durable mirrored job for
 customer inbound mail, but starts no consumer, model, sender, or provider call.

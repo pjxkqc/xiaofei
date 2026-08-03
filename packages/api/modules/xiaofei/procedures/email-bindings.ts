@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import {
 	createXiaofeiOrganizationEmailChannelBinding,
 	disableXiaofeiOrganizationEmailChannelBinding,
@@ -19,10 +20,16 @@ const bindingInput = z.object({
 
 export const listEmailBindingsProcedure = supportProcedure.handler(async ({ context }) => {
 	const organizationId = await getXiaofeiOrganizationId(context);
-	const tenantKey = await requireXiaofeiOrganizationAdmin(context).catch(() => null);
+	let canManage = false;
+	try {
+		await requireXiaofeiOrganizationAdmin(context);
+		canManage = true;
+	} catch (error) {
+		if (!(error instanceof ORPCError) || error.code !== "FORBIDDEN") throw error;
+	}
 	return {
 		items: await listXiaofeiOrganizationEmailChannelBindings(organizationId),
-		canManage: tenantKey !== null,
+		canManage,
 	};
 });
 export const createEmailBindingProcedure = supportProcedure

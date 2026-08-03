@@ -1,0 +1,50 @@
+{
+	"schemaVersion": "email.message.v1",
+	"eventId": "email:realtime:42:987654321:examplehash",
+	"occurredAt": "2026-08-03T03:20:00.000Z",
+	"tenant": {
+		"companyId": "42"
+	},
+	"channel": "email",
+	"channelAccount": {
+		"id": "mailbox_123",
+		"address": "support@example.com"
+	},
+	"conversation": {
+		"externalId": "email:42:examplehash",
+		"loopdeskSessionId": null
+	},
+	"message": {
+		"sourceMessageId": "email:987654321",
+		"providerMessageId": "<example-message@example.com>",
+		"replyToSourceMessageId": "email:987654000",
+		"direction": "inbound",
+		"senderType": "customer",
+		"from": {
+			"address": "customer@example.com",
+			"name": "Example Customer"
+		},
+		"to": [
+			{
+				"address": "support@example.com",
+				"name": null
+			}
+		],
+		"subject": "Where is my order?",
+		"content": {
+			"type": "text/plain",
+			"value": "Please help me check order EXAMPLE-1001."
+		},
+		"attachments": [],
+		"sentAt": "2026-08-03T03:20:00.000Z",
+		"labels": [],
+		"sourceSendType": 0
+	},
+	"source": {
+		"system": "mail-service",
+		"topic": "UAT_RealTimeEmail",
+		"partition": 0,
+		"offset": 123456,
+		"workerVersion": "example-worker-sha"
+	}
+}

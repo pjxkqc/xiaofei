@@ -25,6 +25,8 @@ export function EmailBindings() {
 	const [companyId, setCompanyId] = useState("");
 	const [accountId, setAccountId] = useState("");
 	const [address, setAddress] = useState("");
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
 	const [notice, setNotice] = useState("");
 	async function load() {
 		try {
@@ -41,17 +43,41 @@ export function EmailBindings() {
 	useEffect(() => {
 		void load();
 	}, []);
-	async function create() {
+	function resetForm() {
+		setCompanyId("");
+		setAccountId("");
+		setAddress("");
+		setEditingId(null);
+	}
+	function edit(item: Binding) {
+		setCompanyId(item.companyId);
+		setAccountId(item.channelAccountId);
+		setAddress(item.address);
+		setEditingId(item.id);
+		setNotice(`Editing ${item.address}.`);
+	}
+	async function save() {
+		setSaving(true);
 		try {
-			await orpcClient.xiaofei.createEmailBinding({
-				companyId,
-				channelAccountId: accountId,
-				address,
-			});
-			setNotice("Binding saved.");
+			if (editingId) {
+				await orpcClient.xiaofei.updateEmailBinding({
+					id: editingId,
+					data: { companyId, channelAccountId: accountId, address },
+				});
+			} else {
+				await orpcClient.xiaofei.createEmailBinding({
+					companyId,
+					channelAccountId: accountId,
+					address,
+				});
+			}
+			setNotice(editingId ? "Binding updated." : "Binding created.");
+			resetForm();
 			await load();
 		} catch {
-			setNotice("Only Organization owners and admins can change bindings.");
+			setNotice("Unable to save binding. Check role access and unique mailbox values.");
+		} finally {
+			setSaving(false);
 		}
 	}
 	async function toggle(item: Binding) {
@@ -64,25 +90,13 @@ export function EmailBindings() {
 			setNotice("Only Organization owners and admins can change bindings.");
 		}
 	}
-	async function update(item: Binding) {
-		try {
-			await orpcClient.xiaofei.updateEmailBinding({
-				id: item.id,
-				data: { companyId, channelAccountId: accountId, address },
-			});
-			setNotice("Binding updated.");
-			await load();
-		} catch {
-			setNotice("Unable to update binding.");
-		}
-	}
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>Email channel bindings</CardTitle>
 				<CardDescription>
 					Members can inspect bindings. Owners and admins can create, enable, or disable them;
-					workspace selection remains server-side.
+					workspace selection remains server-side. Select Edit to load a binding into the form.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-4">
@@ -103,9 +117,19 @@ export function EmailBindings() {
 							onChange={(e) => setAddress(e.target.value)}
 							placeholder="address"
 						/>
-						<Button disabled={!companyId || !accountId || !address} onClick={() => void create()}>
-							Create binding
-						</Button>
+						<div className="gap-2 flex">
+							<Button
+								disabled={!companyId || !accountId || !address || saving}
+								onClick={() => void save()}
+							>
+								{saving ? "Saving…" : editingId ? "Save changes" : "Create binding"}
+							</Button>
+							{editingId ? (
+								<Button variant="secondary" disabled={saving} onClick={resetForm}>
+									Cancel
+								</Button>
+							) : null}
+						</div>
 					</div>
 				) : null}
 				{notice && (
@@ -125,8 +149,8 @@ export function EmailBindings() {
 									<Button variant="secondary" onClick={() => void toggle(item)}>
 										{item.status === "active" ? "Disable" : "Enable"}
 									</Button>
-									<Button variant="secondary" onClick={() => void update(item)}>
-										Update
+									<Button variant="secondary" onClick={() => edit(item)}>
+										Edit
 									</Button>
 								</div>
 							) : (
