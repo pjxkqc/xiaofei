@@ -134,6 +134,63 @@ describe("email mirror persistence", () => {
 		).rejects.toBeInstanceOf(XiaofeiChannelBindingConflictError);
 	});
 
+	it("rejects a single identifier match instead of routing it to a workspace", async () => {
+		mocks.bindings.mockResolvedValueOnce([
+			{
+				id: "id-only",
+				status: "active",
+				channelAccountId: "mailbox-a",
+				address: "other@example.com",
+			},
+		]);
+		await expect(
+			resolveActiveXiaofeiEmailChannelBinding({
+				companyId: "company-a",
+				channelAccountId: "mailbox-a",
+				address: "support@example.com",
+			}),
+		).rejects.toBeInstanceOf(XiaofeiChannelBindingConflictError);
+		mocks.bindings.mockResolvedValueOnce([
+			{
+				id: "address-only",
+				status: "active",
+				channelAccountId: "other",
+				address: "support@example.com",
+			},
+		]);
+		await expect(
+			resolveActiveXiaofeiEmailChannelBinding({
+				companyId: "company-a",
+				channelAccountId: "mailbox-a",
+				address: "support@example.com",
+			}),
+		).rejects.toBeInstanceOf(XiaofeiChannelBindingConflictError);
+	});
+
+	it("rejects an active-disabled identifier split", async () => {
+		mocks.bindings.mockResolvedValueOnce([
+			{
+				id: "active",
+				status: "active",
+				channelAccountId: "mailbox-a",
+				address: "other@example.com",
+			},
+			{
+				id: "disabled",
+				status: "disabled",
+				channelAccountId: "other",
+				address: "support@example.com",
+			},
+		]);
+		await expect(
+			resolveActiveXiaofeiEmailChannelBinding({
+				companyId: "company-a",
+				channelAccountId: "mailbox-a",
+				address: "support@example.com",
+			}),
+		).rejects.toBeInstanceOf(XiaofeiChannelBindingConflictError);
+	});
+
 	it("atomically records inbound customer email and one mirrored job", async () => {
 		await expect(acceptMirroredEmailMessage(email)).resolves.toEqual({
 			status: "accepted",
@@ -179,5 +236,31 @@ describe("email mirror persistence", () => {
 			messageId: "message-old",
 			jobId: "job-old",
 		});
+	});
+
+	it("uses the outbound recipient as customer and never advances customer seen", async () => {
+		await acceptMirroredEmailMessage({
+			...email,
+			message: { ...email.message, direction: "outbound", senderType: "loopdesk" },
+		});
+		expect(mocks.xiaofeiCustomer.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({ externalCustomerId: "support@example.com" }),
+			}),
+		);
+		expect(mocks.xiaofeiCustomer.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("stops before message and job if conversation ownership conflicts", async () => {
+		mocks.xiaofeiConversation.findUnique.mockResolvedValueOnce({
+			id: "conversation-a",
+			customerId: "other-customer",
+			channel: "email",
+		});
+		await expect(acceptMirroredEmailMessage(email)).rejects.toMatchObject({
+			code: "EMAIL_CONVERSATION_CONFLICT",
+		});
+		expect(mocks.xiaofeiConversationMessage.create).not.toHaveBeenCalled();
+		expect(mocks.xiaofeiProcessingJob.create).not.toHaveBeenCalled();
 	});
 });
