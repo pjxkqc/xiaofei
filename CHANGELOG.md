@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — accepted UAT candidate (2026-08-03)
+
+### Added
+
+- Added durable S2S event ingestion with accepted, replay, and conflict
+  outcomes plus an authenticated event monitor with delivery timestamps.
+- Added Organization-scoped Xiaofei configuration, knowledge, customers,
+  conversations, event access, and fail-closed authorization boundaries.
+- Added customer list/detail and Organization Inbox surfaces.
+- Added the Global Admin Xiaofei overview and per-Organization read/configuration.
+- Added Preview/UAT synthetic Global Admin, owner, admin, member, and
+  second-Organization fixtures.
+- Added the Email/WhatsApp Mock Worker loop with customer/conversation binding,
+  durable replies, idempotency, and echo suppression.
+
+### Verified
+
+- Accepted UAT application revision
+  `afe89ef60a3715005a110d22e60b3266c47ab07d` with passing GitHub Quality,
+  Ready Vercel UAT deployment, and ready Neon `preview/uat` branch.
+- Revalidated public multi-turn answers and fallback recovery, then refreshed
+  Organization A capability review and Eval evidence for the worker loop.
+- Persisted a release-test Organization customer, a safe pre-Eval handoff, a
+  post-Eval Xiaofei-owned conversation, and observable inbound/echo events.
+
 ## v0.1.0 — 2026-07-29
 
 ### Changed
