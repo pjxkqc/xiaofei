@@ -14,6 +14,7 @@ import { useDebounceValue } from "usehooks-ts";
 
 export function XiaofeiAdminOverview() {
 	const [query, setQuery] = useQueryState("query", parseAsString.withDefault(""));
+	const [enabled, setEnabled] = useQueryState("enabled", parseAsString);
 	const [debouncedQuery, setDebouncedQuery] = useDebounceValue(query, 300, {
 		leading: true,
 		trailing: false,
@@ -22,7 +23,12 @@ export function XiaofeiAdminOverview() {
 	const overview = useQuery(orpc.admin.xiaofei.overview.queryOptions());
 	const organizations = useQuery(
 		orpc.admin.xiaofei.listOrganizations.queryOptions({
-			input: { query: debouncedQuery || undefined, limit: 50, offset: 0 },
+			input: {
+				query: debouncedQuery || undefined,
+				enabled: enabled === "true" ? true : enabled === "false" ? false : undefined,
+				limit: 50,
+				offset: 0,
+			},
 		}),
 	);
 	return (
@@ -50,6 +56,15 @@ export function XiaofeiAdminOverview() {
 						onChange={(event) => setQuery(event.target.value)}
 						placeholder="按名称或 externalMerchantId 搜索"
 					/>
+					<select
+						className="h-9 px-3 text-sm rounded-md border bg-background"
+						value={enabled ?? ""}
+						onChange={(event) => setEnabled(event.target.value || null)}
+					>
+						<option value="">全部启用状态</option>
+						<option value="true">已启用</option>
+						<option value="false">未启用（含未配置）</option>
+					</select>
 					{organizations.isLoading ? (
 						<Skeleton className="h-36 w-full" />
 					) : (
@@ -73,6 +88,9 @@ export function XiaofeiAdminOverview() {
 									</Badge>
 								</Link>
 							))}
+							{organizations.data?.organizations.length === 0 && (
+								<p className="p-4 text-sm text-muted-foreground">没有匹配的商户。</p>
+							)}
 						</div>
 					)}
 				</CardContent>
@@ -82,14 +100,16 @@ export function XiaofeiAdminOverview() {
 					<CardTitle>最近入站事件</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-2 text-sm">
-					{overview.data?.recentEvents.map((event) => (
-						<div className="flex justify-between" key={event.id}>
-							<span>{event.eventType}</span>
-							<span className="text-muted-foreground">
-								{event.status} · {new Date(event.createdAt).toLocaleString()}
-							</span>
-						</div>
-					)) ?? "暂无事件"}
+					{overview.data?.recentEvents.length
+						? overview.data.recentEvents.map((event) => (
+								<div className="flex justify-between" key={event.id}>
+									<span>{event.eventType}</span>
+									<span className="text-muted-foreground">
+										{event.status} · {new Date(event.createdAt).toLocaleString()}
+									</span>
+								</div>
+							))
+						: "暂无事件"}
 				</CardContent>
 			</Card>
 		</div>

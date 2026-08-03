@@ -32,10 +32,16 @@ export function XiaofeiOrganizationDetail({ organizationId }: { organizationId: 
 			onError: () => toastError("无法保存配置；externalMerchantId 必须唯一。"),
 		}),
 	);
-	if (detail.isLoading || !detail.data)
+	if (detail.isLoading)
 		return (
 			<Card>
 				<CardContent className="p-6">正在加载…</CardContent>
+			</Card>
+		);
+	if (detail.isError || !detail.data)
+		return (
+			<Card>
+				<CardContent className="p-6">无法加载此商户的 Xiaofei 信息。请返回总览后重试。</CardContent>
 			</Card>
 		);
 	const { organization, workspace, summary } = detail.data;
@@ -56,14 +62,15 @@ export function XiaofeiOrganizationDetail({ organizationId }: { organizationId: 
 					<CardTitle>小飞配置</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-4">
-					<label className="gap-2 text-sm grid">
-						externalMerchantId
+					<div className="gap-2 text-sm grid">
+						<label htmlFor="external-merchant-id">externalMerchantId</label>
 						<Input
+							id="external-merchant-id"
 							value={externalMerchantId}
 							onChange={(event) => setExternalMerchantId(event.target.value)}
 							placeholder="未配置"
 						/>
-					</label>
+					</div>
 					<label className="gap-2 text-sm flex items-center">
 						<input
 							checked={xiaofeiEnabled}
@@ -120,11 +127,52 @@ export function XiaofeiOrganizationDetail({ organizationId }: { organizationId: 
 					) : (
 						"尚未建立 Xiaofei 工作区"
 					)}
-					<div className="mt-3">
-						<Link className="underline" href={`/organizations/${organization.slug ?? ""}`}>
-							打开商户侧页面
-						</Link>
+					<div className="mt-3 space-y-2">
+						<p className="text-muted-foreground">
+							以下商户侧页面需要该商户 membership；不会切换当前 Organization。
+						</p>
+						<div className="gap-3 flex flex-wrap">
+							<Link className="underline" href={getAdminPath(`/organizations/${organization.id}`)}>
+								Admin Organization 记录
+							</Link>
+							{organization.slug && (
+								<>
+									<Link className="underline" href={`/${organization.slug}`}>
+										商户主页（需 membership）
+									</Link>
+									<Link className="underline" href={`/${organization.slug}/customers`}>
+										客户（需 membership）
+									</Link>
+									<Link className="underline" href={`/${organization.slug}/inbox`}>
+										会话（需 membership）
+									</Link>
+									<Link className="underline" href={`/${organization.slug}/integrations/events`}>
+										事件（需 membership）
+									</Link>
+									<Link className="underline" href={`/${organization.slug}/knowledge/entries`}>
+										知识治理（需 membership）
+									</Link>
+								</>
+							)}
+						</div>
 					</div>
+				</CardContent>
+			</Card>
+			<Card>
+				<CardHeader>
+					<CardTitle>最近入站事件</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-2 text-sm">
+					{summary.recentEvents.length
+						? summary.recentEvents.map((event) => (
+								<div className="flex justify-between" key={event.id}>
+									<span>{event.eventType}</span>
+									<span className="text-muted-foreground">
+										{event.status} · {new Date(event.createdAt).toLocaleString()}
+									</span>
+								</div>
+							))
+						: "暂无事件"}
 				</CardContent>
 			</Card>
 		</div>

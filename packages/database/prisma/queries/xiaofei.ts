@@ -326,17 +326,28 @@ export async function listAdminXiaofeiOrganizations(options: ListAdminXiaofeiOrg
 	const where = {
 		...(options.enabled === undefined
 			? {}
-			: { xiaofeiConfig: { is: { xiaofeiEnabled: options.enabled } } }),
+			: options.enabled
+				? { xiaofeiConfig: { is: { xiaofeiEnabled: true } } }
+				: {
+						OR: [
+							{ xiaofeiConfig: { is: null } },
+							{ xiaofeiConfig: { is: { xiaofeiEnabled: false } } },
+						],
+					}),
 		...(options.query
 			? {
-					OR: [
-						{ name: { contains: options.query, mode: "insensitive" as const } },
+					AND: [
 						{
-							xiaofeiConfig: {
-								is: {
-									externalMerchantId: { contains: options.query, mode: "insensitive" as const },
+							OR: [
+								{ name: { contains: options.query, mode: "insensitive" as const } },
+								{
+									xiaofeiConfig: {
+										is: {
+											externalMerchantId: { contains: options.query, mode: "insensitive" as const },
+										},
+									},
 								},
-							},
+							],
 						},
 					],
 				}

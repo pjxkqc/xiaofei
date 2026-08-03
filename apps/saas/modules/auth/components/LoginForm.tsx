@@ -196,7 +196,7 @@ export function LoginForm({
 									<ul className="space-y-1 text-xs">
 										{previewRoleAccounts.map((account) => (
 											<li key={account.email}>
-												<strong>{account.role}</strong> — {account.email} / {account.password} (
+												<strong>{account.role}</strong> — {account.email} / {account.password}{" "}
 												{account.organization
 													? `(${account.organization})`
 													: "(no Organization membership)"}
