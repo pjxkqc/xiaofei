@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { filterSupportConversations, nextSelectedConversationId } from "./support-inbox-state";
+import {
+	filterSupportConversations,
+	isSelectedConversationVisible,
+	nextSelectedConversationId,
+} from "./support-inbox-state";
 
 const conversations = [
 	{
@@ -42,5 +46,17 @@ describe("Support inbox filtered selection", () => {
 		expect(nextSelectedConversationId([{ ...conversations[1] }] as never, "conversation-a")).toBe(
 			"conversation-b",
 		);
+	});
+
+	it("hides stale detail while selection changes from A to B or to no result", () => {
+		const visibleB = filterSupportConversations(conversations as never, {
+			customer: "Bea",
+			channel: "all",
+			owner: "all",
+			status: "all",
+		});
+		expect(isSelectedConversationVisible("conversation-a", "conversation-b", visibleB)).toBe(false);
+		expect(isSelectedConversationVisible("conversation-a", null, [])).toBe(false);
+		expect(isSelectedConversationVisible("conversation-b", "conversation-b", visibleB)).toBe(true);
 	});
 });

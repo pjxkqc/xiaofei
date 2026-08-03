@@ -37,7 +37,11 @@ import "streamdown/styles.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 
-import { filterSupportConversations, nextSelectedConversationId } from "../lib/support-inbox-state";
+import {
+	filterSupportConversations,
+	isSelectedConversationVisible,
+	nextSelectedConversationId,
+} from "../lib/support-inbox-state";
 
 export function SupportInbox() {
 	const { activeOrganization } = useActiveOrganization();
@@ -156,7 +160,11 @@ export function SupportInbox() {
 		[conversations, customerFilter, channelFilter, ownerFilter, statusFilter],
 	);
 	const visibleConversation =
-		conversationOrganizationId === activeOrganization?.id ? conversation : null;
+		conversation &&
+		conversationOrganizationId === activeOrganization?.id &&
+		isSelectedConversationVisible(conversation.id, selectedId, filteredConversations)
+			? conversation
+			: null;
 
 	useEffect(() => {
 		setSelectedId((current) => nextSelectedConversationId(filteredConversations, current));

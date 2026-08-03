@@ -30,3 +30,16 @@ export function nextSelectedConversationId(
 		? selectedId
 		: (conversations[0]?.id ?? null);
 }
+
+/** A detail can render only for the actively selected item in the visible list. */
+export function isSelectedConversationVisible(
+	conversationId: string | null,
+	selectedId: string | null,
+	conversations: SupportConversationSummary[],
+) {
+	return (
+		conversationId !== null &&
+		conversationId === selectedId &&
+		conversations.some((conversation) => conversation.id === selectedId)
+	);
+}
