@@ -47,7 +47,8 @@ A` and `FLY-99 验收商户 B`. This operator is the owner for both acceptance
   `fly99.customer@example.com`, WhatsApp `+8613800000099`, archived.
 - `/support` is the public customer entry point and does not require login.
   A normal signup user may register with a disposable email and choose a
-  private password; FLY-99 did not create or use a fixed-password account.
+  private password. Fixed shared passwords belong only to the Preview/UAT
+  synthetic role fixtures above; Production does not create them.
 - Preview acceptance exercised Owner A, Admin A, Member A, and Owner B. The
   fixture credentials remain documented here only and are intentionally not
   repeated in the PR body.
