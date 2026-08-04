@@ -354,6 +354,7 @@ export class XiaofeiVersioningNotFoundError extends Error {
 export class XiaofeiTestTurnFeedbackConflictError extends Error {
 	constructor(readonly sourceTestTurnId: string) {
 		super("This TestTurn already has a different applied correction.");
+		this.name = "XiaofeiTestTurnFeedbackConflictError";
 	}
 }
 
@@ -2392,6 +2393,10 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 		)
 			throw new XiaofeiVersioningNotFoundError(input.organizationId, source.evidenceRevisionId);
 		const correctedKnowledgeUnit = KnowledgeUnitSchema.parse(source.evidenceRevision.content);
+		const correctedContent = KnowledgeUnitSchema.parse({
+			...correctedKnowledgeUnit,
+			standardReplyPolicy: correction,
+		});
 		const existing = await transaction.xiaofeiResponseIntervention.findUnique({
 			where: {
 				organizationId_sourceTestTurnId: {
@@ -2417,7 +2422,7 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 			beforeCapabilityVersionId: source.capabilityVersionId,
 			beforeKnowledgeRevisionId: source.evidenceRevisionId,
 			correction,
-			correctedContent: { ...correctedKnowledgeUnit, standardReplyPolicy: correction },
+			correctedContent,
 			beforeResponse: {
 				question: source.question,
 				answer: source.answer,

@@ -977,6 +977,42 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 			expect.objectContaining({ data: { interventionId: "intervention-a" } }),
 		);
 	});
+
+	it("rejects whitespace-only feedback before creating a revision, intervention, or Test pointer", async () => {
+		queryMocks.findTestTurn.mockResolvedValueOnce({
+			id: "source-turn",
+			evidenceRevisionId: "merchant-revision",
+			evidenceRevision: {
+				origin: "merchant",
+				content: {
+					id: "knowledge-unit",
+					title: "Saved knowledge",
+					status: "released",
+					standardReplyPolicy: "Old policy.",
+					fallbackReply: "Fallback.",
+					sourceSection: "FAQ",
+					quality: { status: "passed" },
+				},
+			},
+			capabilityVersion: {
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [{ knowledgeUnitRevisionId: "merchant-revision" }],
+			},
+		});
+
+		await expect(
+			applyXiaofeiTestTurnFeedback({
+				organizationId: "organization-a",
+				sourceTestTurnId: "source-turn",
+				correction: " \r\n ",
+			}),
+		).rejects.toThrow();
+
+		expect(queryMocks.findResponseIntervention).not.toHaveBeenCalled();
+		expect(queryMocks.createRevision).not.toHaveBeenCalled();
+		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+		expect(queryMocks.upsertCapabilityBinding).not.toHaveBeenCalled();
+	});
 });
 
 describe("Xiaofei knowledge document queries", () => {
