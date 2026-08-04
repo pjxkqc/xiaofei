@@ -128,6 +128,9 @@ the owning Agent.
 - Every Agent instruction tells it to read root `AGENTS.md`.
 - Every Agent has `xiaofei-pr-delivery`; ordinary repository checkout uses
   `--ref uat` and an ordinary Draft PR targets `uat`.
+- Every active parent Feature Issue and its PR identify the immutable Origin
+  Codex session and current Managing Codex session; child Issues inherit the
+  controller identity from the parent.
 - No secret was copied from the repository, browser, shell, or deployment
   provider into Multica.
 - A dry-run issue can be routed without allowing two Agents to edit the same

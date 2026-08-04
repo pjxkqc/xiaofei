@@ -25,18 +25,22 @@ so that merge could delete the durable `uat` branch.
 
 1. Read `AGENTS.md`, `docs/multica/collaboration.md`, the issue, and the
    nearest boundary README.
-2. Resolve the issue key and one implementation owner. Split competing file
-   ownership before editing.
+2. Resolve the current `CODEX_THREAD_ID`, its `CX-xxxxxxxx` tag, the immutable
+   origin session, current managing session, parent Issue key, and one
+   implementation owner. The parent Issue metadata and PR ownership block must
+   agree before editing. Split competing file ownership first.
 3. Start from the current durable UAT branch:
 
    ```bash
    multica repo checkout https://github.com/pjxkqc/xiaofei --ref uat
    git fetch origin --prune
-   git switch -c agent/<issue-key>-<short-slug> origin/uat
+   git switch -c agent/<issue-key>-<session-tag>-<short-slug> origin/uat
    ```
 
    If an isolated worktree already exists, verify its base instead of discarding
-   changes. Do not reset, overwrite, or stage unrelated work.
+   changes. Do not reset, overwrite, or stage unrelated work. Do not rename a
+   grandfathered open branch only to add a session tag; backfill ownership
+   metadata instead.
 
 4. Run `pnpm delivery:identity` before the first commit. Fix the effective
    author and committer before proceeding.
@@ -48,13 +52,18 @@ so that merge could delete the durable `uat` branch.
 
    ```text
    base:  uat
-   head:  agent/<issue-key>-<short-slug>
+   head:  agent/<issue-key>-<session-tag>-<short-slug>
    title: [<issue-key>] <outcome>
-   body:  Multica issue: <issue-key>
+   body:
+     Origin Codex session: <tag and full thread ID>
+     Managing Codex session: <tag and full thread ID>
+     Multica parent issue: <issue-key>
+     Implementation owner: <agent>
    ```
 
    The body must also state scope, risk, exact head SHA, validation results, and
-   the manual Preview acceptance path.
+   the manual Preview acceptance path. Origin is immutable; a manager change
+   requires an approved handoff comment and matching parent Issue metadata.
 
 8. Confirm GitHub Quality and Vercel belong to that exact head. For
    data-bearing work, confirm Neon created the exact
@@ -96,10 +105,10 @@ explicitly authorizes that mutation.
 
 ## Report evidence
 
-Return the issue and PR links, base/head refs, exact head SHA, commands and
-results, GitHub/Vercel/Neon state, cleanup status, residual risks, and the next
-human decision. Redact credentials and never copy connection strings, tokens,
-session cookies, or production data.
+Return the origin and managing Codex sessions, issue and PR links, base/head
+refs, exact head SHA, commands and results, GitHub/Vercel/Neon state, cleanup
+status, residual risks, and the next human decision. Redact credentials and
+never copy connection strings, tokens, session cookies, or production data.
 
 Use [`../../../releases/README.md`](../../../releases/README.md) as the current
 environment and test-access record. GitHub Releases remain the immutable

@@ -25,6 +25,10 @@ assigned role in [`docs/multica/agents.md`](./docs/multica/agents.md).
 
 - One issue has one implementation owner. Other agents review or receive an
   explicit child issue instead of editing the same boundary concurrently.
+- Every independently coordinating Codex conversation records its immutable
+  origin thread and current managing thread on the parent Multica issue and in
+  the PR body. A session handoff changes only the manager and requires explicit
+  approval; see `docs/multica/collaboration.md`.
 - Keep changes inside the assigned paths. Ask the lead to split cross-boundary
   work before expanding scope.
 - Preserve the vendor-neutral kernel: `@repo/xiaofei` cannot depend on Next.js,
@@ -47,8 +51,10 @@ assigned role in [`docs/multica/agents.md`](./docs/multica/agents.md).
   Report the exact head SHA plus commands and results in the handoff.
 - For ordinary work, check out the repository with
   `multica repo checkout https://github.com/pjxkqc/xiaofei --ref uat`, create an
-  `agent/<issue-key>-<short-slug>` branch from `origin/uat`, and open the Draft
-  PR back to `uat`.
+  `agent/<issue-key>-<session-tag>-<short-slug>` branch from `origin/uat`, and
+  open the Draft PR back to `uat`. Existing branches created before session
+  tags were required are grandfathered and must be backfilled in issue/PR
+  metadata instead of renamed.
 - Never open `uat → main` directly. An explicitly authorized production release
   uses a temporary `promote/uat-YYYYMMDD-*` branch from the accepted UAT head
   and a separate PR to `main`; after release, fast-forward `uat` to `main`.

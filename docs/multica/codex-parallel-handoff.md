@@ -54,7 +54,9 @@
 
 - 和用户确认目标、P0 范围、非目标、风险与验收方式。
 - 先只读核对仓库、GitHub、Multica 和环境，再给出最小闭环方案。
-- 方案确认后创建或认领唯一 Multica 父 Issue，记录本会话负责的 Feature。
+- 启动时从 `CODEX_THREAD_ID` 派生 `CX-xxxxxxxx` 会话标签并主动声明。
+- 方案确认后创建或认领唯一 Multica 父 Issue，写入不可变 Origin session
+  和当前 Managing session 元数据，记录本会话负责的 Feature。
 - 跨边界工作拆成串行子 Issue，分配给唯一 Agent。
 - 跟进 run、PR、CI、Vercel、Neon 与 Preview；重复故障应修交付规则或 Skill。
 - 汇总 Quality 结论；只有用户明确同意后才能合并或晋级。
@@ -68,7 +70,8 @@
 
 ## 4. 并行安全规则
 
-1. **一个会话，一个 Feature 父 Issue。** 先确认没有别人处理同一目标。
+1. **一个会话，一个 Feature 父 Issue。** 先用 Session metadata 和 PR body
+   确认没有别人处理同一目标。
 2. **一个边界，一个 Owner。** 不并发修改同一契约、Schema、页面或交付脚本。
 3. **隔离工作树。** 实现必须用 `multica repo checkout ... --ref uat`；不能复用另一会话正在使用的 `/Users/club/project/xiaofei` 工作树或分支。
 4. **先契约后消费者。** 跨边界按“领域/数据库契约 → API/持久化 → 页面/交互 → Quality”串行推进。
@@ -76,10 +79,16 @@
 6. **不操作别人交付物。** 未经负责会话或用户授权，不 merge、close、rebase、force-push、删分支或清理别人的 Preview。
 7. **每次交接带精确 SHA。** 新 commit、amend、rebase 或 merge 后旧 CI、Preview 和人工证据失效。
 8. **不传 Secret。** 只记录变量名和配置位置，不复制 Key、Cookie、数据库 URL 或 Production 账号。
+9. **来源与管理分开。** Origin session 创建后永不改；只有获批交接才能更新
+   Managing session，并在父 Issue 留下旧/新会话、精确 SHA 与剩余动作。
 
 开始工作前执行：
 
 ```bash
+test -n "$CODEX_THREAD_ID"
+XIAOFEI_CODEX_THREAD_ID="$CODEX_THREAD_ID"
+XIAOFEI_SESSION_TAG="CX-${XIAOFEI_CODEX_THREAD_ID%%-*}"
+
 git fetch origin --prune
 git status --short --branch
 gh pr list --repo pjxkqc/xiaofei --state open
@@ -90,6 +99,24 @@ multica agent list --output json
 ```
 
 若目标、路径或 PR 重叠，后开始的会话暂停写入，由 Xiaofei Lead 切分或决定顺序。
+
+用户确认方案并创建或认领父 Issue 后，写入会话所有权：
+
+```bash
+multica issue metadata set <issue-key> --key codex_origin_thread_id \
+  --value "$XIAOFEI_CODEX_THREAD_ID" --type string
+multica issue metadata set <issue-key> --key codex_origin_tag \
+  --value "$XIAOFEI_SESSION_TAG" --type string
+multica issue metadata set <issue-key> --key codex_manager_thread_id \
+  --value "$XIAOFEI_CODEX_THREAD_ID" --type string
+multica issue metadata set <issue-key> --key codex_manager_tag \
+  --value "$XIAOFEI_SESSION_TAG" --type string
+multica issue metadata set <issue-key> --key codex_manager_updated_at \
+  --value "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --type string
+```
+
+认领已有 Issue 时先读取这些键。若 Origin 已存在则不得覆盖；Managing
+session 不等于本会话时必须暂停，直到用户或原 Managing session 明确交接。
 
 ## 5. Agent 路由
 
@@ -114,7 +141,7 @@ multica agent list --output json
 ```bash
 multica repo checkout https://github.com/pjxkqc/xiaofei --ref uat
 git fetch origin --prune
-git switch -c agent/FLY-123-short-outcome origin/uat
+git switch -c agent/FLY-123-cx-019fc9d9-short-outcome origin/uat
 pnpm delivery:identity
 
 # 聚焦测试后执行完整门禁
@@ -129,8 +156,10 @@ git rev-parse HEAD
 
 ### Draft PR 与 Preview
 
-- Branch、PR 标题和 body 都带 `FLY-123`；base 必须是 `uat`，初始为 Draft。
-- body 记录范围、验证、精确 Head SHA、风险和 Multica Issue Key。
+- Branch 带 `FLY-123` 与 `cx-xxxxxxxx`，PR 标题带 `FLY-123`；base 必须是
+  `uat`，初始为 Draft。
+- body 顶部记录 Origin/Managing Codex session、Multica 父 Issue 和实现
+  Owner，随后记录范围、验证、精确 Head SHA 与风险。
 - 等待同一 Head 的 GitHub Quality、Vercel 和 Neon Preview，在不可变 URL 验收。
 - 新 commit 后重跑全部证据，不沿用旧 Head 绿灯。
 
@@ -147,7 +176,9 @@ git rev-parse HEAD
 ### Handoff
 
 - Feature / Multica Issue:
-- Owner session / Agent:
+- Origin Codex session:
+- Managing Codex session:
+- Implementation Agent:
 - Outcome:
 - Changed files or contracts:
 - Validation and result:
@@ -173,6 +204,11 @@ GitHub：https://github.com/pjxkqc/xiaofei
 Multica Project：Xiaofei（dd543ecd-01d2-495d-a517-3c8455050581）
 本次 Feature：<本次 Feature>
 
+启动后先读取环境中的 CODEX_THREAD_ID，派生会话标签
+CX-<thread-id 第一段>，在第一条进度更新中声明完整 Thread ID、会话标签和
+本次 Feature。Origin session 代表最初提出者，创建后不可修改；Managing
+session 代表当前管理者，只能在用户或原管理会话明确交接后更新。
+
 开始先只读，不改代码、不建重复 Issue、不操作现有 PR。完整读取 AGENTS.md、
 docs/multica/codex-parallel-handoff.md、docs/repository-structure.md、
 docs/multica/README.md、docs/multica/collaboration.md、docs/multica/agents.md、
@@ -180,24 +216,32 @@ docs/multica/skills/xiaofei-pr-delivery/SKILL.md、docs/releases/README.md，
 以及 Feature 所属边界旁的 README。
 
 用 GitHub/gh 和 multica CLI 重新核对 uat/main Head、open PR、Issue、runs/comments、
-五个 Xiaofei Agent 状态和路径占用。不要依赖提示词内的旧快照。
+父 Issue 的 codex_origin_* / codex_manager_* metadata、PR body 中的 Coordination
+ownership、五个 Xiaofei Agent 状态和路径占用。不要依赖提示词内的旧快照。
 
 先和我确认最小 P0 闭环方案，输出 Outcome、Scope、Non-goals、Acceptance、Validation、
 Risk 和 Owner/依赖顺序。确认后创建或认领唯一父 Issue；跨边界按契约 → 数据/API →
-页面 → Quality 串行拆分，不并发修改共享边界。
+页面 → Quality 串行拆分，不并发修改共享边界。新父 Issue 写入 immutable
+codex_origin_thread_id/tag 和当前 codex_manager_thread_id/tag/updated_at；认领已有
+Issue 时不得覆盖 origin，manager 不属于本会话则先暂停请求交接。
 
-实现用隔离 checkout，从最新 origin/uat 创建 agent/FLY-xxx-*，普通 Draft PR 只到 uat。
+实现用隔离 checkout，从最新 origin/uat 创建
+agent/FLY-xxx-cx-xxxxxxxx-*，普通 Draft PR 只到 uat。PR body 顶部写
+Coordination ownership：Origin session、Managing session、Multica parent Issue、
+Implementation owner；旧分支不为补标签而改名，只回填 metadata/body。
 使用 xiaofei-pr-delivery Skill，执行 delivery:identity、delivery:check、delivery:head，
 以最终精确 Head SHA 核对 GitHub Quality、Vercel、Neon 和人工 Preview。
 
 未经明确同意，不 merge、不晋级 main、不改 Production 配置/数据、不删除别人的分支或
 Preview，不暴露 Secret。交接写明 Issue、Owner、文件/契约、验证、SHA、PR/Preview、
-风险、受保护路径和下一步。
+风险、受保护路径和下一步。会话交接时保留 origin，只更新 manager，并在父 Issue
+评论记录旧/新会话、精确 SHA、工作树、受保护路径和剩余动作。
 ```
 
 ## 9. 接管完成条件
 
 - 已重新核对 GitHub、Multica 和环境事实；
+- 已声明 `CX-xxxxxxxx`，且父 Issue 与 PR 的 Origin/Managing session 一致；
 - 已声明唯一 Feature/Issue 和不会触碰的路径；
 - 已确认最小闭环方案、Owner 和串行依赖；
 - 实现使用隔离 checkout 和最新 `origin/uat`；
