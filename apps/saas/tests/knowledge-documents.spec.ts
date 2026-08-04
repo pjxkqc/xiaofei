@@ -6,7 +6,7 @@ test.describe("knowledge document management", () => {
 	test("uploads, edits, reloads, and deletes a Markdown document", async ({ page }) => {
 		await registerOrganizationAdmin(page, "knowledge");
 
-		await page.goto("/knowledge/documents");
+		await page.goto("/knowledge?stage=advanced");
 		await expect(page.getByLabel("Organization required")).toHaveCount(0);
 		await expect(page.getByRole("heading", { name: "知识文档" })).toBeVisible();
 		await expect(

@@ -4,9 +4,10 @@ import { registerOrganizationAdmin } from "./xiaofei-test-utils";
 
 test("submits two manual knowledge pairs and caps the form at twenty", async ({ page }) => {
 	await registerOrganizationAdmin(page, "entries");
-	await page.goto("/knowledge/entries");
+	await page.goto("/knowledge");
 	await expect(page.getByLabel("Organization required")).toHaveCount(0);
-	await expect(page.getByRole("heading", { name: "知识条目", level: 2 })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "知识与托管", level: 2 })).toBeVisible();
+	await expect(page.getByText("知识准备", { exact: true })).toBeVisible();
 	await expect(page.getByPlaceholder("问题").first()).toBeVisible();
 	await page.getByPlaceholder("问题").fill("First question");
 	await page.getByPlaceholder("答案").fill("First answer");

@@ -34,11 +34,18 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(correctionCall).not.toContain("capabilityVersionId");
 		expect(panel).toContain("Before · {rerun.source.id}");
 		expect(panel).toContain("After · {rerun.rerun.id}");
-		expect(panel).toContain("验收并启用 Test CA");
+		expect(panel).toContain("人工验收 Test CA");
 	});
 
 	it("makes no-hit and platform answers visibly non-correctable", () => {
-		expect(panel).toContain("turn.feedbackAllowed ?");
+		expect(panel).toContain("lastTurn.feedbackAllowed ?");
 		expect(panel).toContain("未命中或平台基线");
+	});
+
+	it("reuses an opaque Test session for consecutive turns and resets after correction", () => {
+		expect(panel).toContain("testSessionId,");
+		expect(panel).toContain("setTurns((history) => [...history, result])");
+		expect(panel).toContain("orpcClient.xiaofei.resetTestSession()");
+		expect(panel).toContain("后续测试已切换为新会话");
 	});
 });

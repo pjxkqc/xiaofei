@@ -11,12 +11,14 @@ The product surface is deliberately kept to small, focused pages:
 - `/support` is a public, no-login customer conversation page;
 - `/inbox` is the authenticated support-agent inbox for online state, ownership,
   takeover, and human replies;
-- `/chatbot` renders `XiaofeiChatConsole.tsx` for conversation and trace
-  validation;
-- `/agent-settings/general`, `/agent-settings/fallback`, and
-  `/agent-settings/status` separate Agent instructions, knowledge-miss/handoff
-  policy, and read-only release status. `/agent-settings` redirects to the
-  general page;
+- `/knowledge` is the single **知识与托管** workbench: it guides a merchant
+  through platform fallback and document ingestion, a durable multi-turn Test
+  CA session with answer-bound correction, then explicit human acceptance and
+  hosting. The sidebar has no separate Chatbot or Agent settings entry.
+- `/knowledge/entries`, `/knowledge/units`, `/knowledge/capabilities`,
+  `/knowledge/documents`, `/chatbot`, and `/agent-settings/**` remain safe
+  compatibility redirects into the applicable workbench stage or its collapsed
+  advanced governance section;
 - `/api-demo` is an authenticated comparison of the public OpenAPI status route
   and the typed browser oRPC client;
 - `/integrations/events` is an authenticated monitor for durable S2S ingress. It
@@ -48,19 +50,17 @@ The product surface is deliberately kept to small, focused pages:
   public HTTPS callback, sends a status-event test, lists reply/status Outbox
   attempts, loads payload only on demand, and retries failed rows with the
   current setting. Only Organization owners/admins change the destination.
-- `/knowledge/entries` adds and manages normalized entries for the shared
-  public-support workspace from a file, one public webpage, or manual Q&A.
-  `/knowledge/documents` remains the source-document view with bounded metadata
-  pages and full bodies loaded only when a document is opened.
-- `/knowledge/units` generates Draft KUs from current normalized entries and
-  provides the minimal human review, edit, publish/revoke, and delete surface.
-- `/knowledge/capabilities` reviews the derived capability plan and runs the
-  deterministic Eval gate before conversation use.
+- The workbench's default knowledge-preparation stage adds and manages
+  normalized entries from a file, one public webpage, or manual Q&A. Its
+  advanced section contains source-document details, KU lifecycle editing,
+  capability/Eval evidence, and Agent/fallback diagnostics.
 
-The authenticated knowledge and Chatbot pages share a four-step navigation:
-source/entry ingestion → KU generation/review → capability review/Eval →
-conversation testing. The active organization only affects inherited Supa
-surfaces; it does not change this P0 public-support channel's knowledge.
+The authenticated workbench uses three merchant-readable stages: knowledge
+preparation → Test CA conversation and correction → acceptance and hosting.
+KU lifecycle forms and Eval remain available as advanced governance evidence,
+not a second mandatory navigation flow. The active organization only affects
+inherited Supa surfaces; it does not change this P0 public-support channel's
+knowledge.
 
 The pages can:
 
@@ -122,26 +122,24 @@ Previews remain disposable.
 ## Request paths
 
 ```text
-configuration / eval
+advanced governance / eval
   AgentGeneralSettings / FallbackSettings / AgentStatus
     → same-origin /api/rpc
     → protected xiaofei.* procedure
     → shared P0 `channel:public-support` snapshot in PostgreSQL / Neon
 
-knowledge governance
-  KnowledgeEntries → KnowledgeUnits → KnowledgeCapabilities
+knowledge and hosting workbench
+  KnowledgeEntries → Test CA → human acceptance → hosting
     → support-role /api/rpc procedures
     → normalized source/entry/KU rows in the same `channel:public-support` workspace
     → reviewed capability + current Eval evidence in the shared snapshot
 
-conversation
-  AiChat
-    → same-origin /api/rpc
-    → protected ai.stream procedure
-    → shared P0 `channel:public-support` snapshot
-    → LangGraph state orchestration
-    → Mastra Agent generation when the graph permits it
-    → final UI message only after Guardrail authorization
+Test CA conversation
+  KnowledgeVersioningPanel
+    → same-origin /api/rpc `runVersionedTest`
+    → saved testSessionId and TestTurn history
+    → immutable Test CA manifest and guarded runtime
+    → answer-bound merchant correction → new Test CA / new session
 
 public support loop
   PublicSupportChat (/support)
@@ -172,15 +170,14 @@ pnpm --filter saas dev
 
 The app listens on `http://localhost:3000`. Use `/support` without logging in.
 Create a password user, complete onboarding, then use `/inbox` and
-`/agent-settings/general` as the support role. Use the three Agent settings
-pages for behavior and status, and the four-step navigation beginning at
-`/knowledge/entries` to add a UTF-8
+`/knowledge` as the support role. Begin on the knowledge-preparation stage to
+add a UTF-8
 `.md`/`.txt` file, a provider-parsed PDF/DOCX/XLSX, one public webpage, or a
 manual Q&A entry. Provider-only formats and webpages require server-side
 Firecrawl configuration; manual Q&A and MD/TXT do not.
 
-In a Vercel PR Preview only (`VERCEL_ENV=preview`), `/knowledge/entries` and
-`/knowledge/documents` also display a **Preview 测试文件** selector with the
+In a Vercel PR Preview only (`VERCEL_ENV=preview`), the knowledge-preparation
+stage and its advanced source-document details display a **Preview 测试文件** selector with the
 five fictional materials committed in `public/knowledge-test`. `/knowledge/entries`
 adds a same-origin HTML fixture selector for the webpage flow. A selection only
 prepares the normal input; the existing upload or scrape action remains the
