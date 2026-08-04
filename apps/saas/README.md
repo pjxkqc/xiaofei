@@ -50,10 +50,12 @@ The product surface is deliberately kept to small, focused pages:
   public HTTPS callback, sends a status-event test, lists reply/status Outbox
   attempts, loads payload only on demand, and retries failed rows with the
   current setting. Only Organization owners/admins change the destination.
-- The workbench's default knowledge-preparation stage adds and manages
-  normalized entries from a file, one public webpage, or manual Q&A. Its
-  advanced section contains source-document details, KU lifecycle editing,
-  capability/Eval evidence, and Agent/fallback diagnostics.
+- The workbench's default knowledge-preparation stage accepts one document and
+  shows its parsed entry summary. Its single **准备 Test CA** action safely
+  activates current source entries, reuses or generates KUs, publishes valid
+  units, and creates a Test CA without changing Active. Source details, web and
+  manual entry intake, KU lifecycle editing, capability/Eval evidence, and
+  Agent/fallback diagnostics remain in collapsed advanced governance.
 
 The authenticated workbench uses three merchant-readable stages: knowledge
 preparation → Test CA conversation and correction → acceptance and hosting.

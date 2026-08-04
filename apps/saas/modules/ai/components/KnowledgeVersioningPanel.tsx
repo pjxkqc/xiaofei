@@ -17,23 +17,25 @@ import { orpcClient } from "@shared/lib/orpc-client";
 import { RefreshCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+const TEST_SESSION_STORAGE_KEY = "xiaofei.test-session-id";
+type Overview = Awaited<ReturnType<typeof orpcClient.xiaofei.getVersioningOverview>>;
+type CapabilityVersion = NonNullable<NonNullable<Overview["binding"]>["activeCapabilityVersion"]>;
+type MembershipRow = CapabilityVersion["knowledgeUnits"][number];
+type TestTurn = Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>;
+type Correction = Awaited<ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>>;
+
 export function KnowledgeVersioningPanel({
 	section = "all",
 }: {
 	section?: "prepare" | "test" | "hosting" | "all";
 }) {
-	const [overview, setOverview] = useState<Awaited<
-		ReturnType<typeof orpcClient.xiaofei.getVersioningOverview>
-	> | null>(null);
+	const [overview, setOverview] = useState<Overview | null>(null);
+	const [testSessionId, setTestSessionId] = useState<string | null>(null);
 	const [question, setQuestion] = useState("");
+	const [turns, setTurns] = useState<TestTurn[]>([]);
+	const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
 	const [correction, setCorrection] = useState("");
-	const [testSessionId, setTestSessionId] = useState(() => globalThis.crypto.randomUUID());
-	const [turns, setTurns] = useState<
-		Array<Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>>
-	>([]);
-	const [rerun, setRerun] = useState<Awaited<
-		ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>
-	> | null>(null);
+	const [rerun, setRerun] = useState<Correction | null>(null);
 	const [busy, setBusy] = useState(false);
 	const refresh = useCallback(
 		async () => setOverview(await orpcClient.xiaofei.getVersioningOverview()),
@@ -43,26 +45,24 @@ export function KnowledgeVersioningPanel({
 	useEffect(() => {
 		void refresh().catch(() => toastError("无法读取版本状态"));
 	}, [refresh]);
+	useEffect(() => {
+		const saved = sessionStorage.getItem(TEST_SESSION_STORAGE_KEY);
+		const next = saved ?? globalThis.crypto.randomUUID();
+		sessionStorage.setItem(TEST_SESSION_STORAGE_KEY, next);
+		setTestSessionId(next);
+	}, []);
 
-	async function act(action: () => Promise<unknown>, success: string) {
-		setBusy(true);
-		try {
-			await action();
-			await refresh();
-			toastSuccess(success);
-		} catch (error) {
-			toastError("操作失败", message(error));
-		} finally {
-			setBusy(false);
-		}
+	function storeSession(next: string) {
+		sessionStorage.setItem(TEST_SESSION_STORAGE_KEY, next);
+		setTestSessionId(next);
 	}
-
 	async function resetSession() {
 		setBusy(true);
 		try {
 			const next = await orpcClient.xiaofei.resetTestSession();
-			setTestSessionId(next.testSessionId);
+			storeSession(next.testSessionId);
 			setTurns([]);
+			setSelectedTurnId(null);
 			setRerun(null);
 			setCorrection("");
 			toastSuccess("已开始新的 Test CA 会话");
@@ -72,16 +72,15 @@ export function KnowledgeVersioningPanel({
 			setBusy(false);
 		}
 	}
-
 	async function test() {
-		if (!question.trim()) return;
+		if (!question.trim() || !testSessionId) return;
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.runVersionedTest({
 				question: question.trim(),
 				testSessionId,
 			});
-			setTestSessionId(result.testSessionId);
+			storeSession(result.testSessionId);
 			setTurns((history) => [...history, result]);
 			setQuestion("");
 		} catch (error) {
@@ -90,8 +89,7 @@ export function KnowledgeVersioningPanel({
 			setBusy(false);
 		}
 	}
-
-	async function correct(turn: Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>) {
+	async function correct(turn: TestTurn) {
 		if (!correction.trim()) return;
 		setBusy(true);
 		try {
@@ -101,9 +99,10 @@ export function KnowledgeVersioningPanel({
 			});
 			setRerun(result);
 			setCorrection("");
+			setSelectedTurnId(null);
 			await refresh();
 			const next = await orpcClient.xiaofei.resetTestSession();
-			setTestSessionId(next.testSessionId);
+			storeSession(next.testSessionId);
 			setTurns([]);
 			toastSuccess("已生成 Test CA 并完成同题复测；后续测试已切换为新会话");
 		} catch (error) {
@@ -112,7 +111,6 @@ export function KnowledgeVersioningPanel({
 			setBusy(false);
 		}
 	}
-
 	const active = overview?.binding?.activeCapabilityVersion ?? null;
 	const testVersion = overview?.binding?.testCapabilityVersion ?? null;
 	return (
@@ -123,7 +121,7 @@ export function KnowledgeVersioningPanel({
 					active={active}
 					testVersion={testVersion}
 					busy={busy}
-					act={act}
+					refresh={refresh}
 					section={section}
 				/>
 			)}
@@ -132,10 +130,13 @@ export function KnowledgeVersioningPanel({
 					question={question}
 					setQuestion={setQuestion}
 					turns={turns}
+					selectedTurnId={selectedTurnId}
+					setSelectedTurnId={setSelectedTurnId}
 					correction={correction}
 					setCorrection={setCorrection}
 					rerun={rerun}
 					busy={busy}
+					ready={testSessionId !== null}
 					onTest={test}
 					onCorrect={correct}
 					onReset={resetSession}
@@ -150,25 +151,34 @@ function VersionOverview({
 	active,
 	testVersion,
 	busy,
-	act,
+	refresh,
 	section,
 }: {
-	overview: Awaited<ReturnType<typeof orpcClient.xiaofei.getVersioningOverview>> | null;
-	active: any;
-	testVersion: any;
+	overview: Overview | null;
+	active: CapabilityVersion | null;
+	testVersion: CapabilityVersion | null;
 	busy: boolean;
-	act: (action: () => Promise<unknown>, success: string) => Promise<void>;
+	refresh: () => Promise<void>;
 	section: "prepare" | "hosting" | "all";
 }) {
 	const isPrepare = section === "prepare";
+	async function act(action: () => Promise<unknown>, success: string) {
+		try {
+			await action();
+			await refresh();
+			toastSuccess(success);
+		} catch (error) {
+			toastError("操作失败", message(error));
+		}
+	}
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>{isPrepare ? "平台兜底与商户资料" : "验收与托管"}</CardTitle>
 				<CardDescription>
 					{isPrepare
-						? "平台维护的兜底知识只读；商户资料会冻结为可追溯的 KU revision，再加入 Test CA。"
-						: "Test 不会影响 Active。仅在人工验收后，才将 Test CA 指向 Active 并启用托管。"}
+						? "平台维护、商户只读的兜底知识会与商户资料一起组成 Test CA。"
+						: "未验收的 Test CA 不会改变 Active；人工验收后才可启用托管。"}
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="gap-4 flex flex-col">
@@ -177,47 +187,35 @@ function VersionOverview({
 						{overview?.xiaofeiEnabled ? "托管已启用" : "托管未启用"}
 					</Badge>
 					<Badge>平台维护 · 只读</Badge>
-					<Badge>商户 KU · 可修正</Badge>
 				</div>
-				{isPrepare ? (
+				{!isPrepare && (
 					<Button
-						disabled={busy}
+						disabled={busy || !testVersion}
 						onClick={() =>
-							void act(() => orpcClient.xiaofei.initializeVersioning(), "已冻结知识并创建 Test CA")
+							void act(
+								() => orpcClient.xiaofei.activateHostingVersion(),
+								"已将当前 Test CA 验收为 Active",
+							)
 						}
 					>
-						创建 Test CA
+						人工验收 Test CA
 					</Button>
-				) : (
-					<div className="gap-2 sm:flex-row flex flex-col">
-						<Button
-							disabled={busy || !testVersion}
-							onClick={() =>
-								void act(
-									() => orpcClient.xiaofei.activateHostingVersion(),
-									"已将当前 Test CA 验收为 Active",
-								)
-							}
-						>
-							人工验收 Test CA
-						</Button>
-						<Button
-							variant="outline"
-							disabled={busy || !active}
-							onClick={() =>
-								void act(
-									() =>
-										orpcClient.xiaofei.setHostingEnabled({ enabled: !overview?.xiaofeiEnabled }),
-									overview?.xiaofeiEnabled ? "托管已停用" : "托管已启用",
-								)
-							}
-						>
-							{overview?.xiaofeiEnabled ? "停用托管" : "启用托管"}
-						</Button>
-					</div>
 				)}
-				<Membership title="Active CA" version={active} />
-				<Membership title="Test CA" version={testVersion} />
+				<MembershipSummary active={active} testVersion={testVersion} />
+				{!isPrepare && (
+					<Button
+						variant="outline"
+						disabled={busy || !active}
+						onClick={() =>
+							void act(
+								() => orpcClient.xiaofei.setHostingEnabled({ enabled: !overview?.xiaofeiEnabled }),
+								overview?.xiaofeiEnabled ? "托管已停用" : "托管已启用",
+							)
+						}
+					>
+						{overview?.xiaofeiEnabled ? "停用托管" : "启用托管"}
+					</Button>
+				)}
 			</CardContent>
 		</Card>
 	);
@@ -227,28 +225,32 @@ function TestConversation({
 	question,
 	setQuestion,
 	turns,
+	selectedTurnId,
+	setSelectedTurnId,
 	correction,
 	setCorrection,
 	rerun,
 	busy,
+	ready,
 	onTest,
 	onCorrect,
 	onReset,
 }: {
 	question: string;
 	setQuestion: (value: string) => void;
-	turns: Array<Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>>;
+	turns: TestTurn[];
+	selectedTurnId: string | null;
+	setSelectedTurnId: (id: string | null) => void;
 	correction: string;
 	setCorrection: (value: string) => void;
-	rerun: Awaited<ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>> | null;
+	rerun: Correction | null;
 	busy: boolean;
+	ready: boolean;
 	onTest: () => Promise<void>;
-	onCorrect: (
-		turn: Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>,
-	) => Promise<void>;
+	onCorrect: (turn: TestTurn) => Promise<void>;
 	onReset: () => Promise<void>;
 }) {
-	const lastTurn = turns.at(-1);
+	const selected = turns.find((turn) => turn.turn.id === selectedTurnId) ?? null;
 	return (
 		<Card>
 			<CardHeader>
@@ -256,96 +258,90 @@ function TestConversation({
 					<div>
 						<CardTitle>Test CA 多轮会话</CardTitle>
 						<CardDescription>
-							同一 Test session 会保存每轮状态；仅重置或 CA 变更时开始新会话。
+							浏览器会保留本次 Test session；刷新或离开后再回来，下一轮仍继续同一服务端状态。
 						</CardDescription>
 					</div>
-					<Button variant="outline" size="sm" disabled={busy} onClick={() => void onReset()}>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={busy || !ready}
+						onClick={() => void onReset()}
+					>
 						<RefreshCcwIcon className="mr-2 size-4" />
 						重置测试会话
 					</Button>
 				</div>
 			</CardHeader>
 			<CardContent className="gap-4 flex flex-col">
-				<div className="gap-2 flex flex-col">
-					<Label>
-						下一轮问题
-						<Input
-							value={question}
-							onChange={(event) => setQuestion(event.target.value)}
-							disabled={busy}
-							onKeyDown={(event) => {
-								if (event.key === "Enter") {
-									event.preventDefault();
-									void onTest();
-								}
-							}}
+				<Label>
+					下一轮问题
+					<Input
+						value={question}
+						onChange={(event) => setQuestion(event.target.value)}
+						disabled={busy || !ready}
+					/>
+				</Label>
+				<Button disabled={busy || !ready || !question.trim()} onClick={() => void onTest()}>
+					发送到 Test CA
+				</Button>
+				{!ready ? <p className="text-sm text-muted-foreground">正在恢复测试会话…</p> : null}
+				{turns.map((turn, index) => (
+					<div
+						key={turn.turn.id}
+						className={`gap-2 p-3 flex flex-col rounded-lg border ${selectedTurnId === turn.turn.id ? "border-primary bg-primary/5" : ""}`}
+					>
+						<p className="text-xs text-muted-foreground">第 {index + 1} 轮</p>
+						<p className="text-sm font-medium">你：{turn.turn.question}</p>
+						<p>小飞：{turn.answer}</p>
+						<Evidence
+							metadata={turn.metadata}
+							capabilityVersionId={turn.turn.capabilityVersionId}
 						/>
-					</Label>
-					<Button disabled={busy || !question.trim()} onClick={() => void onTest()}>
-						发送到 Test CA
-					</Button>
-				</div>
-				{turns.length === 0 ? (
-					<p className="text-sm text-muted-foreground">
-						从一个问题开始；连续三轮都保留在这里，便于验证上下文和来源。
-					</p>
-				) : (
-					<div className="gap-3 flex flex-col">
-						{turns.map((turn, index) => (
-							<div key={turn.turn.id} className="gap-2 p-3 flex flex-col rounded-lg border">
-								<p className="text-xs text-muted-foreground">
-									第 {index + 1} 轮 · {turn.turn.id}
-								</p>
-								<p className="text-sm font-medium">你：{turn.turn.question}</p>
-								<p>小飞：{turn.answer}</p>
-								<Evidence
-									metadata={turn.metadata}
-									capabilityVersionId={turn.turn.capabilityVersionId}
-								/>
-							</div>
-						))}
-					</div>
-				)}
-				{lastTurn && (
-					<div className="gap-3 p-3 flex flex-col rounded-lg border border-dashed">
-						{lastTurn.feedbackAllowed ? (
-							<>
-								<Label>
-									仅修正这条已保存的商户答案
-									<Textarea
-										value={correction}
-										onChange={(event) => setCorrection(event.target.value)}
-										disabled={busy}
-									/>
-								</Label>
-								<Button
-									disabled={busy || !correction.trim()}
-									onClick={() => void onCorrect(lastTurn)}
-								>
-									提出修正并同题复测
-								</Button>
-							</>
+						{turn.feedbackAllowed ? (
+							<Button
+								variant="outline"
+								size="sm"
+								className="w-fit"
+								disabled={busy}
+								onClick={() => setSelectedTurnId(turn.turn.id)}
+							>
+								选择并修正这条回答
+							</Button>
 						) : (
-							<p className="text-sm text-muted-foreground">
-								此答案没有可修正的商户知识证据（未命中或平台基线）。
+							<p className="text-xs text-muted-foreground">
+								该回答来自平台兜底或未命中，不能作为商户修正依据。
 							</p>
 						)}
+					</div>
+				))}
+				{selected && (
+					<div className="gap-3 p-3 flex flex-col rounded-lg border border-primary">
+						<p className="text-sm font-medium">
+							正在修正第 {turns.findIndex((turn) => turn.turn.id === selected.turn.id) + 1}{" "}
+							轮商户回答
+						</p>
+						<Label>
+							修正意见
+							<Textarea
+								value={correction}
+								onChange={(event) => setCorrection(event.target.value)}
+								disabled={busy}
+							/>
+						</Label>
+						<Button disabled={busy || !correction.trim()} onClick={() => void onCorrect(selected)}>
+							提出修正并同题复测
+						</Button>
 					</div>
 				)}
 				{rerun && (
 					<div className="gap-3 md:grid-cols-2 grid">
-						<div className="p-3 rounded-lg border">
-							<p className="font-medium">Before · {rerun.source.id}</p>
-							<p className="mt-2">{rerun.source.answer}</p>
-						</div>
-						<div className="p-3 rounded-lg border border-primary">
-							<p className="font-medium">After · {rerun.rerun.id}</p>
-							<p className="mt-2">{rerun.answer}</p>
-							<Evidence
-								metadata={rerun.metadata}
-								capabilityVersionId={rerun.resultCapabilityVersionId}
-							/>
-						</div>
+						<AnswerEvidence label="Before" answer={rerun.source.answer} />
+						<AnswerEvidence
+							label="After"
+							answer={rerun.answer}
+							metadata={rerun.metadata}
+							capabilityVersionId={rerun.resultCapabilityVersionId}
+						/>
 					</div>
 				)}
 			</CardContent>
@@ -353,59 +349,112 @@ function TestConversation({
 	);
 }
 
-function Membership({ title, version }: { title: string; version: any }) {
-	const rows = version?.knowledgeUnits ?? [];
+function MembershipSummary({
+	active,
+	testVersion,
+}: {
+	active: CapabilityVersion | null;
+	testVersion: CapabilityVersion | null;
+}) {
+	const activeRows = active?.knowledgeUnits ?? [];
+	const testRows = testVersion?.knowledgeUnits ?? [];
+	const count = (rows: MembershipRow[], origin: "platform" | "merchant") =>
+		rows.filter((row) => row.knowledgeUnitRevision.origin === origin).length;
+	const changed = Math.abs(testRows.length - activeRows.length);
 	return (
-		<div className="rounded-lg border">
-			<p className="p-3 text-sm font-medium">
-				{title}：{version?.id ?? "未设置"}
+		<div className="gap-3 flex flex-col">
+			<p className="text-sm text-muted-foreground">
+				Test 与 Active 相差 {changed} 个成员；未人工验收前，Active 不会改变。
 			</p>
-			{rows.length ? (
-				<div className="overflow-auto">
-					<table className="text-xs w-full text-left">
-						<thead>
-							<tr className="border-t">
-								<th className="p-2">逻辑 KU</th>
-								<th className="p-2">Revision</th>
-								<th className="p-2">来源</th>
-								<th className="p-2">Role</th>
-								<th className="p-2">Priority</th>
-							</tr>
-						</thead>
-						<tbody>
-							{rows.map((row: any) => (
-								<tr key={row.id} className="border-t">
-									<td className="p-2">{row.knowledgeUnitRevision.logicalKnowledgeUnitId}</td>
-									<td className="p-2">
-										{row.knowledgeUnitRevisionId} · r{row.knowledgeUnitRevision.revision}
-									</td>
-									<td className="p-2">{row.knowledgeUnitRevision.origin}</td>
-									<td className="p-2">{row.role}</td>
-									<td className="p-2">{row.priority}</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-			) : (
-				<p className="p-3 text-sm text-muted-foreground">无成员</p>
-			)}
+			<div className="gap-3 sm:grid-cols-2 grid">
+				<MembershipCard
+					title="Active"
+					rows={activeRows}
+					platform={count(activeRows, "platform")}
+					merchant={count(activeRows, "merchant")}
+				/>
+				<MembershipCard
+					title="Test"
+					rows={testRows}
+					platform={count(testRows, "platform")}
+					merchant={count(testRows, "merchant")}
+				/>
+			</div>
 		</div>
 	);
 }
-
+function MembershipCard({
+	title,
+	rows,
+	platform,
+	merchant,
+}: {
+	title: string;
+	rows: MembershipRow[];
+	platform: number;
+	merchant: number;
+}) {
+	return (
+		<div className="p-3 rounded-lg border">
+			<p className="font-medium">{title} CA</p>
+			<p className="mt-1 text-sm text-muted-foreground">
+				平台兜底 {platform} · 商户资料 {merchant}
+			</p>
+			<details className="mt-3 text-xs text-muted-foreground">
+				<summary className="cursor-pointer">查看成员与技术 ID</summary>
+				<p className="mt-2">多个 KU revision 共同组成一个 CA；同一 revision 可被多个版本复用。</p>
+				{rows.map((row) => (
+					<p key={row.id} className="mt-1">
+						{row.knowledgeUnitRevision.origin === "merchant" ? "商户资料" : "平台兜底"} · CA/KU：
+						{row.knowledgeUnitRevisionId}
+					</p>
+				))}
+			</details>
+		</div>
+	);
+}
+function AnswerEvidence({
+	label,
+	answer,
+	metadata,
+	capabilityVersionId,
+}: {
+	label: string;
+	answer: string;
+	metadata?: TestTurn["metadata"];
+	capabilityVersionId?: string;
+}) {
+	return (
+		<div className="p-3 rounded-lg border">
+			<p className="font-medium">{label}</p>
+			<p className="mt-2">{answer}</p>
+			{metadata && capabilityVersionId ? (
+				<Evidence metadata={metadata} capabilityVersionId={capabilityVersionId} />
+			) : null}
+		</div>
+	);
+}
 function Evidence({
 	metadata,
 	capabilityVersionId,
 }: {
-	metadata: { knowledgeEvidence: { knowledgeUnitRevisionId: string } | null } | undefined;
+	metadata: TestTurn["metadata"];
 	capabilityVersionId: string;
 }) {
+	const evidence = metadata.knowledgeEvidence;
+	const origin =
+		evidence?.knowledgeUnitOrigin === "merchant"
+			? "商户资料"
+			: evidence?.knowledgeUnitOrigin === "platform"
+				? "平台兜底"
+				: "未命中";
 	return (
-		<p className="text-xs text-muted-foreground">
-			来源 · CA {capabilityVersionId} · KU revision：
-			{metadata?.knowledgeEvidence?.knowledgeUnitRevisionId ?? "未命中，使用安全澄清"}
-		</p>
+		<details className="text-xs text-muted-foreground">
+			<summary className="cursor-pointer">来源：{origin}</summary>
+			<p className="mt-1">
+				CA：{capabilityVersionId} · KU revision：{evidence?.knowledgeUnitRevisionId ?? "无"}
+			</p>
+		</details>
 	);
 }
 function message(error: unknown) {

@@ -2,13 +2,7 @@
 
 import { isPreviewKnowledgeFixtureSelectorVisible } from "@ai/lib/preview-knowledge-fixtures";
 import { Button } from "@repo/ui/components/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent } from "@repo/ui/components/card";
 import { BookOpenTextIcon, CheckCircle2Icon, FlaskConicalIcon, Settings2Icon } from "lucide-react";
 import Link from "next/link";
 
@@ -17,6 +11,7 @@ import { KnowledgeDocuments } from "./KnowledgeDocuments";
 import { KnowledgeEntries } from "./KnowledgeEntries";
 import { KnowledgeUnits } from "./KnowledgeUnits";
 import { KnowledgeVersioningPanel } from "./KnowledgeVersioningPanel";
+import { QuickKnowledgePreparation } from "./QuickKnowledgePreparation";
 import { XiaofeiAgentGeneralSettings } from "./XiaofeiAgentGeneralSettings";
 import { XiaofeiAgentStatus } from "./XiaofeiAgentStatus";
 import { XiaofeiFallbackSettings } from "./XiaofeiFallbackSettings";
@@ -71,6 +66,10 @@ export function KnowledgeWorkspace({ stage }: { stage: KnowledgeWorkspaceStage }
 					);
 				})}
 			</nav>
+			<div aria-hidden="true" className="text-xs md:flex hidden items-center text-muted-foreground">
+				<span className="h-px flex-1 bg-border" /> <span className="px-3">1 → 2 → 3</span>{" "}
+				<span className="h-px flex-1 bg-border" />
+			</div>
 
 			{stage === "prepare" && <Preparation />}
 			{stage === "test" && <KnowledgeVersioningPanel section="test" />}
@@ -83,21 +82,7 @@ export function KnowledgeWorkspace({ stage }: { stage: KnowledgeWorkspaceStage }
 function Preparation() {
 	return (
 		<div className="gap-6 flex flex-col">
-			<KnowledgeVersioningPanel section="prepare" />
-			<KnowledgeEntries
-				previewFixtureSelectorVisible={isPreviewKnowledgeFixtureSelectorVisible()}
-			/>
-			<Card>
-				<CardHeader>
-					<CardTitle>下一步</CardTitle>
-					<CardDescription>上传并确认商户资料后，创建 Test CA，再进入多轮测试。</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<Button asChild>
-						<Link href="/knowledge?stage=test">进入测试与修正</Link>
-					</Button>
-				</CardContent>
-			</Card>
+			<QuickKnowledgePreparation />
 			<AdvancedLink />
 		</div>
 	);
@@ -126,18 +111,34 @@ function AdvancedLink() {
 
 function AdvancedGovernance() {
 	return (
-		<details open className="rounded-xl border bg-card">
+		<details className="rounded-xl border bg-card">
 			<summary className="px-5 py-4 text-sm font-medium cursor-pointer">高级治理与诊断</summary>
-			<div className="gap-8 p-5 flex flex-col border-t">
-				<KnowledgeDocuments
-					previewFixtureSelectorVisible={isPreviewKnowledgeFixtureSelectorVisible()}
-				/>
-				<KnowledgeUnits />
-				<KnowledgeCapabilities />
-				<XiaofeiAgentStatus />
-				<XiaofeiAgentGeneralSettings />
-				<XiaofeiFallbackSettings />
+			<div className="gap-4 p-5 flex flex-col border-t">
+				<AdvancedSection title="完整资料与条目">
+					<KnowledgeDocuments
+						previewFixtureSelectorVisible={isPreviewKnowledgeFixtureSelectorVisible()}
+					/>
+					<KnowledgeEntries />
+				</AdvancedSection>
+				<AdvancedSection title="KU、能力与 Eval">
+					<KnowledgeUnits />
+					<KnowledgeCapabilities />
+				</AdvancedSection>
+				<AdvancedSection title="Agent 指令、兜底与运行诊断">
+					<XiaofeiAgentStatus />
+					<XiaofeiAgentGeneralSettings />
+					<XiaofeiFallbackSettings />
+				</AdvancedSection>
 			</div>
+		</details>
+	);
+}
+
+function AdvancedSection({ title, children }: { title: string; children: React.ReactNode }) {
+	return (
+		<details className="rounded-lg border">
+			<summary className="px-4 py-3 text-sm font-medium cursor-pointer">{title}</summary>
+			<div className="gap-6 p-4 flex flex-col border-t">{children}</div>
 		</details>
 	);
 }
