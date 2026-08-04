@@ -94,44 +94,47 @@ export function resolveRuntimeKnowledgeEvidence(
 	};
 }
 
-/** Creates an isolated test snapshot without changing the live active pointer. */
-export function materializeCapabilitySnapshot(input: {
-	base: import("./contracts").XiaofeiWorkspaceSnapshot;
-	manifest: CapabilityVersionManifest;
-	revisions: KnowledgeUnitRevision[];
-}): import("./contracts").XiaofeiWorkspaceSnapshot {
+function materializeExactCapabilitySnapshot(
+	input: {
+		base: import("./contracts").XiaofeiWorkspaceSnapshot;
+		manifest: CapabilityVersionManifest;
+		revisions: KnowledgeUnitRevision[];
+	},
+	expectedStatus: "test" | "active",
+): import("./contracts").XiaofeiWorkspaceSnapshot {
 	if (
-		(input.manifest.status !== "test" && input.manifest.status !== "active") ||
+		input.manifest.status !== expectedStatus ||
 		input.manifest.capabilityKey !== "xiaofei-hosting" ||
 		input.manifest.organizationId !== input.base.agent.tenantId
 	)
-		throw new Error("Test manifest is not an organization hosting test version.");
+		throw new Error("Capability manifest is not the requested organization hosting version.");
 	const ids = input.manifest.knowledgeUnitRevisionIds;
 	if (new Set(ids).size !== ids.length || input.revisions.length !== ids.length)
-		throw new Error("Test manifest revisions must be exact and unique.");
+		throw new Error("Capability manifest revisions must be exact and unique.");
 	const byId = new Map(input.revisions.map((revision) => [revision.id, revision]));
-	if (ids.some((id) => !byId.has(id))) throw new Error("Test manifest has missing revisions.");
+	if (ids.some((id) => !byId.has(id)))
+		throw new Error("Capability manifest has missing revisions.");
 	const exact = ids.map((id) => byId.get(id)!);
 	for (const revision of exact) {
 		if (
 			revision.knowledgeUnit.status !== "released" ||
 			revision.knowledgeUnit.eligibility !== "eligible"
 		)
-			throw new Error("Test revision is not published and eligible.");
+			throw new Error("Capability revision is not published and eligible.");
 		if (revision.origin === "merchant" && revision.organizationId !== input.manifest.organizationId)
-			throw new Error("Test revision crosses organizations.");
+			throw new Error("Capability revision crosses organizations.");
 		if (
 			createKnowledgeUnitRevision({ ...revision, contentHash: undefined } as never).contentHash !==
 			revision.contentHash
 		)
-			throw new Error("Test revision content hash mismatch.");
+			throw new Error("Capability revision content hash mismatch.");
 	}
 	const expected = createCapabilityVersionManifest({
 		...input.manifest,
 		manifestHash: undefined,
 	} as never);
 	if (expected.manifestHash !== input.manifest.manifestHash)
-		throw new Error("Test manifest hash mismatch.");
+		throw new Error("Capability manifest hash mismatch.");
 	const knowledgeUnits = exact.map((revision) => revision.knowledgeUnit);
 	const capabilityPlan = {
 		...deriveCapabilityPlan(knowledgeUnits, input.manifest.createdAt),
@@ -150,8 +153,23 @@ export function materializeCapabilitySnapshot(input: {
 	});
 }
 
-export const materializeTestCapabilitySnapshot = materializeCapabilitySnapshot;
-export const materializeActiveCapabilitySnapshot = materializeCapabilitySnapshot;
+/** Creates an isolated Test CA runtime snapshot without changing the live active pointer. */
+export function materializeTestCapabilitySnapshot(input: {
+	base: import("./contracts").XiaofeiWorkspaceSnapshot;
+	manifest: CapabilityVersionManifest;
+	revisions: KnowledgeUnitRevision[];
+}): import("./contracts").XiaofeiWorkspaceSnapshot {
+	return materializeExactCapabilitySnapshot(input, "test");
+}
+
+/** Materializes the persisted Active CA with the same exact-revision checks as Test CA. */
+export function materializeActiveCapabilitySnapshot(input: {
+	base: import("./contracts").XiaofeiWorkspaceSnapshot;
+	manifest: CapabilityVersionManifest;
+	revisions: KnowledgeUnitRevision[];
+}): import("./contracts").XiaofeiWorkspaceSnapshot {
+	return materializeExactCapabilitySnapshot(input, "active");
+}
 
 export type CorrectionAdmission =
 	| { allowed: true }

@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
 	KnowledgeVersioningSnapshotSchema,
+	XiaofeiWorkspaceSnapshotSchema,
 	createCapabilityVersionManifest,
 	createDefaultWorkspaceSnapshot,
 	createKnowledgeUnitRevision,
 	evaluateCorrectionAdmission,
 	materializeTestCapabilitySnapshot,
+	materializeActiveCapabilitySnapshot,
 	resolveRuntimeKnowledgeEvidence,
 } from "./index";
 
@@ -48,9 +50,14 @@ function platformRevision() {
 }
 
 describe("knowledge revision and capability version contracts", () => {
-	it("materializes an isolated exact hosting test snapshot without changing live state", () => {
+	it("materializes exact Test and Active hosting snapshots without changing the base", () => {
 		const merchant = revision();
 		const platform = platformRevision();
+		const existing = revision({
+			id: "ku-revision-existing",
+			logicalKnowledgeUnitId: "logical-existing",
+		});
+		const existingManifest = activeManifest([existing.id]);
 		const manifest = createCapabilityVersionManifest({
 			id: "ca-test-runtime",
 			organizationId: "organization-a",
@@ -60,6 +67,12 @@ describe("knowledge revision and capability version contracts", () => {
 			createdAt: CREATED_AT,
 		});
 		const base = createDefaultWorkspaceSnapshot("organization-a", () => CREATED_AT);
+		base.knowledgeVersioning = {
+			knowledgeUnitRevisions: [existing],
+			capabilityVersionManifests: [existingManifest],
+			activeCapabilityVersionId: existingManifest.id,
+		};
+		const before = structuredClone(base);
 		const materialized = materializeTestCapabilitySnapshot({
 			base,
 			manifest,
@@ -67,7 +80,18 @@ describe("knowledge revision and capability version contracts", () => {
 		});
 		expect(materialized.knowledgeUnits).toEqual([merchant.knowledgeUnit, platform.knowledgeUnit]);
 		expect(materialized.knowledgeVersioning.activeCapabilityVersionId).toBe(manifest.id);
-		expect(base.knowledgeVersioning.activeCapabilityVersionId).not.toBe(manifest.id);
+		expect(XiaofeiWorkspaceSnapshotSchema.parse(materialized)).toEqual(materialized);
+		expect(base).toEqual(before);
+
+		const active = materializeActiveCapabilitySnapshot({
+			base,
+			manifest: existingManifest,
+			revisions: [existing],
+		});
+		expect(active.knowledgeVersioning.activeCapabilityVersionId).toBe(existingManifest.id);
+		expect(() =>
+			materializeActiveCapabilitySnapshot({ base, manifest, revisions: [merchant, platform] }),
+		).toThrow();
 		expect(() =>
 			materializeTestCapabilitySnapshot({
 				base,
@@ -84,6 +108,31 @@ describe("knowledge revision and capability version contracts", () => {
 					{ ...platform, organizationId: "organization-b", origin: "merchant" },
 				],
 			}),
+		).toThrow();
+		const successor = revision({ id: "ku-revision-successor", revision: 2 });
+		const duplicateLogical = createCapabilityVersionManifest({
+			...manifest,
+			knowledgeUnitRevisionIds: [merchant.id, successor.id],
+			manifestHash: undefined,
+		} as never);
+		expect(() =>
+			materializeTestCapabilitySnapshot({
+				base,
+				manifest: duplicateLogical,
+				revisions: [merchant, successor],
+			}),
+		).toThrow();
+		const draft = revision({
+			id: "ku-revision-draft",
+			knowledgeUnit: { ...unit, status: "draft", eligibility: "ineligible" },
+		});
+		const draftManifest = createCapabilityVersionManifest({
+			...manifest,
+			knowledgeUnitRevisionIds: [draft.id],
+			manifestHash: undefined,
+		} as never);
+		expect(() =>
+			materializeTestCapabilitySnapshot({ base, manifest: draftManifest, revisions: [draft] }),
 		).toThrow();
 	});
 	it("hashes immutable KU content, not revision identity, and changes with answer policy", () => {

@@ -6,6 +6,7 @@ import {
 	type ConversationState,
 	type KnowledgeWorkspaceBinding,
 	type PreparedTurn,
+	type ReplyGenerator,
 	type RuntimeTurnResult,
 	type TraceEvent,
 	type XiaofeiWorkspaceSnapshot,
@@ -19,6 +20,10 @@ const GraphState = Annotation.Root({
 	snapshot: Annotation<XiaofeiWorkspaceSnapshot>(),
 	knowledgeWorkspaceBinding: Annotation<KnowledgeWorkspaceBinding>(),
 	testMode: Annotation<boolean>({ reducer: (_previous, next) => next, default: () => false }),
+	replyGenerator: Annotation<ReplyGenerator | null>({
+		reducer: (_previous, next) => next ?? null,
+		default: () => null,
+	}),
 	prepared: Annotation<PreparedTurn | null>({
 		reducer: (_previous, next) => next ?? null,
 		default: () => null,
@@ -77,7 +82,7 @@ const graph = new StateGraph(GraphState)
 				prepared,
 				snapshot: state.snapshot,
 				message: state.message,
-				replyGenerator: createMastraReplyGenerator(),
+				replyGenerator: state.replyGenerator ?? createMastraReplyGenerator(),
 			}),
 		};
 	})
@@ -92,6 +97,7 @@ export async function runLangGraphTurn(input: {
 	snapshot: XiaofeiWorkspaceSnapshot;
 	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
 	testMode?: boolean;
+	replyGenerator?: ReplyGenerator;
 }): Promise<RuntimeTurnResult> {
 	const output = await graph.invoke({
 		message: input.message,
@@ -99,6 +105,7 @@ export async function runLangGraphTurn(input: {
 		snapshot: input.snapshot,
 		knowledgeWorkspaceBinding: input.knowledgeWorkspaceBinding,
 		testMode: input.testMode ?? false,
+		replyGenerator: input.replyGenerator ?? null,
 	});
 	if (!output.result) throw new Error("LangGraph did not produce a runtime result.");
 	return output.result;
