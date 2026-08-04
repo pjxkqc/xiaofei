@@ -95,13 +95,13 @@ export function resolveRuntimeKnowledgeEvidence(
 }
 
 /** Creates an isolated test snapshot without changing the live active pointer. */
-export function materializeTestCapabilitySnapshot(input: {
+export function materializeCapabilitySnapshot(input: {
 	base: import("./contracts").XiaofeiWorkspaceSnapshot;
 	manifest: CapabilityVersionManifest;
 	revisions: KnowledgeUnitRevision[];
 }): import("./contracts").XiaofeiWorkspaceSnapshot {
 	if (
-		input.manifest.status !== "test" ||
+		(input.manifest.status !== "test" && input.manifest.status !== "active") ||
 		input.manifest.capabilityKey !== "xiaofei-hosting" ||
 		input.manifest.organizationId !== input.base.agent.tenantId
 	)
@@ -149,6 +149,9 @@ export function materializeTestCapabilitySnapshot(input: {
 		},
 	});
 }
+
+export const materializeTestCapabilitySnapshot = materializeCapabilitySnapshot;
+export const materializeActiveCapabilitySnapshot = materializeCapabilitySnapshot;
 
 export type CorrectionAdmission =
 	| { allowed: true }
