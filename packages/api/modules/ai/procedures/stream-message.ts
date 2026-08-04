@@ -4,6 +4,7 @@ import { getXiaofeiOrganizationConfig, loadXiaofeiRuntimeHostingCapability } fro
 import {
 	deriveReleaseGates,
 	materializeActiveCapabilitySnapshot,
+	runP0EvalSuite,
 	RuntimeMetadataSchema,
 	type RuntimeMetadata,
 	XiaofeiWorkspaceSnapshotSchema,
@@ -54,20 +55,7 @@ export const streamMessage = protectedProcedure
 			manifest: capability.manifest,
 			revisions: capability.revisions,
 		});
-		const hostedSnapshot = XiaofeiWorkspaceSnapshotSchema.parse({
-			...materialized,
-			evalSuite: {
-				...materialized.evalSuite,
-				status: "passed",
-				capabilityPlanVersion: materialized.capabilityPlan.version,
-			},
-			gates: deriveReleaseGates(
-				materialized.knowledgeUnits,
-				materialized.capabilityPlan,
-				"passed",
-				materialized.tools,
-			),
-		});
+		const hostedSnapshot = await attachActualP0EvalEvidence(materialized);
 		const conversation = await getOrCreateConversation({
 			workspaceId: workspace.id,
 			externalId: input.conversationId,
@@ -111,6 +99,27 @@ export const streamMessage = protectedProcedure
 
 		return streamToEventIterator(response);
 	});
+
+/**
+ * A hosting CA is only admissible using the P0 suite calculated for that exact
+ * materialized snapshot.  `runXiaofeiTurn` then owns the normal fail-closed
+ * admission decision; this function must never manufacture a passing suite.
+ */
+export async function attachActualP0EvalEvidence(materialized: RuntimeParameters) {
+	const evalSuite = await runP0EvalSuite(materialized);
+	return XiaofeiWorkspaceSnapshotSchema.parse({
+		...materialized,
+		evalSuite,
+		gates: deriveReleaseGates(
+			materialized.knowledgeUnits,
+			materialized.capabilityPlan,
+			evalSuite.status,
+			materialized.tools,
+		),
+	});
+}
+
+type RuntimeParameters = Parameters<typeof runP0EvalSuite>[0];
 
 function getLastUserText(messages: XiaofeiUIMessage[]): string {
 	let lastUserMessage: XiaofeiUIMessage | undefined;

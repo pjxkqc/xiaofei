@@ -17,7 +17,7 @@ import {
 	XiaofeiTestTurnFeedbackConflictError,
 	XiaofeiVersioningNotFoundError,
 } from "@repo/database";
-import { createConversationState } from "@repo/xiaofei";
+import { createConversationState, RuntimeMetadataSchema } from "@repo/xiaofei";
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
@@ -215,9 +215,7 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 			return {
 				source: feedback.sourceTestTurn,
 				rerun,
-				answer: result.reply,
-				metadata: result.metadata,
-				resultCapabilityVersionId: capability.manifest.id,
+				...persistedCorrectionResult(rerun),
 			};
 		} catch (error) {
 			if (error instanceof XiaofeiTestTurnFeedbackConflictError)
@@ -231,6 +229,19 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 			throw error;
 		}
 	});
+
+/** Return the database record, including an idempotently reused rerun, as the UI evidence. */
+export function persistedCorrectionResult(rerun: {
+	answer: string;
+	runtimeMetadata: unknown;
+	capabilityVersionId: string;
+}) {
+	return {
+		answer: rerun.answer,
+		metadata: RuntimeMetadataSchema.parse(rerun.runtimeMetadata),
+		resultCapabilityVersionId: rerun.capabilityVersionId,
+	};
+}
 
 export const activateXiaofeiHostingVersion = supportProcedure.handler(async ({ context }) => {
 	await requireXiaofeiOrganizationAdmin(context);
