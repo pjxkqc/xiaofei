@@ -27,6 +27,7 @@ import {
 	getXiaofeiOrganizationId,
 	requireXiaofeiOrganizationAdmin,
 } from "../service";
+import { freezeMerchantKnowledgeUnitRevisionContent } from "./versioning-knowledge";
 
 const hostingKey = "xiaofei-hosting" as const;
 const questionSchema = z.string().trim().min(1).max(10_000);
@@ -70,7 +71,7 @@ export const initializeXiaofeiVersioning = supportProcedure.handler(async ({ con
 				logicalKnowledgeUnitId: `merchant:${unit.id}`,
 				knowledgeUnitId: unit.id,
 				origin: "merchant",
-				content: unit.content as never,
+				content: freezeMerchantKnowledgeUnitRevisionContent(unit),
 			}),
 		),
 	);
