@@ -19,8 +19,11 @@ merged. Cloud credentials are never committed to the repository.
 5. The Vercel Git integration builds `apps/saas`. The Neon integration creates
    `preview/<git-branch>` from the Neon `main` branch and injects that branch's
    pooled and unpooled connection strings into the Preview build.
-6. `scripts/vercel-build.mjs` applies the Prisma schema with the unpooled URL,
-   restores the pooled runtime URL, and builds the application.
+6. `scripts/vercel-build.mjs` applies the known lossless Email-mirror
+   compatibility step and then the Prisma schema with the unpooled URL,
+   restores the pooled runtime URL, and builds the application. Unmappable or
+   duplicate rows fail the build; the workflow never enables a broad data-loss
+   override.
 7. The Preview must pass the manual smoke checks below. A new push cancels stale
    GitHub work and replaces the branch alias with the latest deployment.
 8. Reviewers pin UI feedback with Vercel Toolbar comments. Every unresolved
@@ -177,8 +180,9 @@ does not create `uat`, change cloud configuration, or alter production):
    `preview/uat`.
 3. Use Preview one-click login for a minimal smoke test. It idempotently
    initializes documented synthetic role fixtures without deleting unrelated
-   Preview data; sign out and use the public Preview/UAT fixture roles to check
-   owner/admin/member behavior. Trigger one `uat`
+   Preview data and selects Organization A for the operator; confirm the
+   Organization selector contains both FLY-99 merchants. Sign out and use the
+   public Preview/UAT fixture roles to check owner/admin/member behavior. Trigger one `uat`
    redeployment and confirm its UAT data remains present.
 4. Confirm Vercel Production remains on `main` and Neon `main` is unchanged.
 
@@ -227,8 +231,10 @@ For every infrastructure-affecting PR:
 1. Confirm GitHub `lint-type-test-build` succeeds for the latest commit.
 2. Confirm Vercel reports the latest Preview deployment as Ready.
 3. Confirm Neon shows one branch named for the PR's Git branch.
-4. Create a disposable user on the Preview; registration must return success
-   and continue to `/onboarding` without email verification.
+4. Use **Continue as Preview operator** once; confirm it reaches the application
+   with FLY-99 Organization A selected and that the selector lists both fixture
+   Organizations. Then create a disposable user; registration must return
+   success and continue to `/onboarding` without email verification.
 5. Finish onboarding, open `/agent-settings`, save the default configuration,
    and confirm the Mastra governance Workflow completes.
 6. Run P0 Eval and confirm all deterministic assertions pass.
@@ -270,6 +276,15 @@ immutable Vercel deployment record, is the required resource-isolation signal.
 
 - `403 Invalid origin`: confirm Vercel system variables are enabled and Better
   Auth receives the current deployment host.
+- Preview sign-in briefly returns `500` with Prisma `P2028`: inspect the exact
+  deployment runtime log. The login flow waits for a cold Neon compute and
+  retries one transient failure; a repeated failure means the Preview's pooled
+  connection or Neon branch state needs investigation.
+- Organizations appear empty after a database error: do not recreate them.
+  Confirm the account (Global Admin intentionally has no fixture membership),
+  retry the Preview smoke login, and check `preview/<git-branch>` directly. The
+  application must surface/retry lookup failures instead of treating them as an
+  authoritative empty list.
 - Prisma schema failure: confirm both pooled and unpooled Neon variables exist
   for the same Preview environment.
 - Chat provider error: validate `/models`, the configured model ID, and

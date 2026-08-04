@@ -6,6 +6,9 @@ import {
 	getIntegrationEvent,
 	listIntegrationEvents,
 	runMockWorker,
+	runMockEmailMirror,
+	listEmailMirrorMetadata,
+	getEmailMirrorDetail,
 	simulateOrganizationChannelEnvelope,
 } from "../integration-events";
 
@@ -55,3 +58,30 @@ export const runMockWorkerProcedure = supportProcedure
 		async ({ context, input }) =>
 			await runMockWorker(context, { ...input, direction: "inbound", origin: "customer" }),
 	);
+
+export const runMockEmailMirrorProcedure = supportProcedure
+	.input(
+		z.object({
+			companyId: z.string().min(1),
+			channelAccountId: z.string().min(1),
+			address: z.string().email(),
+			externalConversationId: z.string().min(1),
+			eventId: z.string().min(1),
+			occurredAt: z.iso.datetime(),
+			scenario: z.enum(["inbound_customer", "outbound_loopdesk", "outbound_xiaofei"]),
+			customerEmail: z.string().email(),
+			subject: z.string().max(300).nullable(),
+			text: z.string().min(1).max(10_000),
+		}),
+	)
+	.handler(async ({ context, input }) => runMockEmailMirror(context, input));
+export const listEmailMirrorMetadataProcedure = supportProcedure.handler(({ context }) =>
+	listEmailMirrorMetadata(context),
+);
+export const getEmailMirrorDetailProcedure = supportProcedure
+	.input(z.object({ id: z.string().min(1) }))
+	.handler(async ({ context, input }) => {
+		const event = await getEmailMirrorDetail(context, input.id);
+		if (!event) throw new ORPCError("NOT_FOUND", { message: "Email mirror event not found." });
+		return event;
+	});

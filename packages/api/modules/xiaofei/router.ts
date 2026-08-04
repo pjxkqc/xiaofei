@@ -5,6 +5,22 @@ import {
 	listCustomers,
 	updateCustomer,
 } from "./procedures/customers";
+import {
+	createEmailBindingProcedure,
+	disableEmailBindingProcedure,
+	enableEmailBindingProcedure,
+	listEmailBindingsProcedure,
+	updateEmailBindingProcedure,
+} from "./procedures/email-bindings";
+import {
+	getEmailDeliverySettingsProcedure,
+	getEmailOutboundDeliveryProcedure,
+	listEmailOutboundDeliveriesProcedure,
+	processMirroredEmailJobProcedure,
+	retryEmailOutboundDeliveryProcedure,
+	saveEmailDeliverySettingsProcedure,
+	sendEmailCallbackTestProcedure,
+} from "./procedures/email-delivery";
 import { getXiaofeiConfig } from "./procedures/get-config";
 import { getXiaofeiStatus } from "./procedures/get-status";
 import {
@@ -12,6 +28,9 @@ import {
 	listIntegrationEventsProcedure,
 	simulateIntegrationEventProcedure,
 	runMockWorkerProcedure,
+	runMockEmailMirrorProcedure,
+	listEmailMirrorMetadataProcedure,
+	getEmailMirrorDetailProcedure,
 } from "./procedures/integration-events";
 import {
 	createKnowledgeDocumentProcedure,
@@ -57,6 +76,21 @@ export const xiaofeiRouter = {
 	getIntegrationEvent: getIntegrationEventProcedure,
 	simulateIntegrationEvent: simulateIntegrationEventProcedure,
 	runMockWorker: runMockWorkerProcedure,
+	runMockEmailMirror: runMockEmailMirrorProcedure,
+	listEmailMirrorMetadata: listEmailMirrorMetadataProcedure,
+	getEmailMirrorDetail: getEmailMirrorDetailProcedure,
+	listEmailBindings: listEmailBindingsProcedure,
+	createEmailBinding: createEmailBindingProcedure,
+	updateEmailBinding: updateEmailBindingProcedure,
+	enableEmailBinding: enableEmailBindingProcedure,
+	disableEmailBinding: disableEmailBindingProcedure,
+	getEmailDeliverySettings: getEmailDeliverySettingsProcedure,
+	saveEmailDeliverySettings: saveEmailDeliverySettingsProcedure,
+	listEmailOutboundDeliveries: listEmailOutboundDeliveriesProcedure,
+	getEmailOutboundDelivery: getEmailOutboundDeliveryProcedure,
+	processMirroredEmailJob: processMirroredEmailJobProcedure,
+	sendEmailCallbackTest: sendEmailCallbackTestProcedure,
+	retryEmailOutboundDelivery: retryEmailOutboundDeliveryProcedure,
 	getConfig: getXiaofeiConfig,
 	saveAgentSettings: saveXiaofeiAgentSettings,
 	saveConfig: saveXiaofeiConfig,

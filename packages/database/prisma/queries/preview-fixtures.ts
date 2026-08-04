@@ -5,6 +5,7 @@ export interface PreviewFixtureUser {
 	name: string;
 	role?: string;
 	passwordHash?: string;
+	activeOrganizationSlug?: string;
 }
 
 export interface PreviewFixtureOrganization {
@@ -41,8 +42,25 @@ export interface PreviewFixtureInput {
 export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 	return db.$transaction(
 		async (transaction) => {
+			const organizations = new Map<string, { id: string }>();
+			for (const fixture of input.organizations) {
+				const organization = await transaction.organization.upsert({
+					where: { slug: fixture.slug },
+					create: { name: fixture.name, slug: fixture.slug, createdAt: new Date() },
+					update: { name: fixture.name },
+				});
+				organizations.set(fixture.slug, organization);
+			}
+
 			const users = new Map<string, { id: string }>();
 			for (const fixture of input.users) {
+				const activeOrganizationId = fixture.activeOrganizationSlug
+					? organizations.get(fixture.activeOrganizationSlug)?.id
+					: undefined;
+				if (fixture.activeOrganizationSlug && !activeOrganizationId) {
+					throw new Error("Invalid Preview fixture active Organization");
+				}
+
 				const user = await transaction.user.upsert({
 					where: { email: fixture.email },
 					create: {
@@ -53,12 +71,14 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 						onboardingComplete: true,
 						createdAt: new Date(),
 						updatedAt: new Date(),
+						...(activeOrganizationId ? { lastActiveOrganizationId: activeOrganizationId } : {}),
 					},
 					update: {
 						name: fixture.name,
 						role: fixture.role ?? "user",
 						emailVerified: true,
 						onboardingComplete: true,
+						...(activeOrganizationId ? { lastActiveOrganizationId: activeOrganizationId } : {}),
 					},
 				});
 				users.set(fixture.email, user);
@@ -86,16 +106,6 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 						});
 					}
 				}
-			}
-
-			const organizations = new Map<string, { id: string }>();
-			for (const fixture of input.organizations) {
-				const organization = await transaction.organization.upsert({
-					where: { slug: fixture.slug },
-					create: { name: fixture.name, slug: fixture.slug, createdAt: new Date() },
-					update: { name: fixture.name },
-				});
-				organizations.set(fixture.slug, organization);
 			}
 
 			for (const fixture of input.memberships) {
@@ -141,6 +151,13 @@ export async function synchronizePreviewFixtures(input: PreviewFixtureInput) {
 				});
 			}
 		},
-		{ isolationLevel: "Serializable", timeout: 20_000 },
+		{
+			isolationLevel: "Serializable",
+			// Neon Preview computes can be cold or briefly connection-bound. Prisma's
+			// default two-second interactive-transaction wait surfaced as a false
+			// Preview sign-in failure even though the fixture data was intact.
+			maxWait: 15_000,
+			timeout: 20_000,
+		},
 	);
 }

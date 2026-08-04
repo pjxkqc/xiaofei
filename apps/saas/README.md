@@ -26,6 +26,28 @@ The product surface is deliberately kept to small, focused pages:
   WhatsApp simulator. It resolves the configured external merchant server-side,
   binds the customer/conversation, and records the Xiaofei delivery plus its
   ignored echo in the same event monitor.
+- `/integrations/email` is the page version of the Worker handoff: current
+  setup status, exact endpoints/headers, a complete request example, Preview
+  defaults, and links through the four-step bidirectional flow.
+- `/integrations/email-inbound` selects only bindings returned for the active
+  Organization and exposes labeled Worker fields plus the equivalent
+  `email.message.v1` JSON. It exercises inbound, outbound, duplicate, conflict,
+  missing, and disabled-binding outcomes through the same persistence service;
+  it never receives an ingest credential or calls the public HTTP route.
+- `/integrations/events` includes an Email mirror metadata list (event,
+  normalized direction/sender, conversation/job locators, and receipt times).
+  It does not load payload, body, or attachment references until a scoped detail
+  row is selected.
+- `/integrations/email-bindings` lists the active Organization's Email company,
+  account, address, and status. Members are read-only; owner/admin mutations
+  are enforced on the server. No browser receives the Email ingest service key.
+- `/inbox` displays the readable projection of normalized Email messages and
+  the Mirror Job state. Preview/UAT users can explicitly run an AI-owned job;
+  the governed reply is persisted before delivery is attempted.
+- `/integrations/email-delivery` configures the built-in Receiver Mock or a
+  public HTTPS callback, sends a status-event test, lists reply/status Outbox
+  attempts, loads payload only on demand, and retries failed rows with the
+  current setting. Only Organization owners/admins change the destination.
 - `/knowledge/entries` adds and manages normalized entries for the shared
   public-support workspace from a file, one public webpage, or manual Q&A.
   `/knowledge/documents` remains the source-document view with bounded metadata
@@ -78,7 +100,12 @@ Set `PREVIEW_ONE_CLICK_LOGIN_ENABLED=true` only in Vercel's Preview environment,
 then redeploy the intended Preview. The button calls same-origin
 `POST /api/auth/preview-one-click-login`; it idempotently creates or corrects
 synthetic FLY-99 role fixtures and uses Better Auth to set the normal operator
-session cookie. After signing out, reviewers can use the Preview-only public
+session cookie. The operator and tenant-scoped role fixtures start with their
+documented default Organization selected (Organization A for the operator), so
+a fresh Preview does not initially look like an empty Personal account. The
+fixture transaction allows for a cold Neon Preview compute, and the client
+retries one transient server/connection failure. After signing out, reviewers
+can use the Preview-only public
 fixture credentials documented in `docs/releases/README.md`; they are not
 secrets and must never be reused for real systems. Production has no shared
 test account, and API keys/session tokens are never exposed to the browser.

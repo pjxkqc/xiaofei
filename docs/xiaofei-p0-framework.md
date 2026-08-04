@@ -17,8 +17,10 @@ Minimal SaaS surface
   │    └─ Agent behavior + read-only release status
   ├─ /knowledge/{entries,units,capabilities}
   │    └─ source → KU → capability review + P0 Eval
-  └─ /chatbot
-       └─ governed conversation + business traces
+  ├─ /chatbot
+  │    └─ governed conversation + business traces
+  └─ /integrations/email*
+       └─ Worker contract + Inbox projection + reply Outbox
           │
           ▼
 public token / protected support-role oRPC boundaries
@@ -32,8 +34,8 @@ public token / protected support-role oRPC boundaries
   Agent / KU / Owner / Slot / Policy / Guardrail / Eval / Handoff / Trace
                     │
                     ▼
-Neon JSON snapshots
-  XiaofeiWorkspace + XiaofeiConversation
+Neon persistence
+  JSON runtime snapshots + normalized Email ledger/jobs/Outbox
 ```
 
 `@repo/xiaofei` is vendor-neutral and remains authoritative. LangGraph owns
@@ -92,6 +94,14 @@ configuration, handling rights, knowledge, guardrails, or release decisions.
     polls messages and online presence; authenticated support users see the same
     conversation in `/inbox`, can take ownership, reply, and return it to
     Xiaofei.
+11. An external Email Worker can post strict `email.message.v1` events through
+    a service-authenticated boundary. Xiaofei resolves the Organization from a
+    Channel Binding, atomically stores the event/message/conversation/Mirror
+    Job, and projects readable content into the same `/inbox` surface. A
+    Preview/UAT operator can explicitly run the job; the governed reply and
+    `xiaofei.email.delivery.v1` Outbox record commit before the built-in Mock or
+    configured HTTPS Receiver is called. See
+    [`email-worker-integration.md`](./email-worker-integration.md).
 
 ## Tool and adapter boundary
 
@@ -107,13 +117,13 @@ Provider configuration failures are safe errors, so manual Q&A and MD/TXT
 remain available without a provider key. See the [API module guide](../packages/api/modules/xiaofei/README.md)
 for the protected procedure boundary.
 
-For P0, all knowledge sources, entries, KUs, capability admission, Chatbot
-validation, and public conversations map server-side to
-`channel:public-support`. Operator authentication authorizes governance but
-does not select a per-user or per-organization knowledge workspace. The UI
-exposes the demo path as four linked steps: ingestion, KU review, capability
-review/Eval, and conversation testing. Multi-channel tenant mapping remains a
-future Flyranking/LoopDesk adapter concern.
+Knowledge sources, entries, KUs, capability admission, Chatbot validation, and
+public conversations retain their documented workspace mapping. Email uses the
+active Organization workspace resolved from an explicit company/mailbox
+binding; callers never select a Workspace. The repository exposes a separate
+four-step Email flow: handoff/binding, inbound validation, Inbox consumption,
+and reply delivery. WhatsApp and full LoopDesk tenant mapping remain future
+adapter work.
 
 The initial registry deliberately exposes only the boundary:
 
@@ -144,9 +154,10 @@ This is a framework slice, not a production-complete Agent Center:
   workspace snapshot; LLM planning, version history, and rollback are deferred;
 - the LangGraph graph uses Neon as the product persistence boundary rather than
   adding a second production checkpointer;
-- the built-in public channel is a validation adapter; Flyranking source
-  ingestion, LoopDesk send/private-note APIs, and realtime sockets are not yet
-  connected;
+- the built-in public channel is a validation adapter. Email exposes an HTTPS
+  Worker bridge and reply Receiver contract, but the Kafka consumer, automatic
+  background job runner, production Receiver authentication, WhatsApp,
+  LoopDesk private-note APIs, and realtime sockets are not yet connected;
 - Eval currently uses deterministic business assertions, not model graders;
 - no release versioning, rollback UI, scheduling or multi-channel hosting UI.
 

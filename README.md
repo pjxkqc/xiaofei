@@ -215,6 +215,7 @@ configuration, required evidence, cleanup semantics, and troubleshooting.
 - [Documentation index](./docs/README.md)
 - [P0 framework architecture](./docs/xiaofei-p0-framework.md)
 - [Domain foundation and invariants](./docs/xiaofei-foundation.md)
+- [Email Worker 双向联调指引](./docs/email-worker-integration.md)
 - [PR Preview CI/CD](./docs/pr-preview-setup.md)
 - [Current release, environments, URLs, and test access](./docs/releases/README.md)
 - [Repository structure and ownership](./docs/repository-structure.md)

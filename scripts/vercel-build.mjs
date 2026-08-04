@@ -15,6 +15,23 @@ if (!schemaDatabaseUrl) {
 	throw new Error("DATABASE_URL_UNPOOLED or DIRECT_URL is required.");
 }
 
+runPnpm(
+	[
+		"--filter",
+		"@repo/database",
+		"exec",
+		"prisma",
+		"db",
+		"execute",
+		"--file",
+		"prisma/safe-email-mirror-constraints.sql",
+	],
+	{
+		...process.env,
+		DATABASE_URL: schemaDatabaseUrl,
+	},
+);
+
 runPnpm(["--filter", "@repo/database", "push"], {
 	...process.env,
 	DATABASE_URL: schemaDatabaseUrl,

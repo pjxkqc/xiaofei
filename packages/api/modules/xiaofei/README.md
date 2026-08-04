@@ -6,33 +6,38 @@ persistence.
 
 ## Procedures
 
-| Procedure                                  | Route                                               | Responsibility                                                                                                        |
-| ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `status`                                   | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract                                                   |
-| `POST /xiaofei/integrations/events`        | External HTTP route                                 | Bearer-authenticated durable ChannelEnvelope v1 ingress; fixed public workspace, 202 create, 200 replay, 409 conflict |
-| `list/get/simulateIntegrationEvent`        | Authenticated `/xiaofei` RPC                        | Support monitor metadata/detail reads and Preview-safe sample ingress                                                 |
-| `getConfig`                                | `GET /xiaofei/config`                               | Load or create the active Organization workspace snapshot                                                             |
-| `saveAgentSettings`                        | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence                                                         |
-| `saveConfig`                               | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation                                                      |
-| `reviewCapability`                         | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs                                                        |
-| `runEval`                                  | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates                                                              |
-| `resetConversation`                        | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                                                                        |
-| `startSupportConversation`                 | `POST /xiaofei/public/conversations`                | Start a token-scoped public customer conversation                                                                     |
-| `getPublicConversation`                    | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat                                                              |
-| `sendPublicMessage`                        | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner                                                        |
-| `listAgentConversations`                   | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role                                                           |
-| `list/get/create/update/archiveCustomer`   | Authenticated `/xiaofei` RPC                        | Organization-scoped customer lifecycle and customer-linked conversation history                                       |
-| `setAgentConversationOwner`                | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                                                                  |
-| `sendAgentMessage`                         | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                                                                         |
-| `createKnowledgeDocument`                  | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document                                                       |
-| `listKnowledgeDocuments`                   | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only public-channel source summaries                                                            |
-| `getKnowledgeDocument`                     | `GET /xiaofei/knowledge/documents/{id}`             | Read one public-channel source document                                                                               |
-| `updateKnowledgeDocument`                  | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status                                                           |
-| `deleteKnowledgeDocument`                  | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one public-channel source document                                                                             |
-| `createKnowledgeWeb`                       | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry                                                  |
-| `createManualKnowledgeEntries`             | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                                                                 |
-| `list/get/update/deleteKnowledgeEntry`     | `/xiaofei/knowledge/entries`                        | Manage public-channel normalized entries and eligibility                                                              |
-| `generate/list/update/deleteKnowledgeUnit` | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations                                                 |
+| Procedure                                      | Route                                               | Responsibility                                                                                                        |
+| ---------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `status`                                       | `GET /xiaofei/status`                               | Return a public, allowlisted, database-free service status contract                                                   |
+| `POST /xiaofei/integrations/events`            | External HTTP route                                 | Bearer-authenticated durable ChannelEnvelope v1 ingress; fixed public workspace, 202 create, 200 replay, 409 conflict |
+| `list/get/simulateIntegrationEvent`            | Authenticated `/xiaofei` RPC                        | Support monitor metadata/detail reads and Preview-safe sample ingress                                                 |
+| `POST /xiaofei/integrations/v1/email/messages` | External HTTP route                                 | Service-authenticated strict Email mirror ingress                                                                     |
+| `get/saveEmailDeliverySettings`                | Authenticated `/xiaofei` RPC                        | Read or administratively change the Organization Receiver mode/URL                                                    |
+| `processMirroredEmailJob`                      | Authenticated `/xiaofei` RPC                        | Run one persisted Email job through the governed runtime, then create/deliver an Outbox reply                         |
+| `sendEmailCallbackTest`                        | Authenticated `/xiaofei` RPC                        | Persist and deliver a status-event connectivity test against the latest Email conversation                            |
+| `list/get/retryEmailOutboundDelivery`          | Authenticated `/xiaofei` RPC                        | Observe scoped Outbox metadata/payload and retry failed delivery with the current destination                         |
+| `getConfig`                                    | `GET /xiaofei/config`                               | Load or create the active Organization workspace snapshot                                                             |
+| `saveAgentSettings`                            | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence                                                         |
+| `saveConfig`                                   | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation                                                      |
+| `reviewCapability`                             | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs                                                        |
+| `runEval`                                      | `POST /xiaofei/eval`                                | Run deterministic P0 assertions and update release gates                                                              |
+| `resetConversation`                            | `DELETE /xiaofei/conversations/{conversationId}`    | Delete the selected demonstration conversation                                                                        |
+| `startSupportConversation`                     | `POST /xiaofei/public/conversations`                | Start a token-scoped public customer conversation                                                                     |
+| `getPublicConversation`                        | `GET /xiaofei/public/conversations/{id}`            | Poll messages and update the customer's online heartbeat                                                              |
+| `sendPublicMessage`                            | `POST /xiaofei/public/conversations/{id}/messages`  | Route a customer message to Xiaofei or the current human owner                                                        |
+| `listAgentConversations`                       | `GET /xiaofei/support/conversations`                | List recent conversations for an authenticated support role                                                           |
+| `list/get/create/update/archiveCustomer`       | Authenticated `/xiaofei` RPC                        | Organization-scoped customer lifecycle and customer-linked conversation history                                       |
+| `setAgentConversationOwner`                    | `POST /xiaofei/support/conversations/{id}/owner`    | Transfer ownership between Xiaofei and a human agent                                                                  |
+| `sendAgentMessage`                             | `POST /xiaofei/support/conversations/{id}/messages` | Persist a human support reply                                                                                         |
+| `createKnowledgeDocument`                      | `POST /xiaofei/knowledge/documents`                 | Validate, extract, and persist a public-channel source document                                                       |
+| `listKnowledgeDocuments`                       | `GET /xiaofei/knowledge/documents`                  | Page through metadata-only public-channel source summaries                                                            |
+| `getKnowledgeDocument`                         | `GET /xiaofei/knowledge/documents/{id}`             | Read one public-channel source document                                                                               |
+| `updateKnowledgeDocument`                      | `PUT /xiaofei/knowledge/documents/{id}`             | Edit document metadata, body, category, or lifecycle status                                                           |
+| `deleteKnowledgeDocument`                      | `DELETE /xiaofei/knowledge/documents/{id}`          | Delete one public-channel source document                                                                             |
+| `createKnowledgeWeb`                           | `POST /xiaofei/knowledge/web`                       | Scrape one public webpage and create its source and normalized entry                                                  |
+| `createManualKnowledgeEntries`                 | `POST /xiaofei/knowledge/manual`                    | Create up to 20 manual Q&A entries without a provider                                                                 |
+| `list/get/update/deleteKnowledgeEntry`         | `/xiaofei/knowledge/entries`                        | Manage public-channel normalized entries and eligibility                                                              |
+| `generate/list/update/deleteKnowledgeUnit`     | `/xiaofei/knowledge/units`                          | Generate Draft KUs and support human review/publish/revoke operations                                                 |
 
 Conversation streaming remains in `modules/ai/procedures/stream-message.ts`
 because it is the existing AI SDK transport. That procedure now loads the
@@ -147,6 +152,70 @@ clear `BAD_REQUEST` messages without exposing database details.
 - Do not return secrets, provider headers, or raw connection errors.
 
 ## External event ingress
+
+## Email ingress, manual processing, and reply delivery
+
+`POST /api/xiaofei/integrations/v1/email/messages` is the Worker-facing Email
+mirror boundary. It accepts only `application/json`, reads at most 1 MiB before
+JSON parsing, and requires `Authorization: Bearer <XIAOFEI_EMAIL_INGEST_API_KEY>`.
+This is a distinct service credential; it is compared in constant time and is
+never persisted, logged, or sent to a browser. `Idempotency-Key` is required
+and must exactly equal the parsed `eventId`.
+
+The body must be `EmailMessageIngestV1Schema`; caller-selected workspace,
+ownership, AI, and provider fields are rejected by that strict schema. The
+route calls `acceptMirroredEmailMessage` only. It returns `202 accepted` after
+the transaction commits, `200 duplicate`, and `409 event_conflict`. Stable safe
+errors are `401 unauthorized`, `400 invalid_json|invalid_request|idempotency_key_mismatch`,
+`413 payload_too_large`, `415 unsupported_media_type`, `404 binding_not_found`,
+and `409 binding_disabled|binding_conflict|conversation_conflict`. Unexpected
+failures return only `500 internal_error`.
+
+```bash
+curl --fail-with-body -X POST "$XIAOFEI_API_URL/api/xiaofei/integrations/v1/email/messages" \
+  -H 'Authorization: Bearer <XIAOFEI_EMAIL_INGEST_API_KEY>' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: email:realtime:42:987654321:examplehash' \
+  --data @docs/acceptance/email-message.v1.example.json
+```
+
+The committed request fixture contains fictional addresses and IDs and is safe
+to hand to the Worker developer. Change the fixture's tenant/account tuple to
+an active binding for the target environment, keep the idempotency header equal
+to `eventId`, and retain the same event ID across every retry.
+
+The ingress request persists events/messages, projects a readable copy into the
+Organization Inbox, and may create a durable `mirrored` job for customer inbound
+mail. It still starts no consumer, model, sender, or provider call inside the
+Worker request. Preview/UAT support users explicitly run that job from `/inbox`;
+the use case loads the current Organization snapshot, invokes the governed
+LangGraph/Mastra runtime, persists the authorized reply and trace together with
+an Outbox record, then attempts delivery.
+
+The outbound contract is strict `EmailDeliveryV1Schema` with version
+`xiaofei.email.delivery.v1`. It supports `message.reply.requested` and
+`conversation.status.changed`; `deliveryId` is also sent as `Idempotency-Key`.
+Organization owners/admins choose the built-in Receiver Mock or a public HTTPS
+callback at `/integrations/email-delivery`. The API rejects credential-bearing,
+query/fragment, localhost, private, and reserved destinations; custom requests
+do not follow redirects and time out after 10 seconds. A failed attempt remains
+in `XiaofeiOutboundDelivery` and can be retargeted to the current setting and
+retried. P0 does not yet add Receiver Authorization headers.
+
+Organization Email bindings are available at `/integrations/email-bindings`:
+members read them, while owners/admins create, edit, enable, or disable them.
+The active Organization is resolved on the server and no binding request has a
+workspace field.
+
+The browser Email mirror simulator first resolves an active-Organization scoped
+binding and requires an exact company/account/address match before it calls the
+persistence service. Foreign or fabricated tuples fail before any write. The
+event monitor's Email list selects metadata only; body and attachment metadata
+are available only through an Organization-scoped detail read.
+
+See [`docs/email-worker-integration.md`](../../../docs/email-worker-integration.md)
+for the exact bidirectional handoff, both committed fixtures, and the Preview
+acceptance path.
 
 `POST /api/xiaofei/integrations/events` accepts at most 1 MiB of JSON with a
 `ChannelEnvelope v1` body and `Authorization: Bearer <XIAOFEI_INGEST_API_KEY>`.

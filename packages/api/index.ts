@@ -7,6 +7,11 @@ import { cors } from "hono/cors";
 import { logger as honoLogger } from "hono/logger";
 
 import {
+	ingestEmailMessage,
+	isValidEmailIngestAuthorization,
+	MAX_EMAIL_INGEST_BYTES,
+} from "./modules/xiaofei/email-ingest";
+import {
 	MAX_INBOUND_EVENT_BYTES,
 	ingestChannelEnvelope,
 	isValidIngestApiKey,
@@ -38,6 +43,26 @@ export const app = new Hono()
 	.post("/webhooks/payments", (c) => paymentsWebhookHandler(c.req.raw))
 	// Health check
 	.get("/health", (c) => c.text("OK"))
+	.post("/xiaofei/integrations/v1/email/messages", async (c) => {
+		if (!isValidEmailIngestAuthorization(c.req.header("Authorization")))
+			return c.json({ error: "unauthorized" }, 401);
+		const contentType = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
+		if (contentType !== "application/json") return c.json({ error: "unsupported_media_type" }, 415);
+		const contentLength = Number(c.req.header("Content-Length"));
+		if (Number.isFinite(contentLength) && contentLength > MAX_EMAIL_INGEST_BYTES)
+			return c.json({ error: "payload_too_large" }, 413);
+		const body = await c.req.raw.arrayBuffer();
+		if (body.byteLength > MAX_EMAIL_INGEST_BYTES)
+			return c.json({ error: "payload_too_large" }, 413);
+		let input: unknown;
+		try {
+			input = JSON.parse(new TextDecoder().decode(body));
+		} catch {
+			return c.json({ error: "invalid_json" }, 400);
+		}
+		const result = await ingestEmailMessage(input, c.req.header("Idempotency-Key"));
+		return c.json(result.body, result.status);
+	})
 	.post("/xiaofei/integrations/events", async (c) => {
 		if (!isValidIngestApiKey(c.req.header("Authorization")))
 			return c.json({ error: "unauthorized" }, 401);

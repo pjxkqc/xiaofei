@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto";
 
+import {
+	ConversationStateSchema,
+	EmailDeliveryV1Schema,
+	SupportMessageSchema,
+	createConversationState,
+	isCustomerInboundEmailJobEligible,
+	type EmailDeliveryV1,
+	type EmailMessageIngestV1,
+	type SupportMessage,
+} from "@repo/xiaofei";
+import { z } from "zod";
+
 import { db } from "../client";
 import {
 	XiaofeiKnowledgeDocumentFileType,
@@ -11,6 +23,20 @@ import type { XiaofeiInboundEvent, XiaofeiKnowledgeDocumentCategory } from "../g
 export interface UpsertXiaofeiOrganizationConfigInput {
 	externalMerchantId?: string | null;
 	xiaofeiEnabled?: boolean;
+	emailDeliveryMode?: "mock" | "webhook";
+	emailCallbackUrl?: string | null;
+}
+
+export interface CreateXiaofeiOutboundDeliveryInput {
+	id: string;
+	workspaceId: string;
+	conversationId: string;
+	processingJobId?: string | null;
+	eventType: EmailDeliveryV1["event"]["type"];
+	senderType: "xiaofei" | "loopdesk" | "system";
+	destinationMode: "mock" | "webhook";
+	destinationUrl?: string | null;
+	payload: EmailDeliveryV1;
 }
 
 export interface CreateXiaofeiCustomerInput {
@@ -73,6 +99,53 @@ export interface ListInboundEventsOptions {
 	topic?: string;
 }
 
+interface CreateXiaofeiChannelBindingInput {
+	companyId: string;
+	channelAccountId: string;
+	address: string;
+	status?: "active" | "disabled";
+}
+
+export class XiaofeiChannelBindingNotFoundError extends Error {
+	readonly code = "CHANNEL_BINDING_NOT_FOUND";
+	constructor(readonly companyId: string) {
+		super("No active email channel binding exists for this company account.");
+	}
+}
+export class XiaofeiChannelBindingDisabledError extends Error {
+	readonly code = "CHANNEL_BINDING_DISABLED";
+	constructor(readonly companyId: string) {
+		super("The matching email channel binding is disabled.");
+	}
+}
+export class XiaofeiChannelBindingConflictError extends Error {
+	readonly code = "CHANNEL_BINDING_CONFLICT";
+	constructor(readonly companyId: string) {
+		super("The email account ID and address resolve to different active bindings.");
+	}
+}
+export class XiaofeiChannelBindingWorkspaceMismatchError extends Error {
+	readonly code = "CHANNEL_BINDING_WORKSPACE_MISMATCH";
+	constructor(readonly organizationId: string) {
+		super("The channel binding does not belong to this Organization workspace.");
+	}
+}
+export class XiaofeiEmailConversationConflictError extends Error {
+	readonly code = "EMAIL_CONVERSATION_CONFLICT";
+	constructor(
+		readonly workspaceId: string,
+		readonly externalId: string,
+	) {
+		super("The existing email conversation has a different customer or channel.");
+	}
+}
+export class XiaofeiEmailProcessingLeaseConflictError extends Error {
+	readonly code = "EMAIL_PROCESSING_LEASE_CONFLICT";
+	constructor(readonly conversationId: string) {
+		super("The Email conversation owner changed while Xiaofei was processing.");
+	}
+}
+
 export class XiaofeiInboundEventConflictError extends Error {
 	readonly code = "INBOUND_EVENT_PAYLOAD_CONFLICT";
 
@@ -83,6 +156,16 @@ export class XiaofeiInboundEventConflictError extends Error {
 	) {
 		super("An inbound event with this source and event ID has a different payload.");
 		this.name = "XiaofeiInboundEventConflictError";
+	}
+}
+
+export class XiaofeiEmailMirrorConflictError extends Error {
+	readonly code = "EMAIL_MIRROR_PAYLOAD_CONFLICT";
+	constructor(
+		readonly workspaceId: string,
+		readonly eventId: string,
+	) {
+		super("An email event ID already exists with different stable business facts.");
 	}
 }
 
@@ -282,6 +365,21 @@ const INBOUND_EVENT_LIST_SELECT = {
 	createdAt: true,
 	updatedAt: true,
 } as const;
+const EMAIL_MESSAGE_LIST_SELECT = {
+	id: true,
+	workspaceId: true,
+	conversationId: true,
+	inboundEventId: true,
+	sourceMessageId: true,
+	direction: true,
+	senderType: true,
+	fromAddress: true,
+	subject: true,
+	contentType: true,
+	occurredAt: true,
+	ingestedAt: true,
+	createdAt: true,
+} as const;
 
 type LegacyKnowledgeDocumentFileType = "MARKDOWN" | "TEXT" | "DOCX";
 
@@ -296,6 +394,95 @@ interface KnowledgeDocumentSourceMetadata {
 
 export function getXiaofeiWorkspace(tenantKey: string) {
 	return db.xiaofeiWorkspace.findUnique({ where: { tenantKey } });
+}
+/** Organization-scoped binding mutations never accept a workspace ID from callers. */
+export async function createXiaofeiOrganizationEmailChannelBinding(
+	organizationId: string,
+	input: CreateXiaofeiChannelBindingInput,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiChannelBinding.create({
+		data: {
+			...input,
+			organizationId,
+			workspaceId: workspace.id,
+			channel: "email",
+			address: normalizeEmailAddress(input.address),
+		},
+	});
+}
+export async function listXiaofeiOrganizationEmailChannelBindings(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiChannelBinding.findMany({
+		where: { organizationId, workspaceId: workspace.id, channel: "email" },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+export async function updateXiaofeiOrganizationEmailChannelBinding(
+	organizationId: string,
+	id: string,
+	data: Pick<
+		Partial<CreateXiaofeiChannelBindingInput>,
+		"companyId" | "channelAccountId" | "address" | "status"
+	>,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	const binding = await db.xiaofeiChannelBinding.findUnique({ where: { id } });
+	if (!binding || binding.organizationId !== organizationId || binding.workspaceId !== workspace.id)
+		throw new XiaofeiChannelBindingWorkspaceMismatchError(organizationId);
+	return db.xiaofeiChannelBinding.update({
+		where: { id },
+		data: {
+			...data,
+			...(data.address === undefined ? {} : { address: normalizeEmailAddress(data.address) }),
+		},
+	});
+}
+export function enableXiaofeiOrganizationEmailChannelBinding(organizationId: string, id: string) {
+	return updateXiaofeiOrganizationEmailChannelBinding(organizationId, id, { status: "active" });
+}
+export function disableXiaofeiOrganizationEmailChannelBinding(organizationId: string, id: string) {
+	return updateXiaofeiOrganizationEmailChannelBinding(organizationId, id, { status: "disabled" });
+}
+
+/** Resolve both account identifiers together; callers cannot supply a workspace. */
+export async function resolveActiveXiaofeiEmailChannelBinding(input: {
+	companyId: string;
+	channelAccountId: string;
+	address: string;
+}) {
+	return resolveActiveXiaofeiEmailChannelBindingInClient(db, input);
+}
+async function resolveActiveXiaofeiEmailChannelBindingInClient(
+	client: Pick<typeof db, "xiaofeiChannelBinding">,
+	input: { companyId: string; channelAccountId: string; address: string },
+) {
+	const address = normalizeEmailAddress(input.address);
+	const bindings = await client.xiaofeiChannelBinding.findMany({
+		where: {
+			companyId: input.companyId,
+			channel: "email",
+			OR: [{ channelAccountId: input.channelAccountId }, { address }],
+		},
+	});
+	const idMatches = bindings.filter(
+		(binding) => binding.channelAccountId === input.channelAccountId,
+	);
+	const addressMatches = bindings.filter((binding) => binding.address === address);
+	if (
+		idMatches.some((idBinding) =>
+			addressMatches.some((addressBinding) => idBinding.id !== addressBinding.id),
+		)
+	)
+		throw new XiaofeiChannelBindingConflictError(input.companyId);
+	const sameBinding = idMatches.find((idBinding) =>
+		addressMatches.some((addressBinding) => addressBinding.id === idBinding.id),
+	);
+	if (!sameBinding && (idMatches.length || addressMatches.length))
+		throw new XiaofeiChannelBindingConflictError(input.companyId);
+	if (sameBinding?.status === "active") return sameBinding;
+	if (sameBinding) throw new XiaofeiChannelBindingDisabledError(input.companyId);
+	throw new XiaofeiChannelBindingNotFoundError(input.companyId);
 }
 export function upsertXiaofeiWorkspace(tenantKey: string, snapshot: Prisma.InputJsonValue) {
 	return db.xiaofeiWorkspace.upsert({
@@ -318,6 +505,28 @@ export function upsertXiaofeiOrganizationConfig(
 		create: { organizationId, ...input },
 		update: input,
 	});
+}
+
+export async function getXiaofeiOrganizationEmailDeliveryConfig(organizationId: string) {
+	const config = await getXiaofeiOrganizationConfig(organizationId);
+	return {
+		mode: config?.emailDeliveryMode === "webhook" ? ("webhook" as const) : ("mock" as const),
+		callbackUrl: config?.emailCallbackUrl ?? null,
+	};
+}
+
+export async function saveXiaofeiOrganizationEmailDeliveryConfig(
+	organizationId: string,
+	input: { mode: "mock" | "webhook"; callbackUrl: string | null },
+) {
+	const config = await upsertXiaofeiOrganizationConfig(organizationId, {
+		emailDeliveryMode: input.mode,
+		emailCallbackUrl: input.callbackUrl,
+	});
+	return {
+		mode: config.emailDeliveryMode === "webhook" ? ("webhook" as const) : ("mock" as const),
+		callbackUrl: config.emailCallbackUrl,
+	};
 }
 
 const ORGANIZATION_TENANT_PREFIX = "organization:";
@@ -611,13 +820,29 @@ export async function upsertXiaofeiOrganizationConversation(input: {
 export function getXiaofeiConversation(workspaceId: string, externalId: string) {
 	return db.xiaofeiConversation.findUnique({
 		where: { workspaceId_externalId: { workspaceId, externalId } },
-		include: { customer: true },
+		include: {
+			customer: true,
+			processingJobs: {
+				select: { id: true, status: true },
+				orderBy: { createdAt: "desc" },
+				take: 1,
+			},
+			outboundDeliveries: { select: { status: true }, orderBy: { createdAt: "desc" }, take: 1 },
+		},
 	});
 }
 export function listXiaofeiConversations(workspaceId: string) {
 	return db.xiaofeiConversation.findMany({
 		where: { workspaceId },
-		include: { customer: true },
+		include: {
+			customer: true,
+			processingJobs: {
+				select: { id: true, status: true },
+				orderBy: { createdAt: "desc" },
+				take: 1,
+			},
+			outboundDeliveries: { select: { status: true }, orderBy: { createdAt: "desc" }, take: 1 },
+		},
 		orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
 		take: 50,
 	});
@@ -745,6 +970,514 @@ export async function acceptInboundEvent(
 	});
 }
 
+export async function acceptMirroredEmailMessage(input: EmailMessageIngestV1): Promise<{
+	status: "accepted" | "duplicate";
+	conversationId: string;
+	messageId: string;
+	jobId: string | null;
+}> {
+	const businessHash = hashEmailBusinessFacts(input);
+	const ingestedAt = new Date();
+	try {
+		return await db.$transaction(async (transaction) => {
+			const binding = await resolveActiveXiaofeiEmailChannelBindingInClient(transaction, {
+				companyId: input.tenant.companyId,
+				channelAccountId: input.channelAccount.id,
+				address: input.channelAccount.address,
+			});
+			const existing = await transaction.xiaofeiInboundEvent.findUnique({
+				where: {
+					workspaceId_source_eventId: {
+						workspaceId: binding.workspaceId,
+						source: "email",
+						eventId: input.eventId,
+					},
+				},
+				include: { conversationMessage: { include: { processingJob: true } } },
+			});
+			if (existing) {
+				if (existing.payloadHash !== businessHash)
+					throw new XiaofeiEmailMirrorConflictError(binding.workspaceId, input.eventId);
+				const message = existing.conversationMessage;
+				if (!message) throw new Error("Accepted email event is missing its message locator.");
+				await transaction.xiaofeiInboundEvent.update({
+					where: {
+						workspaceId_source_eventId: {
+							workspaceId: binding.workspaceId,
+							source: "email",
+							eventId: input.eventId,
+						},
+					},
+					data: { deliveryCount: { increment: 1 }, lastReceivedAt: ingestedAt },
+				});
+				return {
+					status: "duplicate" as const,
+					conversationId: message.conversationId,
+					messageId: message.id,
+					jobId: message.processingJob?.id ?? null,
+				};
+			}
+			const occurredAt = new Date(input.occurredAt);
+			const isInbound = isCustomerInboundEmailJobEligible(input);
+			const customerAddress = normalizeEmailAddress(
+				isInbound ? input.message.from.address : input.message.to[0]!.address,
+			);
+			const customerName = isInbound ? input.message.from.name : input.message.to[0]!.name;
+			const customer = await transaction.xiaofeiCustomer.upsert({
+				where: {
+					organizationId_externalCustomerId: {
+						organizationId: binding.organizationId,
+						externalCustomerId: customerAddress,
+					},
+				},
+				create: {
+					organizationId: binding.organizationId,
+					externalCustomerId: customerAddress,
+					name: customerName,
+					email: customerAddress,
+					...(isInbound ? { lastSeenAt: occurredAt } : {}),
+				},
+				update: { name: customerName, email: customerAddress },
+			});
+			await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${binding.workspaceId}:${input.conversation.externalId}`}, 0))`;
+			const currentConversation = await transaction.xiaofeiConversation.findUnique({
+				where: {
+					workspaceId_externalId: {
+						workspaceId: binding.workspaceId,
+						externalId: input.conversation.externalId,
+					},
+				},
+			});
+			if (
+				currentConversation &&
+				(currentConversation.customerId !== customer.id || currentConversation.channel !== "email")
+			)
+				throw new XiaofeiEmailConversationConflictError(
+					binding.workspaceId,
+					input.conversation.externalId,
+				);
+			const conversation =
+				currentConversation ??
+				(await transaction.xiaofeiConversation.create({
+					data: {
+						workspaceId: binding.workspaceId,
+						externalId: input.conversation.externalId,
+						customerId: customer.id,
+						channel: "email",
+						customerName: customer.name,
+						state: createConversationState({
+							id: input.conversation.externalId,
+							tenantId: `organization:${binding.organizationId}`,
+							agentId: "email-mirror",
+							maxFollowUps: 0,
+						}),
+						messages: toEmailSupportMessages([], input),
+						traceEvents: [],
+						lastCustomerSeenAt: isInbound ? occurredAt : null,
+						lastMessageAt: occurredAt,
+					},
+				}));
+			const event = await transaction.xiaofeiInboundEvent.create({
+				data: {
+					workspaceId: binding.workspaceId,
+					source: "email",
+					eventId: input.eventId,
+					schemaVersion: input.schemaVersion,
+					transportKind: "email_mirror",
+					topic: input.source.topic,
+					partition: input.source.partition,
+					offset: String(input.source.offset),
+					messageKey: input.message.sourceMessageId,
+					eventType: input.schemaVersion,
+					occurredAt,
+					payload: input as Prisma.InputJsonValue,
+					payloadHash: businessHash,
+					safeHeaders: {},
+					status: "accepted",
+					firstReceivedAt: ingestedAt,
+					lastReceivedAt: ingestedAt,
+				},
+			});
+			const message = await transaction.xiaofeiConversationMessage.create({
+				data: {
+					workspaceId: binding.workspaceId,
+					conversationId: conversation.id,
+					inboundEventId: event.id,
+					eventId: input.eventId,
+					sourceMessageId: input.message.sourceMessageId,
+					providerMessageId: input.message.providerMessageId,
+					replyToSourceMessageId: input.message.replyToSourceMessageId,
+					direction: input.message.direction,
+					senderType: input.message.senderType,
+					fromAddress: normalizeEmailAddress(input.message.from.address),
+					fromName: input.message.from.name,
+					toRecipients: input.message.to as Prisma.InputJsonValue,
+					subject: input.message.subject,
+					contentType: input.message.content.type,
+					contentValue: input.message.content.value,
+					attachments: input.message.attachments as Prisma.InputJsonValue,
+					labels: input.message.labels as Prisma.InputJsonValue,
+					sourceSendType: input.message.sourceSendType,
+					occurredAt,
+					ingestedAt,
+				},
+			});
+			await transaction.xiaofeiConversation.updateMany({
+				where: {
+					id: conversation.id,
+					OR: [{ lastMessageAt: null }, { lastMessageAt: { lte: occurredAt } }],
+				},
+				data: { lastMessageAt: occurredAt },
+			});
+			if (currentConversation)
+				await transaction.xiaofeiConversation.update({
+					where: { id: conversation.id },
+					data: {
+						customerName: customer.name,
+						messages: toEmailSupportMessages(currentConversation.messages, input),
+					},
+				});
+			if (isInbound) {
+				await transaction.xiaofeiConversation.updateMany({
+					where: {
+						id: conversation.id,
+						OR: [{ lastCustomerSeenAt: null }, { lastCustomerSeenAt: { lte: occurredAt } }],
+					},
+					data: { lastCustomerSeenAt: occurredAt },
+				});
+				await transaction.xiaofeiCustomer.updateMany({
+					where: {
+						id: customer.id,
+						OR: [{ lastSeenAt: null }, { lastSeenAt: { lte: occurredAt } }],
+					},
+					data: { lastSeenAt: occurredAt },
+				});
+			}
+			const job = isInbound
+				? await transaction.xiaofeiProcessingJob.create({
+						data: {
+							workspaceId: binding.workspaceId,
+							inboundEventId: event.id,
+							conversationId: conversation.id,
+							conversationMessageId: message.id,
+							kind: "mirrored",
+							status: "mirrored",
+						},
+					})
+				: null;
+			return {
+				status: "accepted" as const,
+				conversationId: conversation.id,
+				messageId: message.id,
+				jobId: job?.id ?? null,
+			};
+		});
+	} catch (error) {
+		if (!isInboundEventUniqueViolation(error)) throw error;
+		const binding = await resolveActiveXiaofeiEmailChannelBinding({
+			companyId: input.tenant.companyId,
+			channelAccountId: input.channelAccount.id,
+			address: input.channelAccount.address,
+		});
+		const existing = await db.xiaofeiInboundEvent.findUnique({
+			where: {
+				workspaceId_source_eventId: {
+					workspaceId: binding.workspaceId,
+					source: "email",
+					eventId: input.eventId,
+				},
+			},
+			include: { conversationMessage: { include: { processingJob: true } } },
+		});
+		if (!existing) throw error;
+		if (existing.payloadHash !== businessHash)
+			throw new XiaofeiEmailMirrorConflictError(binding.workspaceId, input.eventId);
+		if (!existing.conversationMessage) throw error;
+		await db.xiaofeiInboundEvent.update({
+			where: {
+				workspaceId_source_eventId: {
+					workspaceId: binding.workspaceId,
+					source: "email",
+					eventId: input.eventId,
+				},
+			},
+			data: { deliveryCount: { increment: 1 }, lastReceivedAt: ingestedAt },
+		});
+		return {
+			status: "duplicate",
+			conversationId: existing.conversationMessage.conversationId,
+			messageId: existing.conversationMessage.id,
+			jobId: existing.conversationMessage.processingJob?.id ?? null,
+		};
+	}
+}
+
+export function listXiaofeiConversationMessages(workspaceId: string, conversationId: string) {
+	return db.xiaofeiConversationMessage.findMany({
+		where: { workspaceId, conversationId },
+		select: EMAIL_MESSAGE_LIST_SELECT,
+		orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+	});
+}
+export function getXiaofeiConversationMessage(workspaceId: string, id: string) {
+	return db.xiaofeiConversationMessage.findUnique({
+		where: { workspaceId_id: { workspaceId, id } },
+	});
+}
+export async function listXiaofeiOrganizationConversationMessages(
+	organizationId: string,
+	conversationId: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return listXiaofeiConversationMessages(workspace.id, conversationId);
+}
+export async function getXiaofeiOrganizationConversationMessage(
+	organizationId: string,
+	id: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return getXiaofeiConversationMessage(workspace.id, id);
+}
+const PROCESSING_JOB_LIST_SELECT = {
+	id: true,
+	workspaceId: true,
+	inboundEventId: true,
+	conversationId: true,
+	conversationMessageId: true,
+	kind: true,
+	status: true,
+	attempts: true,
+	ownerEpoch: true,
+	nextRunAt: true,
+	lastError: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
+export async function listXiaofeiOrganizationProcessingJobs(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.findMany({
+		where: { workspaceId: workspace.id },
+		select: PROCESSING_JOB_LIST_SELECT,
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+export async function getXiaofeiOrganizationProcessingJob(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.findUnique({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+	});
+}
+
+export async function getXiaofeiOrganizationEmailProcessingContext(
+	organizationId: string,
+	id: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.findUnique({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+		include: {
+			inboundEvent: true,
+			conversationMessage: true,
+			conversation: { include: { customer: true } },
+		},
+	});
+}
+
+export async function claimXiaofeiOrganizationEmailProcessingJob(
+	organizationId: string,
+	id: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	const result = await db.xiaofeiProcessingJob.updateMany({
+		where: { workspaceId: workspace.id, id, status: { in: ["mirrored", "failed"] } },
+		data: {
+			status: "processing",
+			attempts: { increment: 1 },
+			lastError: null,
+			nextRunAt: null,
+		},
+	});
+	return result.count === 1;
+}
+
+export async function failXiaofeiOrganizationEmailProcessingJob(
+	organizationId: string,
+	id: string,
+	lastError: string,
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiProcessingJob.updateMany({
+		where: { workspaceId: workspace.id, id, status: "processing" },
+		data: { status: "failed", lastError },
+	});
+}
+
+export async function completeXiaofeiEmailReplyProcessing(input: {
+	workspaceId: string;
+	jobId: string;
+	conversationId: string;
+	expectedOwnerEpoch: number;
+	state: Prisma.InputJsonValue;
+	messages: Prisma.InputJsonValue;
+	traceEvents: Prisma.InputJsonValue;
+	lastMessageAt: Date;
+	delivery: CreateXiaofeiOutboundDeliveryInput;
+}) {
+	return db.$transaction(async (transaction) => {
+		const job = await transaction.xiaofeiProcessingJob.findFirst({
+			where: {
+				workspaceId: input.workspaceId,
+				id: input.jobId,
+				conversationId: input.conversationId,
+				status: "processing",
+			},
+		});
+		if (!job) throw new Error("Email processing job is not claimed.");
+		const conversation = await transaction.xiaofeiConversation.findUnique({
+			where: {
+				workspaceId_id: { workspaceId: input.workspaceId, id: input.conversationId },
+			},
+			select: { state: true },
+		});
+		if (!conversation) throw new Error("Email conversation not found.");
+		const currentState = ConversationStateSchema.parse(conversation.state);
+		if (currentState.ownerType !== "ai" || currentState.ownerEpoch !== input.expectedOwnerEpoch)
+			throw new XiaofeiEmailProcessingLeaseConflictError(input.conversationId);
+		await transaction.xiaofeiConversation.update({
+			where: {
+				workspaceId_id: { workspaceId: input.workspaceId, id: input.conversationId },
+			},
+			data: {
+				state: input.state,
+				messages: input.messages,
+				traceEvents: input.traceEvents,
+				lastMessageAt: input.lastMessageAt,
+			},
+		});
+		const payload = EmailDeliveryV1Schema.parse(input.delivery.payload);
+		const delivery = await transaction.xiaofeiOutboundDelivery.create({
+			data: {
+				...input.delivery,
+				payload: payload as Prisma.InputJsonValue,
+				status: "pending",
+			},
+		});
+		await transaction.xiaofeiProcessingJob.update({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.jobId } },
+			data: { status: "delivery_pending", lastError: null },
+		});
+		return delivery;
+	});
+}
+
+export async function createXiaofeiOutboundDelivery(input: CreateXiaofeiOutboundDeliveryInput) {
+	const payload = EmailDeliveryV1Schema.parse(input.payload);
+	return db.xiaofeiOutboundDelivery.create({
+		data: {
+			...input,
+			payload: payload as Prisma.InputJsonValue,
+			status: "pending",
+		},
+	});
+}
+
+export async function retargetXiaofeiOrganizationOutboundDelivery(
+	organizationId: string,
+	id: string,
+	input: { destinationMode: "mock" | "webhook"; destinationUrl: string | null },
+) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiOutboundDelivery.update({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+		data: {
+			destinationMode: input.destinationMode,
+			destinationUrl: input.destinationUrl,
+			status: "pending",
+			responseStatus: null,
+			lastError: null,
+		},
+	});
+}
+
+export async function recordXiaofeiOutboundDeliveryAttempt(input: {
+	workspaceId: string;
+	id: string;
+	status: "delivered" | "failed";
+	responseStatus: number | null;
+	lastError: string | null;
+}) {
+	const now = new Date();
+	return db.$transaction(async (transaction) => {
+		const current = await transaction.xiaofeiOutboundDelivery.findUnique({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.id } },
+			select: { firstAttemptAt: true },
+		});
+		if (!current) throw new Error("Outbound delivery not found.");
+		const delivery = await transaction.xiaofeiOutboundDelivery.update({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.id } },
+			data: {
+				status: input.status,
+				attempts: { increment: 1 },
+				responseStatus: input.responseStatus,
+				lastError: input.lastError,
+				firstAttemptAt: current.firstAttemptAt ?? now,
+				...(input.status === "delivered" ? { deliveredAt: now } : {}),
+			},
+		});
+		if (delivery.processingJobId)
+			await transaction.xiaofeiProcessingJob.updateMany({
+				where: { workspaceId: input.workspaceId, id: delivery.processingJobId },
+				data: {
+					status: input.status === "delivered" ? "delivered" : "delivery_failed",
+					lastError: input.lastError,
+				},
+			});
+		return delivery;
+	});
+}
+
+export async function listXiaofeiOrganizationOutboundDeliveries(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiOutboundDelivery.findMany({
+		where: { workspaceId: workspace.id },
+		select: {
+			id: true,
+			conversationId: true,
+			processingJobId: true,
+			eventType: true,
+			senderType: true,
+			destinationMode: true,
+			destinationUrl: true,
+			status: true,
+			attempts: true,
+			responseStatus: true,
+			lastError: true,
+			firstAttemptAt: true,
+			deliveredAt: true,
+			createdAt: true,
+			updatedAt: true,
+		},
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		take: 50,
+	});
+}
+
+export async function getXiaofeiOrganizationOutboundDelivery(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiOutboundDelivery.findUnique({
+		where: { workspaceId_id: { workspaceId: workspace.id, id } },
+	});
+}
+
+export async function getLatestXiaofeiOrganizationEmailMirrorContext(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiInboundEvent.findFirst({
+		where: { workspaceId: workspace.id, source: "email", conversationMessage: { isNot: null } },
+		include: { conversationMessage: { include: { conversation: true } } },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+	});
+}
+
 export async function listInboundEvents(
 	workspaceId: string,
 	options: ListInboundEventsOptions = {},
@@ -790,6 +1523,68 @@ export async function listXiaofeiOrganizationInboundEvents(
 	return listInboundEvents(workspace.id, options);
 }
 
+/** Email mirror list deliberately excludes payload, body, and attachment fields. */
+export async function listXiaofeiOrganizationEmailMirrorMetadata(organizationId: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiInboundEvent.findMany({
+		where: { workspaceId: workspace.id, source: "email" },
+		select: {
+			id: true,
+			eventId: true,
+			status: true,
+			occurredAt: true,
+			firstReceivedAt: true,
+			lastReceivedAt: true,
+			deliveryCount: true,
+			conversationMessage: {
+				select: {
+					id: true,
+					conversationId: true,
+					direction: true,
+					senderType: true,
+					fromAddress: true,
+					subject: true,
+					occurredAt: true,
+					ingestedAt: true,
+					processingJob: { select: { id: true, status: true } },
+				},
+			},
+		},
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		take: 50,
+	});
+}
+export async function getXiaofeiOrganizationEmailMirrorDetail(organizationId: string, id: string) {
+	const workspace = await getRequiredXiaofeiOrganizationWorkspace(organizationId);
+	return db.xiaofeiInboundEvent.findFirst({
+		where: { id, workspaceId: workspace.id, source: "email" },
+		select: {
+			id: true,
+			eventId: true,
+			status: true,
+			occurredAt: true,
+			firstReceivedAt: true,
+			lastReceivedAt: true,
+			deliveryCount: true,
+			conversationMessage: {
+				select: {
+					id: true,
+					conversationId: true,
+					direction: true,
+					senderType: true,
+					fromAddress: true,
+					subject: true,
+					contentType: true,
+					contentValue: true,
+					attachments: true,
+					occurredAt: true,
+					ingestedAt: true,
+					processingJob: { select: { id: true, status: true } },
+				},
+			},
+		},
+	});
+}
 export async function acceptXiaofeiOrganizationInboundEvent(
 	organizationId: string,
 	input: AcceptInboundEventInput,
@@ -1231,6 +2026,92 @@ async function getRequiredXiaofeiOrganizationWorkspace(organizationId: string) {
 }
 function hashJson(value: Prisma.InputJsonValue) {
 	return createHash("sha256").update(stableJson(value), "utf8").digest("hex");
+}
+
+function normalizeEmailAddress(address: string) {
+	return address.trim().toLowerCase();
+}
+
+function toEmailSupportMessages(
+	existing: unknown,
+	input: EmailMessageIngestV1,
+): Prisma.InputJsonValue {
+	const current = z.array(SupportMessageSchema).catch([]).parse(existing);
+	const role: SupportMessage["role"] =
+		input.message.senderType === "customer"
+			? "customer"
+			: input.message.senderType === "xiaofei"
+				? "ai"
+				: "human";
+	const next = SupportMessageSchema.parse({
+		id: `email-source:${input.message.sourceMessageId}`,
+		role,
+		authorName:
+			input.message.from.name?.trim() || normalizeEmailAddress(input.message.from.address),
+		text: readableEmailContent(input.message.content.type, input.message.content.value),
+		createdAt: input.occurredAt,
+	});
+	const byId = new Map(current.map((message) => [message.id, message]));
+	if (!byId.has(next.id)) byId.set(next.id, next);
+	const messages = [...byId.values()]
+		.sort((left, right) =>
+			left.createdAt === right.createdAt
+				? left.id.localeCompare(right.id)
+				: left.createdAt.localeCompare(right.createdAt),
+		)
+		.slice(-160);
+	return JSON.parse(JSON.stringify(messages)) as Prisma.InputJsonValue;
+}
+
+function readableEmailContent(
+	type: EmailMessageIngestV1["message"]["content"]["type"],
+	value: string,
+) {
+	if (type === "text/plain") return value.trim() || "（空白邮件）";
+	return (
+		value
+			.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/giu, " ")
+			.replace(/<br\s*\/?>/giu, "\n")
+			.replace(/<\/p\s*>/giu, "\n")
+			.replace(/<[^>]+>/gu, " ")
+			.replace(/&nbsp;/giu, " ")
+			.replace(/&amp;/giu, "&")
+			.replace(/&lt;/giu, "<")
+			.replace(/&gt;/giu, ">")
+			.replace(/&quot;/giu, '"')
+			.replace(/&#39;/giu, "'")
+			.replace(/[ \t]+/gu, " ")
+			.replace(/\n\s*\n\s*\n+/gu, "\n\n")
+			.trim() || "（空白 HTML 邮件）"
+	);
+}
+
+/**
+ * The mirror ledger hashes stable business facts only. Transport topic, partition,
+ * offset, and workerVersion are deliberately excluded so Kafka replay metadata
+ * cannot turn an otherwise identical email event into a payload conflict.
+ */
+function hashEmailBusinessFacts(input: EmailMessageIngestV1) {
+	return hashJson({
+		schemaVersion: input.schemaVersion,
+		eventId: input.eventId,
+		occurredAt: input.occurredAt,
+		tenant: input.tenant,
+		channel: input.channel,
+		channelAccount: {
+			id: input.channelAccount.id,
+			address: normalizeEmailAddress(input.channelAccount.address),
+		},
+		conversation: input.conversation,
+		message: {
+			...input.message,
+			from: { ...input.message.from, address: normalizeEmailAddress(input.message.from.address) },
+			to: input.message.to.map((recipient) => ({
+				...recipient,
+				address: normalizeEmailAddress(recipient.address),
+			})),
+		},
+	} as Prisma.InputJsonValue);
 }
 function stableJson(value: Prisma.InputJsonValue): string {
 	if (value === null || typeof value !== "object") return JSON.stringify(value);

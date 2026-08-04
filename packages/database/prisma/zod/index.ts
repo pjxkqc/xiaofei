@@ -54,7 +54,7 @@ export type OrganizationScalarFieldEnum = z.infer<typeof OrganizationScalarField
 
 // File: XiaofeiOrganizationConfigScalarFieldEnum.schema.ts
 
-export const XiaofeiOrganizationConfigScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'externalMerchantId', 'xiaofeiEnabled', 'createdAt', 'updatedAt'])
+export const XiaofeiOrganizationConfigScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'externalMerchantId', 'xiaofeiEnabled', 'emailDeliveryMode', 'emailCallbackUrl', 'createdAt', 'updatedAt'])
 
 export type XiaofeiOrganizationConfigScalarFieldEnum = z.infer<typeof XiaofeiOrganizationConfigScalarFieldEnumSchema>;
 
@@ -106,11 +106,35 @@ export const XiaofeiConversationScalarFieldEnumSchema = z.enum(['id', 'workspace
 
 export type XiaofeiConversationScalarFieldEnum = z.infer<typeof XiaofeiConversationScalarFieldEnumSchema>;
 
+// File: XiaofeiChannelBindingScalarFieldEnum.schema.ts
+
+export const XiaofeiChannelBindingScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'workspaceId', 'companyId', 'channel', 'channelAccountId', 'address', 'status', 'createdAt', 'updatedAt'])
+
+export type XiaofeiChannelBindingScalarFieldEnum = z.infer<typeof XiaofeiChannelBindingScalarFieldEnumSchema>;
+
 // File: XiaofeiInboundEventScalarFieldEnum.schema.ts
 
 export const XiaofeiInboundEventScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'source', 'eventId', 'schemaVersion', 'transportKind', 'topic', 'partition', 'offset', 'messageKey', 'eventType', 'occurredAt', 'payload', 'payloadHash', 'safeHeaders', 'status', 'deliveryCount', 'firstReceivedAt', 'lastReceivedAt', 'processedAt', 'lastError', 'createdAt', 'updatedAt'])
 
 export type XiaofeiInboundEventScalarFieldEnum = z.infer<typeof XiaofeiInboundEventScalarFieldEnumSchema>;
+
+// File: XiaofeiConversationMessageScalarFieldEnum.schema.ts
+
+export const XiaofeiConversationMessageScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'conversationId', 'inboundEventId', 'eventId', 'sourceMessageId', 'providerMessageId', 'replyToSourceMessageId', 'direction', 'senderType', 'fromAddress', 'fromName', 'toRecipients', 'subject', 'contentType', 'contentValue', 'attachments', 'labels', 'sourceSendType', 'occurredAt', 'ingestedAt', 'createdAt'])
+
+export type XiaofeiConversationMessageScalarFieldEnum = z.infer<typeof XiaofeiConversationMessageScalarFieldEnumSchema>;
+
+// File: XiaofeiProcessingJobScalarFieldEnum.schema.ts
+
+export const XiaofeiProcessingJobScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'inboundEventId', 'conversationId', 'conversationMessageId', 'kind', 'status', 'attempts', 'ownerEpoch', 'nextRunAt', 'lastError', 'createdAt', 'updatedAt'])
+
+export type XiaofeiProcessingJobScalarFieldEnum = z.infer<typeof XiaofeiProcessingJobScalarFieldEnumSchema>;
+
+// File: XiaofeiOutboundDeliveryScalarFieldEnum.schema.ts
+
+export const XiaofeiOutboundDeliveryScalarFieldEnumSchema = z.enum(['id', 'workspaceId', 'conversationId', 'processingJobId', 'eventType', 'senderType', 'destinationMode', 'destinationUrl', 'payload', 'status', 'attempts', 'responseStatus', 'lastError', 'firstAttemptAt', 'deliveredAt', 'createdAt', 'updatedAt'])
+
+export type XiaofeiOutboundDeliveryScalarFieldEnum = z.infer<typeof XiaofeiOutboundDeliveryScalarFieldEnumSchema>;
 
 // File: XiaofeiKnowledgeDocumentScalarFieldEnum.schema.ts
 
@@ -141,6 +165,12 @@ export type SortOrder = z.infer<typeof SortOrderSchema>;
 export const JsonNullValueInputSchema = z.enum(['JsonNull'])
 
 export type JsonNullValueInput = z.infer<typeof JsonNullValueInputSchema>;
+
+// File: NullableJsonNullValueInput.schema.ts
+
+export const NullableJsonNullValueInputSchema = z.enum(['DbNull', 'JsonNull'])
+
+export type NullableJsonNullValueInput = z.infer<typeof NullableJsonNullValueInputSchema>;
 
 // File: QueryMode.schema.ts
 
@@ -328,6 +358,8 @@ export const XiaofeiOrganizationConfigSchema = z.object({
   organizationId: z.string(),
   externalMerchantId: z.string().nullish(),
   xiaofeiEnabled: z.boolean(),
+  emailDeliveryMode: z.string().default("mock"),
+  emailCallbackUrl: z.string().nullish(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -464,6 +496,24 @@ export const XiaofeiConversationSchema = z.object({
 export type XiaofeiConversationType = z.infer<typeof XiaofeiConversationSchema>;
 
 
+// File: XiaofeiChannelBinding.schema.ts
+
+export const XiaofeiChannelBindingSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  workspaceId: z.string(),
+  companyId: z.string(),
+  channel: z.string(),
+  channelAccountId: z.string(),
+  address: z.string(),
+  status: z.string().default("active"),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiChannelBindingType = z.infer<typeof XiaofeiChannelBindingSchema>;
+
+
 // File: XiaofeiInboundEvent.schema.ts
 
 export const XiaofeiInboundEventSchema = z.object({
@@ -493,6 +543,82 @@ export const XiaofeiInboundEventSchema = z.object({
 });
 
 export type XiaofeiInboundEventType = z.infer<typeof XiaofeiInboundEventSchema>;
+
+
+// File: XiaofeiConversationMessage.schema.ts
+
+export const XiaofeiConversationMessageSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  conversationId: z.string(),
+  inboundEventId: z.string(),
+  eventId: z.string(),
+  sourceMessageId: z.string(),
+  providerMessageId: z.string().nullish(),
+  replyToSourceMessageId: z.string().nullish(),
+  direction: z.string(),
+  senderType: z.string(),
+  fromAddress: z.string(),
+  fromName: z.string().nullish(),
+  toRecipients: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  subject: z.string().nullish(),
+  contentType: z.string(),
+  contentValue: z.string(),
+  attachments: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").nullish(),
+  labels: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").nullish(),
+  sourceSendType: z.number().int().nullish(),
+  occurredAt: z.date(),
+  ingestedAt: z.date(),
+  createdAt: z.date(),
+});
+
+export type XiaofeiConversationMessageType = z.infer<typeof XiaofeiConversationMessageSchema>;
+
+
+// File: XiaofeiProcessingJob.schema.ts
+
+export const XiaofeiProcessingJobSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  inboundEventId: z.string(),
+  conversationId: z.string(),
+  conversationMessageId: z.string(),
+  kind: z.string().default("mirrored"),
+  status: z.string().default("mirrored"),
+  attempts: z.number().int(),
+  ownerEpoch: z.number().int().nullish(),
+  nextRunAt: z.date().nullish(),
+  lastError: z.string().nullish(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiProcessingJobType = z.infer<typeof XiaofeiProcessingJobSchema>;
+
+
+// File: XiaofeiOutboundDelivery.schema.ts
+
+export const XiaofeiOutboundDeliverySchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  conversationId: z.string(),
+  processingJobId: z.string().nullish(),
+  eventType: z.string(),
+  senderType: z.string(),
+  destinationMode: z.string(),
+  destinationUrl: z.string().nullish(),
+  payload: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  status: z.string().default("pending"),
+  attempts: z.number().int(),
+  responseStatus: z.number().int().nullish(),
+  lastError: z.string().nullish(),
+  firstAttemptAt: z.date().nullish(),
+  deliveredAt: z.date().nullish(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiOutboundDeliveryType = z.infer<typeof XiaofeiOutboundDeliverySchema>;
 
 
 // File: XiaofeiKnowledgeDocument.schema.ts

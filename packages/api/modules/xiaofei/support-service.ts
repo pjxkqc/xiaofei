@@ -33,10 +33,12 @@ const MAX_MESSAGES = 160;
 
 type SupportConversationRecord = Omit<
 	NonNullable<Awaited<ReturnType<typeof getXiaofeiConversation>>>,
-	"customer"
+	"customer" | "processingJobs" | "outboundDeliveries"
 > & {
 	// Writes return the base record; list/get queries include this relation for display.
 	customer?: { name: string | null } | null;
+	processingJobs?: Array<{ id: string; status: string }>;
+	outboundDeliveries?: Array<{ status: string }>;
 };
 
 export async function startPublicSupportConversation(customerName: string) {
@@ -228,6 +230,11 @@ function toSummary(record: SupportConversationRecord): SupportConversationSummar
 			record.lastCustomerSeenAt !== null &&
 			Date.now() - record.lastCustomerSeenAt.getTime() <= ONLINE_WINDOW_MS,
 		assignedUserName: record.assignedUserName,
+		processingJobId: record.processingJobs?.[0]?.status
+			? (record.processingJobs[0].id ?? null)
+			: null,
+		processingStatus: record.processingJobs?.[0]?.status ?? null,
+		deliveryStatus: record.outboundDeliveries?.[0]?.status ?? null,
 		lastMessage: lastMessage?.text ?? "",
 		lastMessageAt: record.lastMessageAt?.toISOString() ?? null,
 		updatedAt: record.updatedAt.toISOString(),

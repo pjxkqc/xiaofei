@@ -29,6 +29,213 @@ export const NextActionSchema = z.enum([
 ]);
 export const RiskLevelSchema = z.enum(["low", "medium", "high"]);
 
+/**
+ * External IDs are supplied by a channel source and are used as durable
+ * idempotency and projection keys. Keep them opaque, bounded, and safe to use
+ * in logs and storage keys; do not accept whitespace or control characters.
+ */
+export const StableExternalIdSchema = z
+	.string()
+	.min(1)
+	.max(200)
+	.regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/, "Expected a stable external identifier.");
+
+export const CompanyIdSchema = z
+	.string()
+	.min(1)
+	.max(100)
+	.regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Expected a stable company identifier.");
+export const EmailMessageDirectionSchema = z.enum(["inbound", "outbound"]);
+export const EmailMessageSenderTypeSchema = z.enum(["customer", "loopdesk", "xiaofei", "system"]);
+
+export const EmailParticipantSchema = z
+	.object({
+		address: z.string().email(),
+		name: z.string().nullable(),
+	})
+	.strict();
+
+export const EmailMessageContentSchema = z
+	.object({
+		type: z.enum(["text/plain", "text/html"]),
+		/** The kernel preserves this value; it never truncates or downloads it. */
+		value: z.string(),
+	})
+	.strict();
+
+export const EmailMessageAttachmentSchema = z
+	.object({
+		url: z.string().url(),
+		contentType: z.string().min(1),
+		name: z.string().min(1),
+		size: z.number().int().nonnegative(),
+	})
+	.strict();
+
+export const EmailMessageFactsSchema = z
+	.object({
+		sourceMessageId: StableExternalIdSchema,
+		providerMessageId: z.string().nullable(),
+		replyToSourceMessageId: StableExternalIdSchema.nullable(),
+		direction: EmailMessageDirectionSchema,
+		senderType: EmailMessageSenderTypeSchema,
+		from: EmailParticipantSchema,
+		to: z.array(EmailParticipantSchema).min(1),
+		subject: z.string().nullable(),
+		content: EmailMessageContentSchema,
+		attachments: z.array(EmailMessageAttachmentSchema).nullable(),
+		sentAt: z.string().datetime({ offset: true }),
+		labels: z.array(z.string()).nullable(),
+		sourceSendType: z.number().int().nullable(),
+	})
+	.strict();
+
+export const EmailConversationReferenceSchema = z
+	.object({
+		externalId: z.string().min(1),
+		loopdeskSessionId: StableExternalIdSchema.nullable(),
+	})
+	.strict();
+
+export const EmailMessageSourceSchema = z
+	.object({
+		system: z.string().min(1),
+		topic: z.string().min(1),
+		partition: z.number().int().nonnegative(),
+		offset: z.number().int().nonnegative(),
+		workerVersion: z.string().min(1),
+	})
+	.strict();
+
+/**
+ * Vendor-neutral email ingress record. `eventId` is the business idempotency
+ * key; source topic/partition/offset are observability fields only. Workspace
+ * routing, ownership leases, and job scheduling remain outer-layer decisions.
+ */
+export const EmailMessageIngestV1Schema = z
+	.object({
+		schemaVersion: z.literal("email.message.v1"),
+		eventId: StableExternalIdSchema,
+		occurredAt: z.string().datetime({ offset: true }),
+		tenant: z.object({ companyId: CompanyIdSchema }).strict(),
+		channel: z.literal("email"),
+		channelAccount: z.object({ id: StableExternalIdSchema, address: z.string().email() }).strict(),
+		conversation: EmailConversationReferenceSchema,
+		message: EmailMessageFactsSchema,
+		source: EmailMessageSourceSchema,
+	})
+	.strict()
+	.superRefine((event, context) => {
+		const expectedPrefix = `email:${event.tenant.companyId}:`;
+		if (!event.conversation.externalId.startsWith(expectedPrefix))
+			context.addIssue({
+				code: "custom",
+				path: ["conversation", "externalId"],
+				message: `Expected an external conversation ID prefixed with ${expectedPrefix}.`,
+			});
+		const isCustomerInbound =
+			event.message.direction === "inbound" && event.message.senderType === "customer";
+		const isKnownOutbound =
+			event.message.direction === "outbound" && event.message.senderType !== "customer";
+		if (!isCustomerInbound && !isKnownOutbound)
+			context.addIssue({
+				code: "custom",
+				path: ["message", "senderType"],
+				message:
+					"Inbound email must be sent by customer; outbound email must be sent by loopdesk, xiaofei, or system.",
+			});
+	});
+
+export const EmailDeliveryEventTypeSchema = z.enum([
+	"message.reply.requested",
+	"conversation.status.changed",
+]);
+export const EmailDeliverySenderTypeSchema = z.enum(["xiaofei", "loopdesk", "system"]);
+export const EmailConversationDeliveryStatusSchema = z.enum([
+	"xiaofei_received",
+	"xiaofei_processing",
+	"xiaofei_replied",
+	"human_attention_required",
+	"closed",
+]);
+
+const EmailReplyDeliveryEventSchema = z
+	.object({
+		type: z.literal("message.reply.requested"),
+		message: z
+			.object({
+				sourceMessageId: StableExternalIdSchema,
+				replyToSourceMessageId: StableExternalIdSchema.nullable(),
+				senderType: EmailDeliverySenderTypeSchema,
+				from: EmailParticipantSchema,
+				to: z.array(EmailParticipantSchema).min(1),
+				subject: z.string().nullable(),
+				content: EmailMessageContentSchema,
+			})
+			.strict(),
+	})
+	.strict();
+
+const EmailStatusDeliveryEventSchema = z
+	.object({
+		type: z.literal("conversation.status.changed"),
+		status: EmailConversationDeliveryStatusSchema,
+		reason: z.string().max(500).nullable(),
+	})
+	.strict();
+
+/**
+ * Stable callback envelope emitted by Xiaofei after a reply or observable
+ * conversation status is durably queued. The receiver can replay by
+ * `deliveryId`; transport attempts never change the business envelope.
+ */
+export const EmailDeliveryV1Schema = z
+	.object({
+		schemaVersion: z.literal("xiaofei.email.delivery.v1"),
+		deliveryId: StableExternalIdSchema,
+		occurredAt: z.string().datetime({ offset: true }),
+		tenant: z.object({ companyId: CompanyIdSchema }).strict(),
+		channel: z.literal("email"),
+		channelAccount: z.object({ id: StableExternalIdSchema, address: z.string().email() }).strict(),
+		conversation: EmailConversationReferenceSchema,
+		event: z.discriminatedUnion("type", [
+			EmailReplyDeliveryEventSchema,
+			EmailStatusDeliveryEventSchema,
+		]),
+		source: z
+			.object({
+				system: z.literal("xiaofei"),
+				environment: z.string().min(1).max(80),
+			})
+			.strict(),
+	})
+	.strict()
+	.superRefine((delivery, context) => {
+		const expectedPrefix = `email:${delivery.tenant.companyId}:`;
+		if (!delivery.conversation.externalId.startsWith(expectedPrefix))
+			context.addIssue({
+				code: "custom",
+				path: ["conversation", "externalId"],
+				message: `Expected an external conversation ID prefixed with ${expectedPrefix}.`,
+			});
+	});
+
+export const EmailDeliveryAcceptanceV1Schema = z
+	.object({
+		status: z.enum(["accepted", "duplicate"]),
+		deliveryId: StableExternalIdSchema,
+		receivedAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
+
+/**
+ * A pure admission predicate for an outer worker. It does not enqueue work,
+ * resolve a workspace, or grant any reply/send authority.
+ */
+export function isCustomerInboundEmailJobEligible(message: EmailMessageIngestV1): boolean {
+	return message.message.direction === "inbound" && message.message.senderType === "customer";
+}
+
 export const DEFAULT_FALLBACK_POLICY = {
 	maxClarifications: 5,
 	clarificationReply:
@@ -375,6 +582,9 @@ export const SupportConversationSummarySchema = z.object({
 	attentionSince: z.string().nullable().default(null),
 	online: z.boolean(),
 	assignedUserName: z.string().nullable(),
+	processingJobId: z.string().nullable().default(null),
+	processingStatus: z.string().nullable().default(null),
+	deliveryStatus: z.string().nullable().default(null),
 	lastMessage: z.string(),
 	lastMessageAt: z.string().nullable(),
 	updatedAt: z.string().min(1),
@@ -425,6 +635,22 @@ export type SlotStatus = z.infer<typeof SlotStatusSchema>;
 export type SlotValue = z.infer<typeof SlotValueSchema>;
 export type NextAction = z.infer<typeof NextActionSchema>;
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
+export type StableExternalId = z.infer<typeof StableExternalIdSchema>;
+export type CompanyId = z.infer<typeof CompanyIdSchema>;
+export type EmailMessageDirection = z.infer<typeof EmailMessageDirectionSchema>;
+export type EmailMessageSenderType = z.infer<typeof EmailMessageSenderTypeSchema>;
+export type EmailParticipant = z.infer<typeof EmailParticipantSchema>;
+export type EmailMessageContent = z.infer<typeof EmailMessageContentSchema>;
+export type EmailMessageAttachment = z.infer<typeof EmailMessageAttachmentSchema>;
+export type EmailMessageSource = z.infer<typeof EmailMessageSourceSchema>;
+export type EmailConversationReference = z.infer<typeof EmailConversationReferenceSchema>;
+export type EmailMessageFacts = z.infer<typeof EmailMessageFactsSchema>;
+export type EmailMessageIngestV1 = z.infer<typeof EmailMessageIngestV1Schema>;
+export type EmailDeliveryEventType = z.infer<typeof EmailDeliveryEventTypeSchema>;
+export type EmailDeliverySenderType = z.infer<typeof EmailDeliverySenderTypeSchema>;
+export type EmailConversationDeliveryStatus = z.infer<typeof EmailConversationDeliveryStatusSchema>;
+export type EmailDeliveryV1 = z.infer<typeof EmailDeliveryV1Schema>;
+export type EmailDeliveryAcceptanceV1 = z.infer<typeof EmailDeliveryAcceptanceV1Schema>;
 export type FallbackPolicy = z.infer<typeof FallbackPolicySchema>;
 export type HandoffPackage = z.infer<typeof HandoffPackageSchema>;
 export type ConversationAttention = z.infer<typeof ConversationAttentionSchema>;

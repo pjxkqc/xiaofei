@@ -57,6 +57,40 @@ are not retained; `bodyText` is the durable extracted content.
 - document create, list, get, update, and delete by workspace.
 - inbound event acceptance, workspace-scoped metadata lists, and full detail reads.
 
+### Email mirror ledger
+
+`acceptMirroredEmailMessage` is the email persistence boundary and accepts only
+the kernel's `EmailMessageIngestV1` DTO. It resolves an active binding by
+`companyId + email + channelAccount.id/address` before opening its write
+transaction. Missing, disabled, or split ID/address bindings are typed failures
+and write no ledger rows. The transaction creates the inbound event, customer,
+conversation, normalized message, monotonic conversation projection, and only
+for customer inbound traffic one `mirrored` job. A replay returns the existing
+locators; a changed stable business payload fails closed.
+
+The email business hash canonicalizes object keys and lowercases email addresses.
+It includes the immutable envelope, routing account, conversation, and message
+facts, but excludes `source.topic`, `source.partition`, `source.offset`, and
+`source.workerVersion`. Those fields remain tracing data and may differ during a
+replay without becoming a conflict. Message list projections intentionally omit
+body, raw HTML, and attachment URLs; those are available only through a
+workspace-scoped detail read.
+
+The same transaction also projects a bounded, readable support message into
+`XiaofeiConversation.messages`, under a per-conversation advisory lock. This is
+the bridge that makes a Worker-delivered Email immediately visible in `/inbox`
+without weakening the normalized message ledger; raw HTML and attachment URLs
+remain in the restricted detail record.
+
+`XiaofeiOutboundDelivery` is the reply/status Outbox. The guarded reply and
+trace, immutable `xiaofei.email.delivery.v1` payload, destination mode, and
+`delivery_pending` job transition are committed before any Receiver HTTP call.
+Every attempt stores only status, attempt count, HTTP status, timestamps, and a
+safe error. A failed row is retained and can be retargeted to the Organization's
+current Receiver setting; a delivered row is not replayed by the operator UI.
+The Organization config stores only `mock`/`webhook` mode and the validated
+callback URL—P0 does not persist callback credentials.
+
 Organization query helpers are the merchant boundary for new Xiaofei work:
 
 - configuration and customer get/list/create/update calls take `organizationId`;
@@ -177,8 +211,13 @@ history.
 Preview builds use a pooled `DATABASE_URL` for runtime traffic and
 `DATABASE_URL_UNPOOLED` or `DIRECT_URL` for schema work.
 `scripts/vercel-build.mjs` temporarily supplies the direct URL to Prisma,
-generates the client, restores the pooled runtime URL, and then builds the SaaS
-application.
+applies the known lossless Email-mirror compatibility step, runs the normal
+schema push, generates the client, restores the pooled runtime URL, and then
+builds the SaaS application. The compatibility step can recover the final
+`eventId` from its durable inbound event and add composite indexes; it never
+deletes a row. PostgreSQL fails the deployment if a row cannot be mapped or
+violates a new unique key. Do not replace this guard with a broad
+`--accept-data-loss` flag.
 
 Never print a connection string in build output. See
 [`../../../docs/pr-preview-setup.md`](../../../docs/pr-preview-setup.md) for the
