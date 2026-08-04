@@ -180,7 +180,7 @@ export type XiaofeiCapabilityVersionKnowledgeUnitScalarFieldEnum = z.infer<typeo
 
 // File: XiaofeiResponseInterventionScalarFieldEnum.schema.ts
 
-export const XiaofeiResponseInterventionScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'correction', 'beforeResponse', 'afterResponse', 'beforeCapabilityVersionId', 'resultCapabilityVersionId', 'beforeKnowledgeRevisionScopeKey', 'beforeKnowledgeRevisionId', 'resultKnowledgeRevisionScopeKey', 'resultKnowledgeRevisionId', 'createdAt'])
+export const XiaofeiResponseInterventionScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'correction', 'beforeResponse', 'afterResponse', 'beforeCapabilityVersionId', 'resultCapabilityVersionId', 'beforeKnowledgeRevisionScopeKey', 'beforeKnowledgeRevisionId', 'resultKnowledgeRevisionScopeKey', 'resultKnowledgeRevisionId', 'sourceTestTurnId', 'createdAt'])
 
 export type XiaofeiResponseInterventionScalarFieldEnum = z.infer<typeof XiaofeiResponseInterventionScalarFieldEnumSchema>;
 
@@ -806,6 +806,7 @@ export const XiaofeiResponseInterventionSchema = z.object({
   beforeKnowledgeRevisionId: z.string(),
   resultKnowledgeRevisionScopeKey: z.string(),
   resultKnowledgeRevisionId: z.string(),
+  sourceTestTurnId: z.string().nullish(),
   createdAt: z.date(),
 });
 

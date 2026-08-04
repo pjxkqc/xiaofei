@@ -692,10 +692,13 @@ model XiaofeiResponseIntervention {
   resultCapabilityVersion   XiaofeiCapabilityVersion @relation("InterventionResultCapabilityVersion", fields: [organizationId, resultCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
   beforeKnowledgeRevision   XiaofeiKnowledgeUnitRevision @relation("InterventionBeforeRevision", fields: [beforeKnowledgeRevisionScopeKey, beforeKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
   resultKnowledgeRevision   XiaofeiKnowledgeUnitRevision @relation("InterventionResultRevision", fields: [resultKnowledgeRevisionScopeKey, resultKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
+  sourceTestTurnId          String?
+  sourceTestTurn            XiaofeiTestTurn?             @relation("TestTurnFeedbackIntervention", fields: [organizationId, sourceTestTurnId], references: [organizationId, id], onDelete: Restrict)
   testTurns                 XiaofeiTestTurn[]
   createdAt                 DateTime     @default(now())
 
   @@unique([organizationId, id])
+  @@unique([organizationId, sourceTestTurnId])
   @@index([organizationId, createdAt])
   @@map("xiaofei_response_intervention")
 }
@@ -723,11 +726,13 @@ model XiaofeiTestTurn {
   rerunTurns               XiaofeiTestTurn[]            @relation("TestTurnRerun")
   interventionId           String?
   intervention             XiaofeiResponseIntervention? @relation(fields: [organizationId, interventionId], references: [organizationId, id], onDelete: Restrict)
+  feedbackIntervention     XiaofeiResponseIntervention? @relation("TestTurnFeedbackIntervention")
   requestedAt              DateTime
   completedAt              DateTime
   createdAt                DateTime                     @default(now())
 
   @@unique([organizationId, id])
+  @@unique([organizationId, rerunOfTestTurnId, interventionId])
   @@index([organizationId, testSessionId, createdAt])
   @@index([organizationId, capabilityVersionId])
   @@map("xiaofei_test_turn")

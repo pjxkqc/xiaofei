@@ -319,21 +319,15 @@ export interface CreateXiaofeiTestTurnInput {
 	runtimeMetadata: RuntimeMetadata;
 	requestedAt: Date;
 	completedAt: Date;
-	sourceTestTurnId?: string | null;
-	rerunOfTestTurnId?: string | null;
-	interventionId?: string | null;
 }
 
 export interface ApplyXiaofeiTestTurnFeedbackInput {
 	organizationId: string;
 	sourceTestTurnId: string;
 	correction: string;
-	correctedContent: Prisma.InputJsonValue;
 }
 
 export interface CreateXiaofeiTestTurnRerunInput extends CreateXiaofeiTestTurnInput {
-	sourceTestTurnId: string;
-	rerunOfTestTurnId: string;
 	interventionId: string;
 }
 
@@ -2298,59 +2292,74 @@ export async function loadXiaofeiRuntimeHostingCapability(
 
 /** Stores one real answer only after validating the currently selected Active/Test hosting CA. */
 export function createXiaofeiTestTurn(organizationId: string, input: CreateXiaofeiTestTurnInput) {
-	return db.$transaction(async (transaction) => {
-		const metadata = RuntimeMetadataSchema.parse(input.runtimeMetadata);
-		const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
-			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
-			include: {
-				activeCapabilityVersion: {
-					include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
-				},
-				testCapabilityVersion: {
-					include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
-				},
+	return db.$transaction((transaction) =>
+		createXiaofeiTestTurnInTransaction(transaction, organizationId, input),
+	);
+}
+
+async function createXiaofeiTestTurnInTransaction(
+	transaction: Prisma.TransactionClient,
+	organizationId: string,
+	input: CreateXiaofeiTestTurnInput,
+	lineage?: { sourceTestTurnId: string; rerunOfTestTurnId: string; interventionId: string },
+) {
+	const metadata = RuntimeMetadataSchema.parse(input.runtimeMetadata);
+	const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
+		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+		include: {
+			activeCapabilityVersion: {
+				include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
 			},
-		});
-		const version = [binding?.activeCapabilityVersion, binding?.testCapabilityVersion].find(
-			(candidate) =>
-				candidate?.id === input.capabilityVersionId &&
-				candidate.capabilityKey === "xiaofei-hosting",
-		);
-		if (!version)
-			throw new XiaofeiVersioningNotFoundError(organizationId, input.capabilityVersionId);
-		const evidence = metadata.knowledgeEvidence;
-		const member = evidence
-			? version.knowledgeUnits.find(
-					(candidate) =>
-						candidate.knowledgeUnitRevisionId === evidence.knowledgeUnitRevisionId &&
-						evidence.capabilityVersionId === version.id,
-				)
-			: null;
-		if (evidence && (!member || evidence.capabilityKey !== "xiaofei-hosting"))
-			throw new XiaofeiVersioningNotFoundError(organizationId, evidence.knowledgeUnitRevisionId);
-		return transaction.xiaofeiTestTurn.create({
-			data: {
-				organizationId,
-				testSessionId: input.testSessionId,
-				question: input.question,
-				answer: input.answer,
-				capabilityVersionId: version.id,
-				runtimeMetadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue,
-				evidenceRevisionScopeKey: member?.knowledgeUnitRevision.scopeKey ?? null,
-				evidenceRevisionId: member?.knowledgeUnitRevisionId ?? null,
-				sourceTestTurnId: input.sourceTestTurnId ?? null,
-				rerunOfTestTurnId: input.rerunOfTestTurnId ?? null,
-				interventionId: input.interventionId ?? null,
-				requestedAt: input.requestedAt,
-				completedAt: input.completedAt,
+			testCapabilityVersion: {
+				include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
 			},
-		});
+		},
+	});
+	const version = [binding?.activeCapabilityVersion, binding?.testCapabilityVersion].find(
+		(candidate) =>
+			candidate?.id === input.capabilityVersionId && candidate.capabilityKey === "xiaofei-hosting",
+	);
+	if (!version) throw new XiaofeiVersioningNotFoundError(organizationId, input.capabilityVersionId);
+	const evidence = metadata.knowledgeEvidence;
+	const member = evidence
+		? version.knowledgeUnits.find(
+				(candidate) =>
+					candidate.knowledgeUnitRevisionId === evidence.knowledgeUnitRevisionId &&
+					evidence.capabilityVersionId === version.id &&
+					evidence.capabilityKey === version.capabilityKey &&
+					candidate.knowledgeUnitRevision.logicalKnowledgeUnitId ===
+						evidence.logicalKnowledgeUnitId &&
+					candidate.knowledgeUnitRevision.origin === evidence.knowledgeUnitOrigin,
+			)
+		: null;
+	if (evidence && !member)
+		throw new XiaofeiVersioningNotFoundError(organizationId, evidence.knowledgeUnitRevisionId);
+	return transaction.xiaofeiTestTurn.create({
+		data: {
+			organizationId,
+			testSessionId: input.testSessionId,
+			question: input.question,
+			answer: input.answer,
+			capabilityVersionId: version.id,
+			runtimeMetadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue,
+			evidenceRevisionScopeKey: member?.knowledgeUnitRevision.scopeKey ?? null,
+			evidenceRevisionId: member?.knowledgeUnitRevisionId ?? null,
+			sourceTestTurnId: lineage?.sourceTestTurnId ?? null,
+			rerunOfTestTurnId: lineage?.rerunOfTestTurnId ?? null,
+			interventionId: lineage?.interventionId ?? null,
+			requestedAt: input.requestedAt,
+			completedAt: input.completedAt,
+		},
 	});
 }
 
 /** Feedback derives before facts exclusively from the persisted source turn. */
 export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedbackInput) {
 	return db.$transaction(async (transaction) => {
+		await lockXiaofeiVersioningScope(
+			transaction,
+			`test-turn-feedback:${input.organizationId}:${input.sourceTestTurnId}`,
+		);
 		const source = await transaction.xiaofeiTestTurn.findUnique({
 			where: {
 				organizationId_id: { organizationId: input.organizationId, id: input.sourceTestTurnId },
@@ -2370,18 +2379,41 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 			)
 		)
 			throw new XiaofeiVersioningNotFoundError(input.organizationId, source.evidenceRevisionId);
+		const correctedKnowledgeUnit = KnowledgeUnitSchema.parse(source.evidenceRevision.content);
+		const existing = await transaction.xiaofeiResponseIntervention.findUnique({
+			where: {
+				organizationId_sourceTestTurnId: {
+					organizationId: input.organizationId,
+					sourceTestTurnId: source.id,
+				},
+			},
+			include: { resultKnowledgeRevision: true, resultCapabilityVersion: true },
+		});
+		if (existing) {
+			return {
+				intervention: existing,
+				resultRevision: existing.resultKnowledgeRevision,
+				resultVersion: existing.resultCapabilityVersion,
+			};
+		}
 		const applied = await applyXiaofeiResponseInterventionInTransaction(transaction, {
 			organizationId: input.organizationId,
 			capabilityKey: "xiaofei-hosting",
 			beforeCapabilityVersionId: source.capabilityVersionId,
 			beforeKnowledgeRevisionId: source.evidenceRevisionId,
 			correction: input.correction,
-			correctedContent: input.correctedContent,
+			correctedContent: { ...correctedKnowledgeUnit, standardReplyPolicy: input.correction },
 			beforeResponse: {
 				question: source.question,
 				answer: source.answer,
 				runtimeMetadata: source.runtimeMetadata,
 			},
+		});
+		await transaction.xiaofeiResponseIntervention.update({
+			where: {
+				organizationId_id: { organizationId: input.organizationId, id: applied.intervention.id },
+			},
+			data: { sourceTestTurnId: source.id },
 		});
 		await transaction.xiaofeiTestTurn.update({
 			where: { organizationId_id: { organizationId: input.organizationId, id: source.id } },
@@ -2396,27 +2428,48 @@ export async function createXiaofeiTestTurnRerun(
 	organizationId: string,
 	input: CreateXiaofeiTestTurnRerunInput,
 ) {
-	const intervention = await db.xiaofeiResponseIntervention.findUnique({
-		where: { organizationId_id: { organizationId, id: input.interventionId } },
-		select: { id: true, resultCapabilityVersionId: true },
+	return db.$transaction(async (transaction) => {
+		const intervention = await transaction.xiaofeiResponseIntervention.findUnique({
+			where: { organizationId_id: { organizationId, id: input.interventionId } },
+			include: { sourceTestTurn: true },
+		});
+		if (
+			!intervention?.sourceTestTurn ||
+			intervention.resultCapabilityVersionId !== input.capabilityVersionId
+		)
+			throw new XiaofeiVersioningNotFoundError(organizationId, input.interventionId);
+		const existing = await transaction.xiaofeiTestTurn.findUnique({
+			where: {
+				organizationId_rerunOfTestTurnId_interventionId: {
+					organizationId,
+					rerunOfTestTurnId: intervention.sourceTestTurn.id,
+					interventionId: intervention.id,
+				},
+			},
+		});
+		const turn =
+			existing ??
+			(await createXiaofeiTestTurnInTransaction(transaction, organizationId, input, {
+				sourceTestTurnId: intervention.sourceTestTurn.id,
+				rerunOfTestTurnId: intervention.sourceTestTurn.id,
+				interventionId: intervention.id,
+			}));
+		const afterResponse = JSON.parse(
+			JSON.stringify({ answer: turn.answer, runtimeMetadata: turn.runtimeMetadata }),
+		) as Prisma.InputJsonValue;
+		const updated = await transaction.xiaofeiResponseIntervention.updateMany({
+			where: {
+				organizationId,
+				id: intervention.id,
+				resultCapabilityVersionId: input.capabilityVersionId,
+				afterResponse: { equals: Prisma.DbNull },
+			},
+			data: { afterResponse },
+		});
+		if (updated.count === 0 && intervention.afterResponse === null)
+			throw new XiaofeiVersioningNotFoundError(organizationId, intervention.id);
+		return turn;
 	});
-	if (!intervention || intervention.resultCapabilityVersionId !== input.capabilityVersionId)
-		throw new XiaofeiVersioningNotFoundError(organizationId, input.interventionId);
-	const turn = await createXiaofeiTestTurn(organizationId, input);
-	await db.xiaofeiResponseIntervention.updateMany({
-		where: {
-			organizationId,
-			id: intervention.id,
-			resultCapabilityVersionId: input.capabilityVersionId,
-			afterResponse: { equals: Prisma.DbNull },
-		},
-		data: {
-			afterResponse: JSON.parse(
-				JSON.stringify({ answer: input.answer, runtimeMetadata: input.runtimeMetadata }),
-			) as Prisma.InputJsonValue,
-		},
-	});
-	return turn;
 }
 
 async function createXiaofeiKnowledgeUnitRevisionInTransaction(

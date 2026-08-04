@@ -43,7 +43,12 @@ const queryMocks = vi.hoisted(() => {
 		},
 		xiaofeiCapabilityVersionKnowledgeUnit: { createMany: vi.fn() },
 		xiaofeiCapabilityBinding: { findUnique: vi.fn(), upsert: vi.fn() },
-		xiaofeiResponseIntervention: { create: vi.fn() },
+		xiaofeiResponseIntervention: {
+			create: vi.fn(),
+			findUnique: vi.fn(),
+			update: vi.fn(),
+			updateMany: vi.fn(),
+		},
 		xiaofeiTestTurn: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
 	};
 
@@ -87,7 +92,12 @@ const queryMocks = vi.hoisted(() => {
 		findHostingBindingInTransaction: transactionClient.xiaofeiCapabilityBinding.findUnique,
 		getHostingBinding: vi.fn(),
 		createTestTurn: transactionClient.xiaofeiTestTurn.create,
+		findTestTurn: transactionClient.xiaofeiTestTurn.findUnique,
+		updateTestTurn: transactionClient.xiaofeiTestTurn.update,
 		createResponseIntervention: transactionClient.xiaofeiResponseIntervention.create,
+		findResponseIntervention: transactionClient.xiaofeiResponseIntervention.findUnique,
+		updateResponseIntervention: transactionClient.xiaofeiResponseIntervention.update,
+		updateResponseInterventionMany: transactionClient.xiaofeiResponseIntervention.updateMany,
 		createInboundEvent: transactionClient.xiaofeiInboundEvent.create,
 		findInboundEventInTransaction: transactionClient.xiaofeiInboundEvent.findUnique,
 		updateInboundEvent: transactionClient.xiaofeiInboundEvent.update,
@@ -482,9 +492,11 @@ import {
 	XiaofeiOrganizationCustomerNotFoundError,
 	activateXiaofeiCapabilityVersion,
 	applyXiaofeiResponseIntervention,
+	applyXiaofeiTestTurnFeedback,
 	createXiaofeiCapabilityVersion,
 	createXiaofeiKnowledgeUnitRevision,
 	createXiaofeiTestTurn,
+	createXiaofeiTestTurnRerun,
 	loadXiaofeiRuntimeHostingCapability,
 	XiaofeiCapabilityPartitionError,
 	XiaofeiDuplicateLogicalKnowledgeUnitError,
@@ -678,6 +690,198 @@ describe("Xiaofei Organization queries", () => {
 			where: { workspaceId_id: { workspaceId: "workspace-a", id: "event-a" } },
 			data: { status: "processed", processedAt: new Date("2026-08-02T00:00:00.000Z") },
 		});
+	});
+});
+
+describe("Xiaofei governed TestTurn feedback boundary", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	const runtimeMetadata = {
+		knowledgeTitle: null,
+		knowledgeEvidence: null,
+		nextAction: "reply" as const,
+		riskLevel: "low" as const,
+		ownerType: "ai" as const,
+		stage: "admission" as const,
+		missingSlots: [],
+		traces: [],
+	};
+
+	it("rejects evidence whose exact member metadata does not match", async () => {
+		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
+			activeCapabilityVersion: {
+				id: "active-version",
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [
+					{
+						knowledgeUnitRevisionId: "revision-a",
+						knowledgeUnitRevision: {
+							scopeKey: "organization:organization-a",
+							logicalKnowledgeUnitId: "logical-a",
+							origin: "merchant",
+						},
+					},
+				],
+			},
+			testCapabilityVersion: null,
+		});
+
+		await expect(
+			createXiaofeiTestTurn("organization-a", {
+				testSessionId: "session-a",
+				question: "What is the policy?",
+				answer: "Actual answer.",
+				capabilityVersionId: "active-version",
+				runtimeMetadata: {
+					...runtimeMetadata,
+					knowledgeEvidence: {
+						logicalKnowledgeUnitId: "forged-logical-id",
+						knowledgeUnitRevisionId: "revision-a",
+						capabilityVersionId: "active-version",
+						capabilityKey: "xiaofei-hosting",
+						knowledgeUnitOrigin: "merchant",
+					},
+				},
+				requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			}),
+		).rejects.toBeInstanceOf(XiaofeiVersioningNotFoundError);
+		expect(queryMocks.createTestTurn).not.toHaveBeenCalled();
+	});
+
+	it("derives rerun lineage in one transaction and stores only its saved actual answer", async () => {
+		queryMocks.findResponseIntervention.mockResolvedValueOnce({
+			id: "intervention-a",
+			resultCapabilityVersionId: "result-version",
+			afterResponse: null,
+			sourceTestTurn: { id: "source-turn" },
+		});
+		queryMocks.findTestTurn.mockResolvedValueOnce(null);
+		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
+			activeCapabilityVersion: null,
+			testCapabilityVersion: {
+				id: "result-version",
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [],
+			},
+		});
+		queryMocks.createTestTurn.mockResolvedValueOnce({
+			id: "rerun-turn",
+			answer: "Actual rerun answer.",
+			runtimeMetadata,
+		});
+		queryMocks.updateResponseInterventionMany.mockResolvedValueOnce({ count: 1 });
+
+		await createXiaofeiTestTurnRerun("organization-a", {
+			interventionId: "intervention-a",
+			testSessionId: "session-a",
+			question: "What is the policy?",
+			answer: "Actual rerun answer.",
+			capabilityVersionId: "result-version",
+			runtimeMetadata,
+			requestedAt: new Date("2026-08-04T00:00:02.000Z"),
+			completedAt: new Date("2026-08-04T00:00:03.000Z"),
+		});
+
+		expect(queryMocks.createTestTurn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					sourceTestTurnId: "source-turn",
+					rerunOfTestTurnId: "source-turn",
+					interventionId: "intervention-a",
+				}),
+			}),
+		);
+		expect(queryMocks.updateResponseInterventionMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: { afterResponse: { answer: "Actual rerun answer.", runtimeMetadata } },
+			}),
+		);
+	});
+
+	it("derives the corrected revision from saved evidence instead of caller content", async () => {
+		const evidenceRevision = {
+			id: "merchant-revision",
+			scopeKey: "organization:organization-a",
+			origin: "merchant",
+			logicalKnowledgeUnitId: "logical-ku",
+			knowledgeUnitId: "knowledge-unit",
+			content: {
+				id: "knowledge-unit",
+				title: "Saved knowledge",
+				status: "released",
+				standardReplyPolicy: "Old policy.",
+				fallbackReply: "Fallback.",
+				sourceSection: "FAQ",
+				quality: { status: "passed" },
+			},
+		};
+		queryMocks.findTestTurn.mockResolvedValueOnce({
+			id: "source-turn",
+			evidenceRevisionId: "merchant-revision",
+			evidenceRevision,
+			capabilityVersionId: "before-version",
+			question: "Question from saved turn",
+			answer: "Answer from saved turn",
+			runtimeMetadata,
+			capabilityVersion: {
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [{ knowledgeUnitRevisionId: "merchant-revision" }],
+			},
+		});
+		queryMocks.findResponseIntervention.mockResolvedValueOnce(null);
+		queryMocks.findRevisionById.mockResolvedValueOnce(evidenceRevision);
+		queryMocks.findCapabilityVersion
+			.mockResolvedValueOnce({
+				id: "before-version",
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [
+					{
+						knowledgeUnitRevisionId: "merchant-revision",
+						role: "primary",
+						priority: 0,
+					},
+				],
+			})
+			.mockResolvedValueOnce(null);
+		queryMocks.findRevision.mockResolvedValueOnce(null).mockResolvedValueOnce({ revision: 1 });
+		queryMocks.createRevision.mockResolvedValueOnce({
+			id: "result-revision",
+			scopeKey: "organization:organization-a",
+			origin: "merchant",
+			logicalKnowledgeUnitId: "logical-ku",
+		});
+		queryMocks.findRevisions.mockResolvedValueOnce([
+			{
+				id: "result-revision",
+				scopeKey: "organization:organization-a",
+				origin: "merchant",
+				logicalKnowledgeUnitId: "logical-ku",
+			},
+		]);
+		queryMocks.createCapabilityVersion.mockResolvedValueOnce({ id: "result-version" });
+		queryMocks.createResponseIntervention.mockResolvedValueOnce({ id: "intervention-a" });
+
+		await applyXiaofeiTestTurnFeedback({
+			organizationId: "organization-a",
+			sourceTestTurnId: "source-turn",
+			correction: "New approved policy.",
+		});
+
+		expect(queryMocks.createRevision).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					content: expect.objectContaining({
+						id: "knowledge-unit",
+						fallbackReply: "Fallback.",
+						standardReplyPolicy: "New approved policy.",
+					}),
+				}),
+			}),
+		);
+		expect(queryMocks.updateTestTurn).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { interventionId: "intervention-a" } }),
+		);
 	});
 });
 
