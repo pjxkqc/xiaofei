@@ -2367,80 +2367,92 @@ async function createXiaofeiTestTurnInTransaction(
 
 /** Feedback derives before facts exclusively from the persisted source turn. */
 export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedbackInput) {
-	return db.$transaction(async (transaction) => {
-		const correction = normalizeXiaofeiTestTurnCorrection(input.correction);
-		await lockXiaofeiVersioningScope(
-			transaction,
-			`test-turn-feedback:${input.organizationId}:${input.sourceTestTurnId}`,
-		);
-		const source = await transaction.xiaofeiTestTurn.findUnique({
-			where: {
-				organizationId_id: { organizationId: input.organizationId, id: input.sourceTestTurnId },
-			},
-			include: { evidenceRevision: true, capabilityVersion: { include: { knowledgeUnits: true } } },
-		});
-		if (
-			!source?.evidenceRevision ||
-			!source.evidenceRevisionId ||
-			source.evidenceRevision.origin !== "merchant"
-		)
-			throw new XiaofeiVersioningNotFoundError(input.organizationId, input.sourceTestTurnId);
-		if (
-			source.capabilityVersion.capabilityKey !== "xiaofei-hosting" ||
-			!source.capabilityVersion.knowledgeUnits.some(
-				(member) => member.knowledgeUnitRevisionId === source.evidenceRevisionId,
-			)
-		)
-			throw new XiaofeiVersioningNotFoundError(input.organizationId, source.evidenceRevisionId);
-		const correctedKnowledgeUnit = KnowledgeUnitSchema.parse(source.evidenceRevision.content);
-		const correctedContent = KnowledgeUnitSchema.parse({
-			...correctedKnowledgeUnit,
-			standardReplyPolicy: correction,
-		});
-		const existing = await transaction.xiaofeiResponseIntervention.findUnique({
-			where: {
-				organizationId_sourceTestTurnId: {
-					organizationId: input.organizationId,
-					sourceTestTurnId: source.id,
+	return db.$transaction(
+		async (transaction) => {
+			const correction = normalizeXiaofeiTestTurnCorrection(input.correction);
+			await lockXiaofeiVersioningScope(
+				transaction,
+				`test-turn-feedback:${input.organizationId}:${input.sourceTestTurnId}`,
+			);
+			const source = await transaction.xiaofeiTestTurn.findUnique({
+				where: {
+					organizationId_id: { organizationId: input.organizationId, id: input.sourceTestTurnId },
 				},
-			},
-			include: { resultKnowledgeRevision: true, resultCapabilityVersion: true },
-		});
-		if (existing) {
-			if (normalizeXiaofeiTestTurnCorrection(existing.correction) !== correction)
-				throw new XiaofeiTestTurnFeedbackConflictError(source.id);
-			return {
-				intervention: existing,
-				resultRevision: existing.resultKnowledgeRevision,
-				resultVersion: existing.resultCapabilityVersion,
-				sourceTestTurn: source,
-			};
-		}
-		const applied = await applyXiaofeiResponseInterventionInTransaction(transaction, {
-			organizationId: input.organizationId,
-			capabilityKey: "xiaofei-hosting",
-			beforeCapabilityVersionId: source.capabilityVersionId,
-			beforeKnowledgeRevisionId: source.evidenceRevisionId,
-			correction,
-			correctedContent,
-			beforeResponse: {
-				question: source.question,
-				answer: source.answer,
-				runtimeMetadata: source.runtimeMetadata,
-			},
-		});
-		await transaction.xiaofeiResponseIntervention.update({
-			where: {
-				organizationId_id: { organizationId: input.organizationId, id: applied.intervention.id },
-			},
-			data: { sourceTestTurnId: source.id },
-		});
-		await transaction.xiaofeiTestTurn.update({
-			where: { organizationId_id: { organizationId: input.organizationId, id: source.id } },
-			data: { interventionId: applied.intervention.id },
-		});
-		return { ...applied, sourceTestTurn: source };
-	});
+				include: {
+					evidenceRevision: true,
+					capabilityVersion: { include: { knowledgeUnits: true } },
+				},
+			});
+			if (
+				!source?.evidenceRevision ||
+				!source.evidenceRevisionId ||
+				source.evidenceRevision.origin !== "merchant"
+			)
+				throw new XiaofeiVersioningNotFoundError(input.organizationId, input.sourceTestTurnId);
+			if (
+				source.capabilityVersion.capabilityKey !== "xiaofei-hosting" ||
+				!source.capabilityVersion.knowledgeUnits.some(
+					(member) => member.knowledgeUnitRevisionId === source.evidenceRevisionId,
+				)
+			)
+				throw new XiaofeiVersioningNotFoundError(input.organizationId, source.evidenceRevisionId);
+			const correctedKnowledgeUnit = KnowledgeUnitSchema.parse(source.evidenceRevision.content);
+			const correctedContent = KnowledgeUnitSchema.parse({
+				...correctedKnowledgeUnit,
+				standardReplyPolicy: correction,
+			});
+			const existing = await transaction.xiaofeiResponseIntervention.findUnique({
+				where: {
+					organizationId_sourceTestTurnId: {
+						organizationId: input.organizationId,
+						sourceTestTurnId: source.id,
+					},
+				},
+				include: { resultKnowledgeRevision: true, resultCapabilityVersion: true },
+			});
+			if (existing) {
+				if (normalizeXiaofeiTestTurnCorrection(existing.correction) !== correction)
+					throw new XiaofeiTestTurnFeedbackConflictError(source.id);
+				return {
+					intervention: existing,
+					resultRevision: existing.resultKnowledgeRevision,
+					resultVersion: existing.resultCapabilityVersion,
+					sourceTestTurn: source,
+				};
+			}
+			const applied = await applyXiaofeiResponseInterventionInTransaction(transaction, {
+				organizationId: input.organizationId,
+				capabilityKey: "xiaofei-hosting",
+				beforeCapabilityVersionId: source.capabilityVersionId,
+				beforeKnowledgeRevisionId: source.evidenceRevisionId,
+				correction,
+				correctedContent,
+				beforeResponse: {
+					question: source.question,
+					answer: source.answer,
+					runtimeMetadata: source.runtimeMetadata,
+				},
+			});
+			await transaction.xiaofeiResponseIntervention.update({
+				where: {
+					organizationId_id: { organizationId: input.organizationId, id: applied.intervention.id },
+				},
+				data: { sourceTestTurnId: source.id },
+			});
+			await transaction.xiaofeiTestTurn.update({
+				where: { organizationId_id: { organizationId: input.organizationId, id: source.id } },
+				data: { interventionId: applied.intervention.id },
+			});
+			return { ...applied, sourceTestTurn: source };
+		},
+		{
+			// A cold Neon Preview can exceed Prisma's five-second default while this
+			// atomic write acquires advisory locks and creates its immutable records.
+			// Keep the bound local to feedback so other transactions retain defaults.
+			maxWait: 5_000,
+			timeout: 15_000,
+		},
+	);
 }
 
 /** Persists a real rerun before filling the intervention's previously-null after response. */

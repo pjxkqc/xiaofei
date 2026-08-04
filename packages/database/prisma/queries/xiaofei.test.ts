@@ -976,6 +976,10 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		expect(queryMocks.updateTestTurn).toHaveBeenCalledWith(
 			expect.objectContaining({ data: { interventionId: "intervention-a" } }),
 		);
+		expect(queryMocks.transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+			maxWait: 5_000,
+			timeout: 15_000,
+		});
 	});
 
 	it("rejects whitespace-only feedback before creating a revision, intervention, or Test pointer", async () => {
