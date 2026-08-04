@@ -133,30 +133,19 @@ describe("Xiaofei immutable knowledge version persistence", () => {
 			capabilityKey: "xiaofei-hosting",
 			knowledgeUnits: [
 				{
-					origin: "platform",
-					logicalKnowledgeUnitId: "platform-ku",
+					knowledgeUnitRevisionId: "platform-revision",
 					role: "fallback",
 					priority: 1,
 				},
-				{ origin: "merchant", logicalKnowledgeUnitId: "merchant-ku", priority: 10 },
+				{ knowledgeUnitRevisionId: "merchant-revision", priority: 10 },
 			],
 		});
 
 		expect(queryMocks.findRevisions).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
-					OR: expect.arrayContaining([
-						{
-							origin: "merchant",
-							logicalKnowledgeUnitId: "merchant-ku",
-							scopeKey: "organization:organization-a",
-						},
-						{
-							origin: "platform",
-							logicalKnowledgeUnitId: "platform-ku",
-							scopeKey: "platform",
-						},
-					]),
+					id: { in: ["platform-revision", "merchant-revision"] },
+					OR: [{ scopeKey: "platform" }, { scopeKey: "organization:organization-a" }],
 				}),
 			}),
 		);
@@ -176,23 +165,45 @@ describe("Xiaofei immutable knowledge version persistence", () => {
 		});
 	});
 
-	it("rejects duplicate logical KUs and disallowed capability partitions before querying", async () => {
+	it("rejects duplicate logical KUs and disallowed capability partitions after loading exact rows", async () => {
+		queryMocks.findRevisions.mockResolvedValueOnce([
+			{
+				id: "same-revision-a",
+				scopeKey: "organization:organization-a",
+				origin: "merchant",
+				logicalKnowledgeUnitId: "same-ku",
+			},
+			{
+				id: "same-revision-b",
+				scopeKey: "platform",
+				origin: "platform",
+				logicalKnowledgeUnitId: "same-ku",
+			},
+		]);
 		await expect(
 			createXiaofeiCapabilityVersion({
 				organizationId: "organization-a",
 				capabilityKey: "xiaofei-hosting",
 				knowledgeUnits: [
-					{ origin: "merchant", logicalKnowledgeUnitId: "same-ku" },
-					{ origin: "platform", logicalKnowledgeUnitId: "same-ku" },
+					{ knowledgeUnitRevisionId: "same-revision-a" },
+					{ knowledgeUnitRevisionId: "same-revision-b" },
 				],
 			}),
 		).rejects.toBeInstanceOf(XiaofeiDuplicateLogicalKnowledgeUnitError);
 
+		queryMocks.findRevisions.mockResolvedValueOnce([
+			{
+				id: "same-revision-a",
+				scopeKey: "organization:organization-a",
+				origin: "merchant",
+				logicalKnowledgeUnitId: "same-ku",
+			},
+		]);
 		await expect(
 			createXiaofeiCapabilityVersion({
 				organizationId: "organization-a",
 				capabilityKey: "platform-fallback",
-				knowledgeUnits: [{ origin: "merchant", logicalKnowledgeUnitId: "merchant-ku" }],
+				knowledgeUnits: [{ knowledgeUnitRevisionId: "same-revision-a" }],
 			}),
 		).rejects.toBeInstanceOf(XiaofeiCapabilityPartitionError);
 	});
@@ -213,7 +224,7 @@ describe("Xiaofei immutable knowledge version persistence", () => {
 			createXiaofeiCapabilityVersion({
 				organizationId: "organization-a",
 				capabilityKey: "merchant-knowledge",
-				knowledgeUnits: [{ origin: "merchant", logicalKnowledgeUnitId: "merchant-ku" }],
+				knowledgeUnits: [{ knowledgeUnitRevisionId: "merchant-revision" }],
 			}),
 		).resolves.toEqual({ id: "existing-version" });
 		expect(queryMocks.createCapabilityVersion).not.toHaveBeenCalled();
@@ -255,6 +266,87 @@ describe("Xiaofei immutable knowledge version persistence", () => {
 		).rejects.toBeInstanceOf(XiaofeiPlatformKnowledgeInterventionError);
 		expect(queryMocks.createRevision).not.toHaveBeenCalled();
 		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+	});
+
+	it("preserves unrelated exact revision IDs during an intervention", async () => {
+		queryMocks.findRevisionById.mockResolvedValueOnce({
+			id: "revision-b-1",
+			scopeKey: "organization:organization-a",
+			origin: "merchant",
+			logicalKnowledgeUnitId: "ku-b",
+			knowledgeUnitId: "knowledge-unit-b",
+		});
+		queryMocks.findCapabilityVersion
+			.mockResolvedValueOnce({
+				id: "before-version",
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [
+					{
+						knowledgeUnitRevisionId: "revision-a-1",
+						knowledgeUnitRevisionScopeKey: "organization:organization-a",
+						role: "primary",
+						priority: 10,
+						knowledgeUnitRevision: { logicalKnowledgeUnitId: "ku-a" },
+					},
+					{
+						knowledgeUnitRevisionId: "revision-b-1",
+						knowledgeUnitRevisionScopeKey: "organization:organization-a",
+						role: "primary",
+						priority: 5,
+						knowledgeUnitRevision: { logicalKnowledgeUnitId: "ku-b" },
+					},
+				],
+			})
+			.mockResolvedValueOnce(null);
+		queryMocks.findRevision.mockResolvedValueOnce(null).mockResolvedValueOnce({ revision: 1 });
+		queryMocks.createRevision.mockResolvedValueOnce({
+			id: "revision-b-2",
+			scopeKey: "organization:organization-a",
+			origin: "merchant",
+			logicalKnowledgeUnitId: "ku-b",
+		});
+		queryMocks.findRevisions.mockResolvedValueOnce([
+			{
+				id: "revision-a-1",
+				scopeKey: "organization:organization-a",
+				origin: "merchant",
+				logicalKnowledgeUnitId: "ku-a",
+			},
+			{
+				id: "revision-b-2",
+				scopeKey: "organization:organization-a",
+				origin: "merchant",
+				logicalKnowledgeUnitId: "ku-b",
+			},
+		]);
+		queryMocks.createCapabilityVersion.mockResolvedValueOnce({ id: "result-version" });
+		queryMocks.createResponseIntervention.mockResolvedValueOnce({ id: "intervention" });
+
+		await applyXiaofeiResponseIntervention({
+			organizationId: "organization-a",
+			capabilityKey: "xiaofei-hosting",
+			beforeCapabilityVersionId: "before-version",
+			beforeKnowledgeRevisionId: "revision-b-1",
+			correction: "Correct KU-B only.",
+			correctedContent: { answer: "revised B" },
+		});
+
+		expect(queryMocks.findRevisions).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: { in: ["revision-a-1", "revision-b-2"] },
+				}),
+			}),
+		);
+		expect(queryMocks.createCapabilityKnowledgeUnits).toHaveBeenCalledWith({
+			data: expect.arrayContaining([
+				expect.objectContaining({ knowledgeUnitRevisionId: "revision-a-1" }),
+				expect.objectContaining({ knowledgeUnitRevisionId: "revision-b-2" }),
+			]),
+		});
+		expect(queryMocks.createCapabilityKnowledgeUnits).not.toHaveBeenCalledWith(
+			expect.objectContaining({ knowledgeUnitRevisionId: "revision-a-2" }),
+		);
 	});
 
 	it("atomically switches only the local active capability pointer", async () => {

@@ -287,8 +287,7 @@ export interface CreateXiaofeiCapabilityVersionInput {
 	organizationId: string;
 	capabilityKey: "platform-fallback" | "merchant-knowledge" | "xiaofei-hosting";
 	knowledgeUnits: Array<{
-		origin: "platform" | "merchant";
-		logicalKnowledgeUnitId: string;
+		knowledgeUnitRevisionId: string;
 		role?: string;
 		priority?: number;
 	}>;
@@ -2111,16 +2110,10 @@ export function applyXiaofeiResponseIntervention(input: ApplyXiaofeiResponseInte
 			organizationId: input.organizationId,
 			capabilityKey: input.capabilityKey,
 			knowledgeUnits: beforeVersion.knowledgeUnits.map((unit) => ({
-				origin:
+				knowledgeUnitRevisionId:
 					unit.knowledgeUnitRevisionId === beforeRevision.id
-						? "merchant"
-						: unit.knowledgeUnitRevisionScopeKey === "platform"
-							? "platform"
-							: "merchant",
-				logicalKnowledgeUnitId:
-					unit.knowledgeUnitRevisionId === beforeRevision.id
-						? resultRevision.logicalKnowledgeUnitId
-						: unit.knowledgeUnitRevision.logicalKnowledgeUnitId,
+						? resultRevision.id
+						: unit.knowledgeUnitRevisionId,
 				role: unit.role,
 				priority: unit.priority,
 			})),
@@ -2219,52 +2212,40 @@ async function createXiaofeiCapabilityVersionInTransaction(
 	transaction: Prisma.TransactionClient,
 	input: CreateXiaofeiCapabilityVersionInput,
 ) {
-	const duplicate = firstDuplicateLogicalKnowledgeUnit(input.knowledgeUnits);
-	if (duplicate) throw new XiaofeiDuplicateLogicalKnowledgeUnitError(duplicate);
-	if (
-		(input.capabilityKey === "platform-fallback" &&
-			input.knowledgeUnits.some((unit) => unit.origin !== "platform")) ||
-		(input.capabilityKey === "merchant-knowledge" &&
-			input.knowledgeUnits.some((unit) => unit.origin !== "merchant"))
-	)
-		throw new XiaofeiCapabilityPartitionError(input.capabilityKey);
 	await lockXiaofeiVersioningScope(
 		transaction,
 		`capability:${input.organizationId}:${input.capabilityKey}`,
 	);
-	const selectors = input.knowledgeUnits.map((unit) => ({
-		origin: unit.origin,
-		logicalKnowledgeUnitId: unit.logicalKnowledgeUnitId,
-		scopeKey:
-			unit.origin === "platform"
-				? xiaofeiKnowledgeRevisionScopeKey(null)
-				: xiaofeiKnowledgeRevisionScopeKey(input.organizationId),
-	}));
+	const revisionIds = input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId);
 	const revisions = await transaction.xiaofeiKnowledgeUnitRevision.findMany({
 		where: {
-			OR: selectors,
+			id: { in: revisionIds },
+			OR: [
+				{ scopeKey: xiaofeiKnowledgeRevisionScopeKey(null) },
+				{ scopeKey: xiaofeiKnowledgeRevisionScopeKey(input.organizationId) },
+			],
 		},
-		orderBy: { revision: "desc" },
 		select: { id: true, scopeKey: true, origin: true, logicalKnowledgeUnitId: true },
 	});
-	const revisionsBySelector = new Map<string, (typeof revisions)[number]>();
-	for (const revision of revisions) {
-		const selector = `${revision.origin}:${revision.logicalKnowledgeUnitId}`;
-		if (!revisionsBySelector.has(selector)) revisionsBySelector.set(selector, revision);
-	}
-	if (revisionsBySelector.size !== selectors.length)
-		throw new XiaofeiVersioningCrossOrganizationError(
-			input.organizationId,
-			input.knowledgeUnits.map((unit) => unit.logicalKnowledgeUnitId).join(","),
-		);
+	const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]));
+	if (revisionsById.size !== new Set(revisionIds).size)
+		throw new XiaofeiVersioningCrossOrganizationError(input.organizationId, revisionIds.join(","));
+	const selectedRevisions = input.knowledgeUnits.map(
+		(unit) => revisionsById.get(unit.knowledgeUnitRevisionId)!,
+	);
+	const duplicate = firstDuplicateLogicalKnowledgeUnit(selectedRevisions);
+	if (duplicate) throw new XiaofeiDuplicateLogicalKnowledgeUnitError(duplicate);
+	if (
+		(input.capabilityKey === "platform-fallback" &&
+			selectedRevisions.some((revision) => revision.origin !== "platform")) ||
+		(input.capabilityKey === "merchant-knowledge" &&
+			selectedRevisions.some((revision) => revision.origin !== "merchant"))
+	)
+		throw new XiaofeiCapabilityPartitionError(input.capabilityKey);
 	const knowledgeUnits = input.knowledgeUnits
 		.map((unit) => ({
-			knowledgeUnitRevisionId: revisionsBySelector.get(
-				`${unit.origin}:${unit.logicalKnowledgeUnitId}`,
-			)!.id,
-			knowledgeUnitRevisionScopeKey: revisionsBySelector.get(
-				`${unit.origin}:${unit.logicalKnowledgeUnitId}`,
-			)!.scopeKey,
+			knowledgeUnitRevisionId: unit.knowledgeUnitRevisionId,
+			knowledgeUnitRevisionScopeKey: revisionsById.get(unit.knowledgeUnitRevisionId)!.scopeKey,
 			role: unit.role ?? "primary",
 			priority: unit.priority ?? 0,
 		}))
@@ -2308,7 +2289,7 @@ function xiaofeiKnowledgeRevisionScopeKey(organizationId: string | null): string
 }
 
 function firstDuplicateLogicalKnowledgeUnit(
-	knowledgeUnits: CreateXiaofeiCapabilityVersionInput["knowledgeUnits"],
+	knowledgeUnits: Array<{ logicalKnowledgeUnitId: string }>,
 ): string | null {
 	const logicalKnowledgeUnitIds = new Set<string>();
 	for (const unit of knowledgeUnits) {
