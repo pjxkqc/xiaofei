@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { generateKnowledgeUnitDrafts } from "@repo/ai";
+import { generateKnowledgeUnitDrafts, type StructuredKnowledgeUnitGenerator } from "@repo/ai";
 import {
 	createXiaofeiKnowledgeUnit,
 	createXiaofeiKnowledgeDocument,
@@ -28,6 +28,7 @@ import {
 	KnowledgeUnitDraftCandidateSchema,
 	KnowledgeUnitSchema,
 	NormalizedKnowledgeEntrySchema,
+	type NormalizedKnowledgeEntry,
 } from "@repo/xiaofei";
 import { strFromU8, unzipSync } from "fflate";
 
@@ -284,6 +285,7 @@ export async function deleteKnowledgeEntryForTenant(context: XiaofeiAuthContext,
 export async function generateKnowledgeUnitsForTenant(
 	context: XiaofeiAuthContext,
 	entryIds: string[],
+	generateDrafts: typeof generateKnowledgeUnitDrafts = generateKnowledgeUnitDrafts,
 ) {
 	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
@@ -297,26 +299,36 @@ export async function generateKnowledgeUnitsForTenant(
 	) {
 		throw new ORPCError("BAD_REQUEST", { message: "Select current, active knowledge entries." });
 	}
+	const normalizedEntries = entries.map((entry) =>
+		NormalizedKnowledgeEntrySchema.parse({
+			id: entry!.id,
+			workspaceId: entry!.workspaceId,
+			sourceId: entry!.sourceId,
+			sourceContentHash: entry!.sourceContentHash,
+			sourceVersion: entry!.sourceVersion,
+			version: entry!.entryVersion,
+			question: entry!.question,
+			answer: entry!.answer,
+			similarQueries: entry!.similarQueries,
+			category: entry!.category,
+			tags: entry!.tags,
+			status: entry!.status,
+		}),
+	);
+	const generationInput = { workspaceId: workspace.id, entries: normalizedEntries };
+	let drafts;
 	try {
-		const drafts = await generateKnowledgeUnitDrafts({
-			workspaceId: workspace.id,
-			entries: entries.map((entry) =>
-				NormalizedKnowledgeEntrySchema.parse({
-					id: entry!.id,
-					workspaceId: entry!.workspaceId,
-					sourceId: entry!.sourceId,
-					sourceContentHash: entry!.sourceContentHash,
-					sourceVersion: entry!.sourceVersion,
-					version: entry!.entryVersion,
-					question: entry!.question,
-					answer: entry!.answer,
-					similarQueries: entry!.similarQueries,
-					category: entry!.category,
-					tags: entry!.tags,
-					status: entry!.status,
-				}),
-			),
-		});
+		drafts = await generateDrafts(generationInput);
+	} catch {
+		try {
+			drafts = await generateDrafts(generationInput, generateConservativeKnowledgeUnitCandidates);
+		} catch {
+			throw new ORPCError("BAD_REQUEST", {
+				message: "Knowledge-unit generation is unavailable. Try again.",
+			});
+		}
+	}
+	try {
 		const units = [];
 		for (const draft of drafts) {
 			units.push(
@@ -337,6 +349,32 @@ export async function generateKnowledgeUnitsForTenant(
 			message: "Knowledge-unit generation is unavailable. Try again.",
 		});
 	}
+}
+
+/**
+ * Provider outage fallback: one review-required candidate per exact active
+ * normalized entry. It intentionally adds only generic safety boundaries;
+ * the domain generator remains responsible for validation and source lineage.
+ */
+export const generateConservativeKnowledgeUnitCandidates: StructuredKnowledgeUnitGenerator = async (
+	entries,
+) =>
+	entries.map((entry) => ({
+		entryId: entry.id,
+		title: entry.question.trim().slice(0, 500),
+		scenarioKeywords: [entry.question.trim()],
+		applicableScenarios: [entry.question.trim()],
+		inapplicableScenarios: ["来源未明确或需要个案核实的情况。"],
+		requiredSlots: conservativeRequiredSlots(entry),
+		forbiddenOutputs: ["不得承诺退款、补偿、时效或已执行的业务动作。"],
+		handoffRules: ["来源事实不足、存在争议或需要个案处理时转人工。"],
+		standardReplyPolicy: "仅复述已审核来源中的回答，不扩展任何业务事实或处理承诺。",
+		fallbackReply: "该来源未明确的情况需要人工客服核实后处理。",
+	}));
+
+function conservativeRequiredSlots(_entry: NormalizedKnowledgeEntry) {
+	// Normalized entries have no structured slot field. Never infer one from prose.
+	return [];
 }
 
 export async function listKnowledgeUnitsForTenant(context: XiaofeiAuthContext) {
