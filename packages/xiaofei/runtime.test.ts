@@ -41,7 +41,7 @@ describe("P0 runtime kernel", () => {
 			logicalKnowledgeUnitId: "logical-ku-price",
 			organizationId: "tenant-1",
 			revision: 1,
-			sourceCapabilityKey: "merchant-knowledge",
+			origin: "merchant",
 			knowledgeUnit: prepared.knowledge!,
 			createdAt: NOW,
 		});
@@ -71,7 +71,8 @@ describe("P0 runtime kernel", () => {
 			logicalKnowledgeUnitId: "logical-ku-price",
 			knowledgeUnitRevisionId: revision.id,
 			capabilityVersionId: capabilityVersion.id,
-			sourceCapabilityKey: "merchant-knowledge",
+			capabilityKey: "xiaofei-hosting",
+			knowledgeUnitOrigin: "merchant",
 		});
 	});
 

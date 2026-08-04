@@ -3,9 +3,11 @@ import { createHash } from "node:crypto";
 import {
 	CapabilityVersionManifestSchema,
 	KnowledgeUnitRevisionSchema,
+	KnowledgeVersioningSnapshotSchema,
 	type CapabilityKey,
 	type CapabilityVersionManifest,
 	type KnowledgeUnit,
+	type KnowledgeUnitOrigin,
 	type KnowledgeUnitRevision,
 	type KnowledgeVersioningSnapshot,
 } from "./contracts";
@@ -15,7 +17,7 @@ export interface CreateKnowledgeUnitRevisionInput {
 	logicalKnowledgeUnitId: string;
 	organizationId: string | null;
 	revision: number;
-	sourceCapabilityKey: CapabilityKey;
+	origin: KnowledgeUnitOrigin;
 	knowledgeUnit: KnowledgeUnit;
 	createdAt: string;
 }
@@ -26,12 +28,7 @@ export function createKnowledgeUnitRevision(
 ): KnowledgeUnitRevision {
 	return KnowledgeUnitRevisionSchema.parse({
 		...input,
-		contentHash: stableHash({
-			logicalKnowledgeUnitId: input.logicalKnowledgeUnitId,
-			revision: input.revision,
-			sourceCapabilityKey: input.sourceCapabilityKey,
-			knowledgeUnit: input.knowledgeUnit,
-		}),
+		contentHash: stableHash(knowledgeUnitContentSnapshot(input.knowledgeUnit)),
 	});
 }
 
@@ -64,7 +61,8 @@ export interface RuntimeKnowledgeEvidence {
 	logicalKnowledgeUnitId: string;
 	knowledgeUnitRevisionId: string;
 	capabilityVersionId: string;
-	sourceCapabilityKey: CapabilityKey;
+	capabilityKey: CapabilityKey;
+	knowledgeUnitOrigin: KnowledgeUnitOrigin;
 }
 
 /** Resolves evidence only from the active manifest. */
@@ -72,13 +70,14 @@ export function resolveRuntimeKnowledgeEvidence(
 	versioning: KnowledgeVersioningSnapshot,
 	knowledgeUnitId: string | null,
 ): RuntimeKnowledgeEvidence | null {
-	if (!knowledgeUnitId || !versioning.activeCapabilityVersionId) return null;
-	const manifest = versioning.capabilityVersionManifests.find(
+	const validated = KnowledgeVersioningSnapshotSchema.parse(versioning);
+	if (!knowledgeUnitId || !validated.activeCapabilityVersionId) return null;
+	const manifest = validated.capabilityVersionManifests.find(
 		(candidate) =>
-			candidate.id === versioning.activeCapabilityVersionId && candidate.status === "active",
+			candidate.id === validated.activeCapabilityVersionId && candidate.status === "active",
 	);
 	if (!manifest) return null;
-	const revision = versioning.knowledgeUnitRevisions.find(
+	const revision = validated.knowledgeUnitRevisions.find(
 		(candidate) =>
 			candidate.knowledgeUnit.id === knowledgeUnitId &&
 			manifest.knowledgeUnitRevisionIds.includes(candidate.id),
@@ -88,29 +87,39 @@ export function resolveRuntimeKnowledgeEvidence(
 		logicalKnowledgeUnitId: revision.logicalKnowledgeUnitId,
 		knowledgeUnitRevisionId: revision.id,
 		capabilityVersionId: manifest.id,
-		sourceCapabilityKey: revision.sourceCapabilityKey,
+		capabilityKey: manifest.capabilityKey,
+		knowledgeUnitOrigin: revision.origin,
 	};
 }
 
 export type CorrectionAdmission =
 	| { allowed: true }
-	| {
-			allowed: false;
-			reason: "platform_baseline" | "cross_organization" | "non_merchant_knowledge";
-	  };
+	| { allowed: false; reason: "platform_baseline" | "cross_organization" };
 
 /** Only the owning organization may correct merchant knowledge in P0. */
 export function evaluateCorrectionAdmission(input: {
 	organizationId: string;
 	target: KnowledgeUnitRevision;
 }): CorrectionAdmission {
-	if (input.target.sourceCapabilityKey === "platform-fallback")
-		return { allowed: false, reason: "platform_baseline" };
+	if (input.target.origin === "platform") return { allowed: false, reason: "platform_baseline" };
 	if (input.target.organizationId !== input.organizationId)
 		return { allowed: false, reason: "cross_organization" };
-	if (input.target.sourceCapabilityKey !== "merchant-knowledge")
-		return { allowed: false, reason: "non_merchant_knowledge" };
 	return { allowed: true };
+}
+
+/** Content only: excludes revision identity, lifecycle, and source lineage. */
+function knowledgeUnitContentSnapshot(
+	knowledgeUnit: KnowledgeUnit,
+): Omit<KnowledgeUnit, "id" | "status" | "lineage" | "eligibility" | "staleReason"> {
+	const {
+		id: _id,
+		status: _status,
+		lineage: _lineage,
+		eligibility: _eligibility,
+		staleReason: _staleReason,
+		...content
+	} = knowledgeUnit;
+	return content;
 }
 
 function stableHash(value: unknown): string {

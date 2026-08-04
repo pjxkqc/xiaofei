@@ -406,27 +406,30 @@ export const CapabilityKeySchema = z.enum([
 	"xiaofei-hosting",
 ]);
 
+/** KU provenance is independent from the Capability/CA that contains it. */
+export const KnowledgeUnitOriginSchema = z.enum(["platform", "merchant"]);
+
 export const KnowledgeUnitRevisionSchema = z
 	.object({
 		id: z.string().min(1),
 		logicalKnowledgeUnitId: z.string().min(1),
 		organizationId: z.string().min(1).nullable(),
 		revision: z.number().int().positive(),
-		sourceCapabilityKey: CapabilityKeySchema,
+		origin: KnowledgeUnitOriginSchema,
 		knowledgeUnit: KnowledgeUnitSchema,
 		contentHash: z.string().min(1),
 		createdAt: z.string().datetime({ offset: true }),
 	})
 	.strict()
 	.superRefine((revision, context) => {
-		if (revision.sourceCapabilityKey === "platform-fallback" && revision.organizationId !== null) {
+		if (revision.origin === "platform" && revision.organizationId !== null) {
 			context.addIssue({
 				code: "custom",
 				path: ["organizationId"],
 				message: "Platform fallback revisions are not merchant-owned.",
 			});
 		}
-		if (revision.sourceCapabilityKey !== "platform-fallback" && revision.organizationId === null) {
+		if (revision.origin === "merchant" && revision.organizationId === null) {
 			context.addIssue({
 				code: "custom",
 				path: ["organizationId"],
@@ -459,11 +462,76 @@ export const CapabilityVersionManifestSchema = z
 		}
 	});
 
-export const KnowledgeVersioningSnapshotSchema = z.object({
-	knowledgeUnitRevisions: z.array(KnowledgeUnitRevisionSchema).default([]),
-	capabilityVersionManifests: z.array(CapabilityVersionManifestSchema).default([]),
-	activeCapabilityVersionId: z.string().min(1).nullable().default(null),
-});
+export const KnowledgeVersioningSnapshotSchema = z
+	.object({
+		knowledgeUnitRevisions: z.array(KnowledgeUnitRevisionSchema).default([]),
+		capabilityVersionManifests: z.array(CapabilityVersionManifestSchema).default([]),
+		activeCapabilityVersionId: z.string().min(1).nullable().default(null),
+	})
+	.superRefine((snapshot, context) => {
+		const revisionsById = new Map<string, (typeof snapshot.knowledgeUnitRevisions)[number]>();
+		for (const revision of snapshot.knowledgeUnitRevisions) {
+			if (revisionsById.has(revision.id)) {
+				context.addIssue({
+					code: "custom",
+					path: ["knowledgeUnitRevisions"],
+					message: "KU revision IDs must be unique.",
+				});
+			}
+			revisionsById.set(revision.id, revision);
+		}
+		const manifestIds = new Set<string>();
+		for (const [manifestIndex, manifest] of snapshot.capabilityVersionManifests.entries()) {
+			if (manifestIds.has(manifest.id)) {
+				context.addIssue({
+					code: "custom",
+					path: ["capabilityVersionManifests", manifestIndex, "id"],
+					message: "Capability version IDs must be unique.",
+				});
+			}
+			manifestIds.add(manifest.id);
+			const logicalKnowledgeUnitIds = new Set<string>();
+			for (const revisionId of manifest.knowledgeUnitRevisionIds) {
+				const revision = revisionsById.get(revisionId);
+				if (!revision) {
+					context.addIssue({
+						code: "custom",
+						path: ["capabilityVersionManifests", manifestIndex, "knowledgeUnitRevisionIds"],
+						message: `Manifest references unknown KU revision ${revisionId}.`,
+					});
+					continue;
+				}
+				if (logicalKnowledgeUnitIds.has(revision.logicalKnowledgeUnitId)) {
+					context.addIssue({
+						code: "custom",
+						path: ["capabilityVersionManifests", manifestIndex, "knowledgeUnitRevisionIds"],
+						message: "A manifest cannot include two revisions of one logical KU.",
+					});
+				}
+				logicalKnowledgeUnitIds.add(revision.logicalKnowledgeUnitId);
+				if (revision.origin === "merchant" && revision.organizationId !== manifest.organizationId) {
+					context.addIssue({
+						code: "custom",
+						path: ["capabilityVersionManifests", manifestIndex, "knowledgeUnitRevisionIds"],
+						message: "Merchant KU revisions must belong to the manifest organization.",
+					});
+				}
+			}
+		}
+		if (snapshot.activeCapabilityVersionId) {
+			const activeMatches = snapshot.capabilityVersionManifests.filter(
+				(manifest) =>
+					manifest.id === snapshot.activeCapabilityVersionId && manifest.status === "active",
+			);
+			if (activeMatches.length !== 1) {
+				context.addIssue({
+					code: "custom",
+					path: ["activeCapabilityVersionId"],
+					message: "The active capability version must resolve to exactly one active manifest.",
+				});
+			}
+		}
+	});
 
 /**
  * The authenticated outer layer resolves a channel/conversation to this record
@@ -619,7 +687,8 @@ export const RuntimeMetadataSchema = z.object({
 			logicalKnowledgeUnitId: z.string().min(1),
 			knowledgeUnitRevisionId: z.string().min(1),
 			capabilityVersionId: z.string().min(1),
-			sourceCapabilityKey: CapabilityKeySchema,
+			capabilityKey: CapabilityKeySchema,
+			knowledgeUnitOrigin: KnowledgeUnitOriginSchema,
 		})
 		.nullable()
 		.default(null),
@@ -704,6 +773,7 @@ export type GuardrailPolicy = z.infer<typeof GuardrailPolicySchema>;
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 export type CapabilityPlan = z.infer<typeof CapabilityPlanSchema>;
 export type CapabilityKey = z.infer<typeof CapabilityKeySchema>;
+export type KnowledgeUnitOrigin = z.infer<typeof KnowledgeUnitOriginSchema>;
 export type KnowledgeUnitRevision = z.infer<typeof KnowledgeUnitRevisionSchema>;
 export type CapabilityVersionStatus = z.infer<typeof CapabilityVersionStatusSchema>;
 export type CapabilityVersionManifest = z.infer<typeof CapabilityVersionManifestSchema>;

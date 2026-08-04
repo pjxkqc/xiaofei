@@ -61,15 +61,19 @@ facts but does not persist an Outbox or perform HTTP delivery.
 ## P0 knowledge/version feedback contract
 
 `KnowledgeUnitRevision` separates immutable revision identity from a logical KU
-identity. `CapabilityVersionManifest` records a content-hashed, explicit
-many-to-many list of KU revision IDs and represents `platform-fallback`,
-`merchant-knowledge`, and `xiaofei-hosting`. A correction creates a successor;
-it never overwrites an existing revision.
+identity. Its content hash covers the KU content snapshot only, never revision
+identity or provenance. KU origin is only `platform` or `merchant`.
+`CapabilityVersionManifest` records a content-hashed, explicit many-to-many
+list of KU revision IDs and represents `platform-fallback`, `merchant-knowledge`,
+and `xiaofei-hosting`; it is separate from KU origin. A correction creates a
+successor; it never overwrites an existing revision.
 
 `RuntimeMetadata.knowledgeEvidence` is emitted only when the selected KU is in
 the active manifest. It carries the logical KU, exact KU revision, CA version,
-and source capability key. `evaluateCorrectionAdmission` allows only an owning
-organization to correct `merchant-knowledge`; platform fallback, hosting, and
+active capability key, and KU origin. Versioning validation rejects dangling
+revisions, ambiguous active manifests, duplicate logical KUs per manifest, and
+merchant revisions from another Organization. `evaluateCorrectionAdmission`
+allows only an owning organization to correct merchant-origin KUs; platform and
 cross-organization targets are rejected. Persistence and API layers must
 enforce this decision again.
 

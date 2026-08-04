@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	KnowledgeVersioningSnapshotSchema,
 	createCapabilityVersionManifest,
 	createDefaultWorkspaceSnapshot,
 	createKnowledgeUnitRevision,
@@ -18,23 +19,45 @@ function revision(input: Partial<Parameters<typeof createKnowledgeUnitRevision>[
 		logicalKnowledgeUnitId: "logical-ku-1",
 		organizationId: "organization-a",
 		revision: 1,
-		sourceCapabilityKey: "merchant-knowledge",
+		origin: "merchant",
 		knowledgeUnit: unit,
 		createdAt: CREATED_AT,
 		...input,
 	});
 }
 
+function activeManifest(knowledgeUnitRevisionIds: string[]) {
+	return createCapabilityVersionManifest({
+		id: "ca-active-1",
+		organizationId: "organization-a",
+		capabilityKey: "xiaofei-hosting",
+		status: "active",
+		knowledgeUnitRevisionIds,
+		createdAt: CREATED_AT,
+	});
+}
+
 describe("knowledge revision and capability version contracts", () => {
-	it("keeps logical KU identity separate from an immutable content-addressed revision", () => {
+	it("hashes immutable KU content, not revision identity, and changes with answer policy", () => {
 		const first = revision();
-		const successor = revision({ id: "ku-revision-2", revision: 2 });
-		expect(first.logicalKnowledgeUnitId).toBe(successor.logicalKnowledgeUnitId);
-		expect(first.id).not.toBe(successor.id);
-		expect(first.contentHash).not.toBe("");
+		const identicalSuccessor = revision({ id: "ku-revision-2", revision: 2 });
+		const changedPolicy = revision({
+			id: "ku-revision-3",
+			revision: 3,
+			knowledgeUnit: { ...unit, standardReplyPolicy: "使用新的、经过审核的回复口径。" },
+		});
+		const changedAnswer = revision({
+			id: "ku-revision-4",
+			revision: 4,
+			knowledgeUnit: { ...unit, fallbackReply: "这是新的安全兜底回复。" },
+		});
+		expect(first.logicalKnowledgeUnitId).toBe(identicalSuccessor.logicalKnowledgeUnitId);
+		expect(first.contentHash).toBe(identicalSuccessor.contentHash);
+		expect(changedPolicy.contentHash).not.toBe(first.contentHash);
+		expect(changedAnswer.contentHash).not.toBe(first.contentHash);
 	});
 
-	it("creates order-independent manifests that can reuse one revision", () => {
+	it("creates order-independent manifests and separates CA capability from KU origin", () => {
 		const first = createCapabilityVersionManifest({
 			id: "ca-test-1",
 			organizationId: "organization-a",
@@ -53,18 +76,12 @@ describe("knowledge revision and capability version contracts", () => {
 		});
 		expect(first.manifestHash).toBe(reordered.manifestHash);
 		expect(first.knowledgeUnitRevisionIds).toEqual(["ku-revision-1", "ku-revision-2"]);
+		expect(() => revision({ origin: "xiaofei-hosting" as never })).toThrow();
 	});
 
-	it("returns exact active KU revision, CA version, and source evidence for an answer", () => {
+	it("returns both hosting capability and merchant KU origin as answer evidence", () => {
 		const merchantRevision = revision();
-		const active = createCapabilityVersionManifest({
-			id: "ca-active-1",
-			organizationId: "organization-a",
-			capabilityKey: "xiaofei-hosting",
-			status: "active",
-			knowledgeUnitRevisionIds: [merchantRevision.id],
-			createdAt: CREATED_AT,
-		});
+		const active = activeManifest([merchantRevision.id]);
 		expect(
 			resolveRuntimeKnowledgeEvidence(
 				{
@@ -78,28 +95,78 @@ describe("knowledge revision and capability version contracts", () => {
 			logicalKnowledgeUnitId: "logical-ku-1",
 			knowledgeUnitRevisionId: merchantRevision.id,
 			capabilityVersionId: active.id,
-			sourceCapabilityKey: "merchant-knowledge",
+			capabilityKey: "xiaofei-hosting",
+			knowledgeUnitOrigin: "merchant",
 		});
 	});
 
-	it("rejects corrections to platform, hosting, and another organization's KU revision", () => {
+	it("rejects invalid manifest references, logical duplicates, tenant mismatches, and ambiguous active manifests", () => {
+		const first = revision();
+		const successor = revision({ id: "ku-revision-2", revision: 2 });
+		const active = activeManifest([first.id]);
+		const base = {
+			knowledgeUnitRevisions: [first],
+			capabilityVersionManifests: [active],
+			activeCapabilityVersionId: active.id,
+		};
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [{ ...active, knowledgeUnitRevisionIds: ["missing"] }],
+			}).success,
+		).toBe(false);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				knowledgeUnitRevisions: [first, successor],
+				capabilityVersionManifests: [
+					{ ...active, knowledgeUnitRevisionIds: [first.id, successor.id] },
+				],
+			}).success,
+		).toBe(false);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				knowledgeUnitRevisions: [revision({ organizationId: "organization-b" })],
+			}).success,
+		).toBe(false);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [active, { ...active, id: "ca-active-2" }],
+				activeCapabilityVersionId: active.id,
+			}).success,
+		).toBe(true);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [active, { ...active }],
+				activeCapabilityVersionId: active.id,
+			}).success,
+		).toBe(false);
+		expect(() =>
+			resolveRuntimeKnowledgeEvidence(
+				{
+					...base,
+					capabilityVersionManifests: [{ ...active, knowledgeUnitRevisionIds: ["missing"] }],
+				},
+				unit.id,
+			),
+		).toThrow();
+	});
+
+	it("rejects platform and cross-organization corrections by KU origin", () => {
 		expect(
 			evaluateCorrectionAdmission({ organizationId: "organization-a", target: revision() }),
 		).toEqual({ allowed: true });
 		expect(
 			evaluateCorrectionAdmission({
 				organizationId: "organization-a",
-				target: revision({ organizationId: null, sourceCapabilityKey: "platform-fallback" }),
+				target: revision({ organizationId: null, origin: "platform" }),
 			}),
 		).toEqual({ allowed: false, reason: "platform_baseline" });
 		expect(
 			evaluateCorrectionAdmission({ organizationId: "organization-b", target: revision() }),
 		).toEqual({ allowed: false, reason: "cross_organization" });
-		expect(
-			evaluateCorrectionAdmission({
-				organizationId: "organization-a",
-				target: revision({ sourceCapabilityKey: "xiaofei-hosting" }),
-			}),
-		).toEqual({ allowed: false, reason: "non_merchant_knowledge" });
 	});
 });
