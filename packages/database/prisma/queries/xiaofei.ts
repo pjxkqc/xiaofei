@@ -10,6 +10,7 @@ import {
 	createConversationState,
 	createKnowledgeUnitRevision,
 	isCustomerInboundEmailJobEligible,
+	type ConversationState,
 	type CapabilityVersionManifest,
 	type EmailDeliveryV1,
 	type EmailMessageIngestV1,
@@ -316,6 +317,7 @@ export interface CreateXiaofeiTestTurnInput {
 	question: string;
 	answer: string;
 	capabilityVersionId: string;
+	conversationState: ConversationState;
 	runtimeMetadata: RuntimeMetadata;
 	requestedAt: Date;
 	completedAt: Date;
@@ -329,8 +331,10 @@ export interface ApplyXiaofeiTestTurnFeedbackInput {
 
 export interface CreateXiaofeiTestTurnRerunInput {
 	interventionId: string;
+	testSessionId: string;
 	answer: string;
 	capabilityVersionId: string;
+	conversationState: ConversationState;
 	runtimeMetadata: RuntimeMetadata;
 	requestedAt: Date;
 	completedAt: Date;
@@ -355,6 +359,17 @@ export class XiaofeiTestTurnFeedbackConflictError extends Error {
 	constructor(readonly sourceTestTurnId: string) {
 		super("This TestTurn already has a different applied correction.");
 		this.name = "XiaofeiTestTurnFeedbackConflictError";
+	}
+}
+
+/** A session is pinned to its first Test CA so evidence cannot span a CA switch. */
+export class XiaofeiTestSessionCapabilityConflictError extends Error {
+	constructor(
+		readonly organizationId: string,
+		readonly testSessionId: string,
+	) {
+		super("This test session belongs to a different Test capability version.");
+		this.name = "XiaofeiTestSessionCapabilityConflictError";
 	}
 }
 
@@ -2316,6 +2331,14 @@ async function createXiaofeiTestTurnInTransaction(
 	lineage?: { sourceTestTurnId: string; rerunOfTestTurnId: string; interventionId: string },
 ) {
 	const metadata = RuntimeMetadataSchema.parse(input.runtimeMetadata);
+	const conversationState = ConversationStateSchema.parse(input.conversationState);
+	const previousTurn = await transaction.xiaofeiTestTurn.findFirst({
+		where: { organizationId, testSessionId: input.testSessionId },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		select: { capabilityVersionId: true },
+	});
+	if (previousTurn && previousTurn.capabilityVersionId !== input.capabilityVersionId)
+		throw new XiaofeiTestSessionCapabilityConflictError(organizationId, input.testSessionId);
 	const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
 		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
 		include: {
@@ -2353,6 +2376,7 @@ async function createXiaofeiTestTurnInTransaction(
 			question: input.question,
 			answer: input.answer,
 			capabilityVersionId: version.id,
+			conversationState: JSON.parse(JSON.stringify(conversationState)) as Prisma.InputJsonValue,
 			runtimeMetadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue,
 			evidenceRevisionScopeKey: member?.knowledgeUnitRevision.scopeKey ?? null,
 			evidenceRevisionId: member?.knowledgeUnitRevisionId ?? null,
@@ -2363,6 +2387,20 @@ async function createXiaofeiTestTurnInTransaction(
 			completedAt: input.completedAt,
 		},
 	});
+}
+
+/** Returns only the newest immutable state snapshot within one Organization. */
+export async function getXiaofeiTestSession(organizationId: string, testSessionId: string) {
+	const turn = await db.xiaofeiTestTurn.findFirst({
+		where: { organizationId, testSessionId },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		select: { capabilityVersionId: true, conversationState: true },
+	});
+	if (!turn) return null;
+	return {
+		capabilityVersionId: turn.capabilityVersionId,
+		conversationState: ConversationStateSchema.parse(turn.conversationState),
+	};
 }
 
 /** Feedback derives before facts exclusively from the persisted source turn. */
@@ -2486,7 +2524,6 @@ export async function createXiaofeiTestTurnRerun(
 				organizationId,
 				{
 					...input,
-					testSessionId: intervention.sourceTestTurn.testSessionId,
 					question: intervention.sourceTestTurn.question,
 				},
 				{

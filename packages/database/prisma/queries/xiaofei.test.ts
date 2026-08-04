@@ -1,3 +1,4 @@
+import { createConversationState } from "@repo/xiaofei";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryMocks = vi.hoisted(() => {
@@ -49,7 +50,7 @@ const queryMocks = vi.hoisted(() => {
 			update: vi.fn(),
 			updateMany: vi.fn(),
 		},
-		xiaofeiTestTurn: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+		xiaofeiTestTurn: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
 	};
 
 	return {
@@ -92,6 +93,7 @@ const queryMocks = vi.hoisted(() => {
 		findHostingBindingInTransaction: transactionClient.xiaofeiCapabilityBinding.findUnique,
 		getHostingBinding: vi.fn(),
 		createTestTurn: transactionClient.xiaofeiTestTurn.create,
+		findLatestTestTurn: transactionClient.xiaofeiTestTurn.findFirst,
 		findTestTurn: transactionClient.xiaofeiTestTurn.findUnique,
 		updateTestTurn: transactionClient.xiaofeiTestTurn.update,
 		createResponseIntervention: transactionClient.xiaofeiResponseIntervention.create,
@@ -438,6 +440,7 @@ vi.mock("../client", () => ({
 		},
 		xiaofeiCapabilityVersion: { findUnique: queryMocks.findCapabilityVersion },
 		xiaofeiCapabilityBinding: { findUnique: queryMocks.getHostingBinding },
+		xiaofeiTestTurn: { findFirst: queryMocks.findLatestTestTurn },
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
 			findUnique: queryMocks.getInboundEvent,
@@ -497,13 +500,22 @@ import {
 	createXiaofeiKnowledgeUnitRevision,
 	createXiaofeiTestTurn,
 	createXiaofeiTestTurnRerun,
+	getXiaofeiTestSession,
 	loadXiaofeiRuntimeHostingCapability,
 	XiaofeiCapabilityPartitionError,
 	XiaofeiDuplicateLogicalKnowledgeUnitError,
 	XiaofeiVersioningNotFoundError,
 	XiaofeiPlatformKnowledgeInterventionError,
 	XiaofeiTestTurnFeedbackConflictError,
+	XiaofeiTestSessionCapabilityConflictError,
 } from "./xiaofei";
+
+const conversationState = createConversationState({
+	id: "session-a",
+	tenantId: "organization:organization-a",
+	agentId: "agent-a",
+	maxFollowUps: 3,
+});
 
 describe("Xiaofei Organization queries", () => {
 	beforeEach(() => vi.clearAllMocks());
@@ -565,6 +577,7 @@ describe("Xiaofei Organization queries", () => {
 			question: "What is the policy?",
 			answer: "The actual answer.",
 			capabilityVersionId: "active-version",
+			conversationState,
 			runtimeMetadata: {
 				knowledgeTitle: null,
 				knowledgeEvidence: null,
@@ -588,6 +601,23 @@ describe("Xiaofei Organization queries", () => {
 				}),
 			}),
 		);
+	});
+
+	it("loads only the newest Organization-scoped session snapshot", async () => {
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce({
+			capabilityVersionId: "version-a",
+			conversationState,
+		});
+
+		await expect(getXiaofeiTestSession("organization-a", "session-a")).resolves.toEqual({
+			capabilityVersionId: "version-a",
+			conversationState,
+		});
+		expect(queryMocks.findLatestTestTurn).toHaveBeenCalledWith({
+			where: { organizationId: "organization-a", testSessionId: "session-a" },
+			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+			select: { capabilityVersionId: true, conversationState: true },
+		});
 	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {
@@ -708,6 +738,24 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		traces: [],
 	};
 
+	it("fails closed when an existing session is submitted against another Test CA", async () => {
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce({ capabilityVersionId: "version-a" });
+
+		await expect(
+			createXiaofeiTestTurn("organization-a", {
+				testSessionId: "session-a",
+				question: "What is the policy?",
+				answer: "Actual answer.",
+				capabilityVersionId: "version-b",
+				conversationState,
+				runtimeMetadata,
+				requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			}),
+		).rejects.toBeInstanceOf(XiaofeiTestSessionCapabilityConflictError);
+		expect(queryMocks.createTestTurn).not.toHaveBeenCalled();
+	});
+
 	it("rejects evidence whose exact member metadata does not match", async () => {
 		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
 			activeCapabilityVersion: {
@@ -733,6 +781,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 				question: "What is the policy?",
 				answer: "Actual answer.",
 				capabilityVersionId: "active-version",
+				conversationState,
 				runtimeMetadata: {
 					...runtimeMetadata,
 					knowledgeEvidence: {
@@ -779,8 +828,10 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 
 		await createXiaofeiTestTurnRerun("organization-a", {
 			interventionId: "intervention-a",
+			testSessionId: "rerun-session",
 			answer: "Actual rerun answer.",
 			capabilityVersionId: "result-version",
+			conversationState,
 			runtimeMetadata,
 			requestedAt: new Date("2026-08-04T00:00:02.000Z"),
 			completedAt: new Date("2026-08-04T00:00:03.000Z"),
@@ -789,7 +840,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		expect(queryMocks.createTestTurn).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
-					testSessionId: "saved-session",
+					testSessionId: "rerun-session",
 					question: "Saved source question",
 					sourceTestTurnId: "source-turn",
 					rerunOfTestTurnId: "source-turn",
@@ -884,8 +935,10 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		await expect(
 			createXiaofeiTestTurnRerun("organization-a", {
 				interventionId: "intervention-a",
+				testSessionId: "rerun-session",
 				answer: "Actual rerun answer.",
 				capabilityVersionId: "wrong-version",
+				conversationState,
 				runtimeMetadata,
 				requestedAt: new Date("2026-08-04T00:00:02.000Z"),
 				completedAt: new Date("2026-08-04T00:00:03.000Z"),

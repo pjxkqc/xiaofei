@@ -186,7 +186,7 @@ export type XiaofeiResponseInterventionScalarFieldEnum = z.infer<typeof XiaofeiR
 
 // File: XiaofeiTestTurnScalarFieldEnum.schema.ts
 
-export const XiaofeiTestTurnScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'testSessionId', 'question', 'answer', 'capabilityVersionId', 'runtimeMetadata', 'evidenceRevisionScopeKey', 'evidenceRevisionId', 'sourceTestTurnId', 'rerunOfTestTurnId', 'interventionId', 'requestedAt', 'completedAt', 'createdAt'])
+export const XiaofeiTestTurnScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'testSessionId', 'question', 'answer', 'capabilityVersionId', 'conversationState', 'runtimeMetadata', 'evidenceRevisionScopeKey', 'evidenceRevisionId', 'sourceTestTurnId', 'rerunOfTestTurnId', 'interventionId', 'requestedAt', 'completedAt', 'createdAt'])
 
 export type XiaofeiTestTurnScalarFieldEnum = z.infer<typeof XiaofeiTestTurnScalarFieldEnumSchema>;
 
@@ -822,6 +822,7 @@ export const XiaofeiTestTurnSchema = z.object({
   question: z.string(),
   answer: z.string(),
   capabilityVersionId: z.string(),
+  conversationState: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
   runtimeMetadata: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
   evidenceRevisionScopeKey: z.string().nullish(),
   evidenceRevisionId: z.string().nullish(),

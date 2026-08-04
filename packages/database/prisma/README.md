@@ -69,8 +69,11 @@ the persistence `contentHash` and `manifestHash` are never passed through as
 domain hashes. Active and Test are selected only from their respective
 Organization-local hosting pointers.
 
-`XiaofeiTestTurn` retains one actual test answer, runtime metadata, and optional
-normalized evidence revision. Writes prove the referenced CA is that
+`XiaofeiTestTurn` retains one actual test answer, immutable `ConversationState`
+snapshot, runtime metadata, and optional normalized evidence revision. A session
+loads its newest snapshot only through the compound Organization + session query
+and is pinned to its initial Test CA; a CA switch requires a new session rather
+than mixing evidence. Writes prove the referenced CA is that
 Organization's current Active/Test hosting pointer and that evidence is an
 exact member; no-hit evidence remains null. Feedback derives all before facts
 from the saved source turn, writes only the Test pointer, and a real rerun may

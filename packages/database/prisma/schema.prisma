@@ -703,8 +703,9 @@ model XiaofeiResponseIntervention {
   @@map("xiaofei_response_intervention")
 }
 
-/// One actual answer from the Organization's governed Active or Test hosting CA.
-/// This deliberately stores only the small feedback/rerun loop, not conversation history.
+/// One immutable answer and ConversationState snapshot from the Organization's
+/// governed Active or Test hosting CA. The latest snapshot for a session is
+/// loaded only through the Organization-scoped persistence boundary.
 model XiaofeiTestTurn {
   id                       String                       @id @default(cuid())
   organizationId           String
@@ -714,6 +715,7 @@ model XiaofeiTestTurn {
   answer                   String                       @db.Text
   capabilityVersionId      String
   capabilityVersion        XiaofeiCapabilityVersion     @relation(fields: [organizationId, capabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  conversationState        Json
   runtimeMetadata          Json
   evidenceRevisionScopeKey String?
   evidenceRevisionId       String?

@@ -69,6 +69,7 @@ import {
 	applyXiaofeiTestTurnCorrection,
 	getXiaofeiVersioningOverview,
 	initializeXiaofeiVersioning,
+	resetXiaofeiTestSession,
 	runXiaofeiVersionedTest,
 	setXiaofeiHostingEnabled,
 } from "./procedures/versioning";
@@ -107,6 +108,7 @@ export const xiaofeiRouter = {
 	getVersioningOverview: getXiaofeiVersioningOverview,
 	initializeVersioning: initializeXiaofeiVersioning,
 	runVersionedTest: runXiaofeiVersionedTest,
+	resetTestSession: resetXiaofeiTestSession,
 	applyTestTurnCorrection: applyXiaofeiTestTurnCorrection,
 	activateHostingVersion: activateXiaofeiHostingVersion,
 	setHostingEnabled: setXiaofeiHostingEnabled,

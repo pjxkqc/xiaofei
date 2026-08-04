@@ -7,6 +7,7 @@ import {
 	createXiaofeiKnowledgeUnitRevision,
 	createXiaofeiTestTurn,
 	createXiaofeiTestTurnRerun,
+	getXiaofeiTestSession,
 	getXiaofeiOrganizationConfig,
 	getXiaofeiOrganizationHostingBinding,
 	loadXiaofeiRuntimeHostingCapability,
@@ -15,6 +16,7 @@ import {
 	setXiaofeiOrganizationTestHostingVersion,
 	upsertXiaofeiOrganizationConfig,
 	XiaofeiTestTurnFeedbackConflictError,
+	XiaofeiTestSessionCapabilityConflictError,
 	XiaofeiVersioningNotFoundError,
 } from "@repo/database";
 import { createConversationState, RuntimeMetadataSchema } from "@repo/xiaofei";
@@ -129,12 +131,20 @@ export const runXiaofeiVersionedTest = supportProcedure
 			getOrCreateXiaofeiWorkspace(context),
 			loadXiaofeiRuntimeHostingCapability(organizationId, "test"),
 		]);
-		const state = createConversationState({
-			id: globalThis.crypto.randomUUID(),
-			tenantId: snapshot.agent.tenantId,
-			agentId: snapshot.agent.id,
-			maxFollowUps: snapshot.agent.maxFollowUps,
-		});
+		const testSessionId = input.testSessionId ?? globalThis.crypto.randomUUID();
+		const savedSession = await getXiaofeiTestSession(organizationId, testSessionId);
+		if (savedSession && savedSession.capabilityVersionId !== capability.manifest.id)
+			throw new ORPCError("CONFLICT", {
+				message: "The Test version changed; start a new test session.",
+			});
+		const state =
+			savedSession?.conversationState ??
+			createConversationState({
+				id: testSessionId,
+				tenantId: snapshot.agent.tenantId,
+				agentId: snapshot.agent.id,
+				maxFollowUps: snapshot.agent.maxFollowUps,
+			});
 		const requestedAt = new Date();
 		const result = await runXiaofeiTestTurn({
 			message: input.question,
@@ -145,26 +155,43 @@ export const runXiaofeiVersionedTest = supportProcedure
 			knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
 				workspace,
 				snapshot,
-				conversationId: state.id,
+				conversationId: testSessionId,
 				channelId: "authenticated:chatbot-test",
 			}),
 		});
-		const turn = await createXiaofeiTestTurn(organizationId, {
-			testSessionId: input.testSessionId ?? state.id,
-			question: input.question,
-			answer: result.reply,
-			capabilityVersionId: capability.manifest.id,
-			runtimeMetadata: result.metadata,
-			requestedAt,
-			completedAt: new Date(),
-		});
+		let turn;
+		try {
+			turn = await createXiaofeiTestTurn(organizationId, {
+				testSessionId,
+				question: input.question,
+				answer: result.reply,
+				capabilityVersionId: capability.manifest.id,
+				conversationState: result.state,
+				runtimeMetadata: result.metadata,
+				requestedAt,
+				completedAt: new Date(),
+			});
+		} catch (error) {
+			if (error instanceof XiaofeiTestSessionCapabilityConflictError)
+				throw new ORPCError("CONFLICT", {
+					message: "The Test version changed; start a new test session.",
+				});
+			throw error;
+		}
 		return {
 			turn,
+			testSessionId,
 			answer: result.reply,
 			metadata: result.metadata,
 			feedbackAllowed: result.metadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant",
 		};
 	});
+
+/** Starts a new opaque session ID without mutating historical TestTurn evidence. */
+export const resetXiaofeiTestSession = supportProcedure.handler(async ({ context }) => {
+	await getXiaofeiOrganizationId(context);
+	return { testSessionId: globalThis.crypto.randomUUID() };
+});
 
 export const applyXiaofeiTestTurnCorrection = supportProcedure
 	.input(z.object({ sourceTestTurnId: z.string().cuid(), correction: questionSchema }))
@@ -207,8 +234,10 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 			});
 			const rerun = await createXiaofeiTestTurnRerun(organizationId, {
 				interventionId: feedback.intervention.id,
+				testSessionId: globalThis.crypto.randomUUID(),
 				answer: result.reply,
 				capabilityVersionId: capability.manifest.id,
+				conversationState: result.state,
 				runtimeMetadata: result.metadata,
 				requestedAt,
 				completedAt: new Date(),

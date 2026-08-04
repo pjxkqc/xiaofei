@@ -15,7 +15,7 @@ describe("Xiaofei versioned test-turn API contract", () => {
 	});
 
 	it("persists an actual TestTurn before answer-bound feedback and does not accept browser evidence", () => {
-		expect(source).toContain("const turn = await createXiaofeiTestTurn(organizationId");
+		expect(source).toContain("createXiaofeiTestTurn(organizationId");
 		expect(source).toContain("sourceTestTurnId: z.string().cuid()");
 		expect(source).not.toContain("knowledgeUnitRevisionId: z.string");
 		expect(source).not.toContain("capabilityVersionId: z.string");
@@ -27,6 +27,14 @@ describe("Xiaofei versioned test-turn API contract", () => {
 		expect(source).toContain("answer: rerun.answer");
 		expect(source).toContain("RuntimeMetadataSchema.parse(rerun.runtimeMetadata)");
 		expect(source).toContain("resultCapabilityVersionId: rerun.capabilityVersionId");
+	});
+
+	it("continues only a same-Organization session pinned to its Test CA and can reset safely", () => {
+		expect(source).toContain("getXiaofeiTestSession(organizationId, testSessionId)");
+		expect(source).toContain("savedSession?.conversationState");
+		expect(source).toContain("conversationState: result.state");
+		expect(source).toContain("The Test version changed; start a new test session.");
+		expect(source).toContain("export const resetXiaofeiTestSession");
 	});
 
 	it("maps no-hit, platform, foreign, and conflicting feedback to fail-closed errors", () => {
