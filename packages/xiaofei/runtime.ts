@@ -572,7 +572,7 @@ function bestKnowledgeTermMatch(
 		}
 		if (exact) acceptedExactMatches += 1;
 		const candidate = exact
-			? { score: 100 + Math.min(term.length, 30), reason: "exact" as const }
+			? { score: 100 + Math.min(term.length * 4, 80), reason: "exact" as const }
 			: relatedTextScore(normalizedMessage, term);
 		if (candidate && (!best || candidate.score > best.score)) best = candidate;
 	}

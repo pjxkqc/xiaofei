@@ -9,7 +9,7 @@ test.describe("knowledge document management", () => {
 		await page.goto("/knowledge?stage=advanced");
 		await openDocumentGovernance(page);
 		await expect(page.getByLabel("Organization required")).toHaveCount(0);
-		await expect(page.getByRole("heading", { name: "知识文档" })).toBeVisible();
+		await expect(page.getByText("上传源文档", { exact: true })).toBeVisible();
 		await expect(
 			page.getByText(/PDF、DOCX、XLSX 通过服务端 Firecrawl 解析（最多 4 MB）/u),
 		).toBeVisible();

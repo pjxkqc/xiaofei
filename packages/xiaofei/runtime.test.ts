@@ -243,6 +243,41 @@ describe("P0 runtime kernel", () => {
 		}
 	});
 
+	it("prefers a specific merchant scenario over a broad platform keyword", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const broadPlatformUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "platform-product-guidance",
+			title: "商品、价格与库存咨询",
+			scenarioKeywords: ["适合", "推荐"],
+			applicableScenarios: ["客户在购买前询问商品特点或适用范围"],
+			requiredSlots: [],
+		};
+		const specificMerchantUnit = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "merchant-nebula-room-size",
+			title: "星云灯适用房间面积",
+			scenarioKeywords: ["星云灯房间面积"],
+			applicableScenarios: ["用户询问星云灯适合多大房间"],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [broadPlatformUnit, specificMerchantUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [broadPlatformUnit.id, specificMerchantUnit.id];
+
+		const prepared = prepareTurn({
+			message: "星云灯适合多大房间？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			knowledge: { id: specificMerchantUnit.id },
+			action: "reply",
+		});
+	});
+
 	it("prefers a product-specific KU over the generic presales KU", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const genericProductUnit = snapshot.knowledgeUnits[0]!;
