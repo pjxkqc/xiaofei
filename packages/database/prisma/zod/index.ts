@@ -184,6 +184,12 @@ export const XiaofeiResponseInterventionScalarFieldEnumSchema = z.enum(['id', 'o
 
 export type XiaofeiResponseInterventionScalarFieldEnum = z.infer<typeof XiaofeiResponseInterventionScalarFieldEnumSchema>;
 
+// File: XiaofeiTestTurnScalarFieldEnum.schema.ts
+
+export const XiaofeiTestTurnScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'testSessionId', 'question', 'answer', 'capabilityVersionId', 'runtimeMetadata', 'evidenceRevisionScopeKey', 'evidenceRevisionId', 'sourceTestTurnId', 'rerunOfTestTurnId', 'interventionId', 'requestedAt', 'completedAt', 'createdAt'])
+
+export type XiaofeiTestTurnScalarFieldEnum = z.infer<typeof XiaofeiTestTurnScalarFieldEnumSchema>;
+
 // File: SortOrder.schema.ts
 
 export const SortOrderSchema = z.enum(['asc', 'desc'])
@@ -804,4 +810,27 @@ export const XiaofeiResponseInterventionSchema = z.object({
 });
 
 export type XiaofeiResponseInterventionType = z.infer<typeof XiaofeiResponseInterventionSchema>;
+
+
+// File: XiaofeiTestTurn.schema.ts
+
+export const XiaofeiTestTurnSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  testSessionId: z.string(),
+  question: z.string(),
+  answer: z.string(),
+  capabilityVersionId: z.string(),
+  runtimeMetadata: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  evidenceRevisionScopeKey: z.string().nullish(),
+  evidenceRevisionId: z.string().nullish(),
+  sourceTestTurnId: z.string().nullish(),
+  rerunOfTestTurnId: z.string().nullish(),
+  interventionId: z.string().nullish(),
+  requestedAt: z.date(),
+  completedAt: z.date(),
+  createdAt: z.date(),
+});
+
+export type XiaofeiTestTurnType = z.infer<typeof XiaofeiTestTurnSchema>;
 

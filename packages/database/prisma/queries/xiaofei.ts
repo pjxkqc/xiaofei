@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
 
 import {
+	KnowledgeUnitSchema,
+	RuntimeMetadataSchema,
 	ConversationStateSchema,
 	EmailDeliveryV1Schema,
 	SupportMessageSchema,
+	createCapabilityVersionManifest,
 	createConversationState,
+	createKnowledgeUnitRevision,
 	isCustomerInboundEmailJobEligible,
+	type CapabilityVersionManifest,
 	type EmailDeliveryV1,
 	type EmailMessageIngestV1,
+	type KnowledgeUnitRevision,
+	type RuntimeMetadata,
 	type SupportMessage,
 } from "@repo/xiaofei";
 import { z } from "zod";
@@ -302,6 +309,37 @@ export interface ApplyXiaofeiResponseInterventionInput {
 	correctedContent: Prisma.InputJsonValue;
 	beforeResponse?: Prisma.InputJsonValue;
 	afterResponse?: Prisma.InputJsonValue;
+}
+
+export interface CreateXiaofeiTestTurnInput {
+	testSessionId: string;
+	question: string;
+	answer: string;
+	capabilityVersionId: string;
+	runtimeMetadata: RuntimeMetadata;
+	requestedAt: Date;
+	completedAt: Date;
+	sourceTestTurnId?: string | null;
+	rerunOfTestTurnId?: string | null;
+	interventionId?: string | null;
+}
+
+export interface ApplyXiaofeiTestTurnFeedbackInput {
+	organizationId: string;
+	sourceTestTurnId: string;
+	correction: string;
+	correctedContent: Prisma.InputJsonValue;
+}
+
+export interface CreateXiaofeiTestTurnRerunInput extends CreateXiaofeiTestTurnInput {
+	sourceTestTurnId: string;
+	rerunOfTestTurnId: string;
+	interventionId: string;
+}
+
+export interface XiaofeiRuntimeCapabilityDto {
+	manifest: CapabilityVersionManifest;
+	revisions: KnowledgeUnitRevision[];
 }
 
 export class XiaofeiVersioningNotFoundError extends Error {
@@ -2045,109 +2083,101 @@ export function getXiaofeiCapabilityVersion(organizationId: string, id: string) 
  * stores the before/after audit record in one transaction.
  */
 export function applyXiaofeiResponseIntervention(input: ApplyXiaofeiResponseInterventionInput) {
-	return db.$transaction(async (transaction) => {
-		const beforeRevision = await transaction.xiaofeiKnowledgeUnitRevision.findUnique({
-			where: {
-				scopeKey_id: {
-					scopeKey: xiaofeiKnowledgeRevisionScopeKey(input.organizationId),
-					id: input.beforeKnowledgeRevisionId,
-				},
-			},
-		});
-		if (!beforeRevision) {
-			const platformRevision = await transaction.xiaofeiKnowledgeUnitRevision.findFirst({
-				where: {
-					scopeKey: xiaofeiKnowledgeRevisionScopeKey(null),
-					id: input.beforeKnowledgeRevisionId,
-				},
-			});
-			if (platformRevision)
-				throw new XiaofeiPlatformKnowledgeInterventionError(platformRevision.id);
-			throw new XiaofeiVersioningNotFoundError(
-				input.organizationId,
-				input.beforeKnowledgeRevisionId,
-			);
-		}
-		if (beforeRevision.origin !== "merchant")
-			throw new XiaofeiPlatformKnowledgeInterventionError(beforeRevision.id);
-		const beforeVersion = await transaction.xiaofeiCapabilityVersion.findUnique({
-			where: {
-				organizationId_id: {
-					organizationId: input.organizationId,
-					id: input.beforeCapabilityVersionId,
-				},
-			},
-			include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
-		});
-		if (!beforeVersion)
-			throw new XiaofeiVersioningNotFoundError(
-				input.organizationId,
-				input.beforeCapabilityVersionId,
-			);
-		if (beforeVersion.capabilityKey !== input.capabilityKey)
-			throw new XiaofeiVersioningNotFoundError(
-				input.organizationId,
-				input.beforeCapabilityVersionId,
-			);
-		if (
-			!beforeVersion.knowledgeUnits.some(
-				(unit) => unit.knowledgeUnitRevisionId === beforeRevision.id,
-			)
-		)
-			throw new XiaofeiVersioningNotFoundError(
-				input.organizationId,
-				input.beforeKnowledgeRevisionId,
-			);
+	return db.$transaction((transaction) =>
+		applyXiaofeiResponseInterventionInTransaction(transaction, input),
+	);
+}
 
-		const resultRevision = await createXiaofeiKnowledgeUnitRevisionInTransaction(transaction, {
-			organizationId: input.organizationId,
-			logicalKnowledgeUnitId: beforeRevision.logicalKnowledgeUnitId,
-			knowledgeUnitId: beforeRevision.knowledgeUnitId,
-			origin: "merchant",
-			content: input.correctedContent,
-		});
-		const resultVersion = await createXiaofeiCapabilityVersionInTransaction(transaction, {
-			organizationId: input.organizationId,
-			capabilityKey: input.capabilityKey,
-			knowledgeUnits: beforeVersion.knowledgeUnits.map((unit) => ({
-				knowledgeUnitRevisionId:
-					unit.knowledgeUnitRevisionId === beforeRevision.id
-						? resultRevision.id
-						: unit.knowledgeUnitRevisionId,
-				role: unit.role,
-				priority: unit.priority,
-			})),
-		});
-		const intervention = await transaction.xiaofeiResponseIntervention.create({
-			data: {
-				organizationId: input.organizationId,
-				correction: input.correction,
-				beforeResponse: input.beforeResponse,
-				afterResponse: input.afterResponse,
-				beforeCapabilityVersionId: beforeVersion.id,
-				resultCapabilityVersionId: resultVersion.id,
-				beforeKnowledgeRevisionScopeKey: beforeRevision.scopeKey,
-				beforeKnowledgeRevisionId: beforeRevision.id,
-				resultKnowledgeRevisionScopeKey: resultRevision.scopeKey,
-				resultKnowledgeRevisionId: resultRevision.id,
+async function applyXiaofeiResponseInterventionInTransaction(
+	transaction: Prisma.TransactionClient,
+	input: ApplyXiaofeiResponseInterventionInput,
+) {
+	const beforeRevision = await transaction.xiaofeiKnowledgeUnitRevision.findUnique({
+		where: {
+			scopeKey_id: {
+				scopeKey: xiaofeiKnowledgeRevisionScopeKey(input.organizationId),
+				id: input.beforeKnowledgeRevisionId,
 			},
-		});
-		await transaction.xiaofeiCapabilityBinding.upsert({
+		},
+	});
+	if (!beforeRevision) {
+		const platformRevision = await transaction.xiaofeiKnowledgeUnitRevision.findFirst({
 			where: {
-				organizationId_capabilityKey: {
-					organizationId: input.organizationId,
-					capabilityKey: input.capabilityKey,
-				},
+				scopeKey: xiaofeiKnowledgeRevisionScopeKey(null),
+				id: input.beforeKnowledgeRevisionId,
 			},
-			create: {
+		});
+		if (platformRevision) throw new XiaofeiPlatformKnowledgeInterventionError(platformRevision.id);
+		throw new XiaofeiVersioningNotFoundError(input.organizationId, input.beforeKnowledgeRevisionId);
+	}
+	if (beforeRevision.origin !== "merchant")
+		throw new XiaofeiPlatformKnowledgeInterventionError(beforeRevision.id);
+	const beforeVersion = await transaction.xiaofeiCapabilityVersion.findUnique({
+		where: {
+			organizationId_id: {
+				organizationId: input.organizationId,
+				id: input.beforeCapabilityVersionId,
+			},
+		},
+		include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
+	});
+	if (!beforeVersion)
+		throw new XiaofeiVersioningNotFoundError(input.organizationId, input.beforeCapabilityVersionId);
+	if (beforeVersion.capabilityKey !== input.capabilityKey)
+		throw new XiaofeiVersioningNotFoundError(input.organizationId, input.beforeCapabilityVersionId);
+	if (
+		!beforeVersion.knowledgeUnits.some((unit) => unit.knowledgeUnitRevisionId === beforeRevision.id)
+	)
+		throw new XiaofeiVersioningNotFoundError(input.organizationId, input.beforeKnowledgeRevisionId);
+
+	const resultRevision = await createXiaofeiKnowledgeUnitRevisionInTransaction(transaction, {
+		organizationId: input.organizationId,
+		logicalKnowledgeUnitId: beforeRevision.logicalKnowledgeUnitId,
+		knowledgeUnitId: beforeRevision.knowledgeUnitId,
+		origin: "merchant",
+		content: input.correctedContent,
+	});
+	const resultVersion = await createXiaofeiCapabilityVersionInTransaction(transaction, {
+		organizationId: input.organizationId,
+		capabilityKey: input.capabilityKey,
+		knowledgeUnits: beforeVersion.knowledgeUnits.map((unit) => ({
+			knowledgeUnitRevisionId:
+				unit.knowledgeUnitRevisionId === beforeRevision.id
+					? resultRevision.id
+					: unit.knowledgeUnitRevisionId,
+			role: unit.role,
+			priority: unit.priority,
+		})),
+	});
+	const intervention = await transaction.xiaofeiResponseIntervention.create({
+		data: {
+			organizationId: input.organizationId,
+			correction: input.correction,
+			beforeResponse: input.beforeResponse,
+			afterResponse: input.afterResponse,
+			beforeCapabilityVersionId: beforeVersion.id,
+			resultCapabilityVersionId: resultVersion.id,
+			beforeKnowledgeRevisionScopeKey: beforeRevision.scopeKey,
+			beforeKnowledgeRevisionId: beforeRevision.id,
+			resultKnowledgeRevisionScopeKey: resultRevision.scopeKey,
+			resultKnowledgeRevisionId: resultRevision.id,
+		},
+	});
+	await transaction.xiaofeiCapabilityBinding.upsert({
+		where: {
+			organizationId_capabilityKey: {
 				organizationId: input.organizationId,
 				capabilityKey: input.capabilityKey,
-				testCapabilityVersionId: resultVersion.id,
 			},
-			update: { testCapabilityVersionId: resultVersion.id },
-		});
-		return { intervention, resultRevision, resultVersion };
+		},
+		create: {
+			organizationId: input.organizationId,
+			capabilityKey: input.capabilityKey,
+			testCapabilityVersionId: resultVersion.id,
+		},
+		update: { testCapabilityVersionId: resultVersion.id },
 	});
+	return { intervention, resultRevision, resultVersion };
 }
 
 /** Atomically switches only an Organization-local active pointer. */
@@ -2169,6 +2199,224 @@ export function activateXiaofeiCapabilityVersion(
 			update: { activeCapabilityVersionId: capabilityVersionId },
 		});
 	});
+}
+
+/** Returns both Organization-local hosting pointers with their exact ordered memberships. */
+export function getXiaofeiOrganizationHostingBinding(organizationId: string) {
+	return db.xiaofeiCapabilityBinding.findUnique({
+		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+		include: {
+			activeCapabilityVersion: {
+				include: {
+					knowledgeUnits: {
+						include: { knowledgeUnitRevision: true },
+						orderBy: [{ priority: "desc" }, { id: "asc" }],
+					},
+				},
+			},
+			testCapabilityVersion: {
+				include: {
+					knowledgeUnits: {
+						include: { knowledgeUnitRevision: true },
+						orderBy: [{ priority: "desc" }, { id: "asc" }],
+					},
+				},
+			},
+		},
+	});
+}
+
+/** Replaces only the Organization's hosting Test pointer after exact local verification. */
+export function setXiaofeiOrganizationTestHostingVersion(
+	organizationId: string,
+	capabilityVersionId: string,
+) {
+	return db.$transaction(async (transaction) => {
+		const version = await transaction.xiaofeiCapabilityVersion.findUnique({
+			where: { organizationId_id: { organizationId, id: capabilityVersionId } },
+			select: { id: true, capabilityKey: true },
+		});
+		if (!version || version.capabilityKey !== "xiaofei-hosting")
+			throw new XiaofeiVersioningNotFoundError(organizationId, capabilityVersionId);
+		return transaction.xiaofeiCapabilityBinding.upsert({
+			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+			create: {
+				organizationId,
+				capabilityKey: "xiaofei-hosting",
+				testCapabilityVersionId: version.id,
+			},
+			update: { testCapabilityVersionId: version.id },
+		});
+	});
+}
+
+/** Rejects global platform and foreign snapshots at the correction boundary. */
+export async function getXiaofeiMerchantRevisionForCorrection(organizationId: string, id: string) {
+	const revision = await db.xiaofeiKnowledgeUnitRevision.findUnique({
+		where: { scopeKey_id: { scopeKey: xiaofeiKnowledgeRevisionScopeKey(organizationId), id } },
+	});
+	if (!revision || revision.origin !== "merchant")
+		throw new XiaofeiVersioningNotFoundError(organizationId, id);
+	return revision;
+}
+
+/** Builds domain-hashed, exact persisted hosting data for Runtime's active/test materializers. */
+export async function loadXiaofeiRuntimeHostingCapability(
+	organizationId: string,
+	mode: "active" | "test",
+): Promise<XiaofeiRuntimeCapabilityDto> {
+	const binding = await getXiaofeiOrganizationHostingBinding(organizationId);
+	const version =
+		mode === "active" ? binding?.activeCapabilityVersion : binding?.testCapabilityVersion;
+	if (!version || version.capabilityKey !== "xiaofei-hosting")
+		throw new XiaofeiVersioningNotFoundError(organizationId, `${mode}:xiaofei-hosting`);
+	const revisions = version.knowledgeUnits.map((member) =>
+		createKnowledgeUnitRevision({
+			id: member.knowledgeUnitRevision.id,
+			logicalKnowledgeUnitId: member.knowledgeUnitRevision.logicalKnowledgeUnitId,
+			organizationId: member.knowledgeUnitRevision.organizationId,
+			revision: member.knowledgeUnitRevision.revision,
+			origin: member.knowledgeUnitRevision.origin as "platform" | "merchant",
+			knowledgeUnit: KnowledgeUnitSchema.parse(member.knowledgeUnitRevision.content),
+			createdAt: member.knowledgeUnitRevision.createdAt.toISOString(),
+		}),
+	);
+	return {
+		manifest: createCapabilityVersionManifest({
+			id: version.id,
+			organizationId,
+			capabilityKey: "xiaofei-hosting",
+			status: mode,
+			knowledgeUnitRevisionIds: version.knowledgeUnits.map(
+				(member) => member.knowledgeUnitRevisionId,
+			),
+			createdAt: version.createdAt.toISOString(),
+		}),
+		revisions,
+	};
+}
+
+/** Stores one real answer only after validating the currently selected Active/Test hosting CA. */
+export function createXiaofeiTestTurn(organizationId: string, input: CreateXiaofeiTestTurnInput) {
+	return db.$transaction(async (transaction) => {
+		const metadata = RuntimeMetadataSchema.parse(input.runtimeMetadata);
+		const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
+			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+			include: {
+				activeCapabilityVersion: {
+					include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
+				},
+				testCapabilityVersion: {
+					include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
+				},
+			},
+		});
+		const version = [binding?.activeCapabilityVersion, binding?.testCapabilityVersion].find(
+			(candidate) =>
+				candidate?.id === input.capabilityVersionId &&
+				candidate.capabilityKey === "xiaofei-hosting",
+		);
+		if (!version)
+			throw new XiaofeiVersioningNotFoundError(organizationId, input.capabilityVersionId);
+		const evidence = metadata.knowledgeEvidence;
+		const member = evidence
+			? version.knowledgeUnits.find(
+					(candidate) =>
+						candidate.knowledgeUnitRevisionId === evidence.knowledgeUnitRevisionId &&
+						evidence.capabilityVersionId === version.id,
+				)
+			: null;
+		if (evidence && (!member || evidence.capabilityKey !== "xiaofei-hosting"))
+			throw new XiaofeiVersioningNotFoundError(organizationId, evidence.knowledgeUnitRevisionId);
+		return transaction.xiaofeiTestTurn.create({
+			data: {
+				organizationId,
+				testSessionId: input.testSessionId,
+				question: input.question,
+				answer: input.answer,
+				capabilityVersionId: version.id,
+				runtimeMetadata: JSON.parse(JSON.stringify(metadata)) as Prisma.InputJsonValue,
+				evidenceRevisionScopeKey: member?.knowledgeUnitRevision.scopeKey ?? null,
+				evidenceRevisionId: member?.knowledgeUnitRevisionId ?? null,
+				sourceTestTurnId: input.sourceTestTurnId ?? null,
+				rerunOfTestTurnId: input.rerunOfTestTurnId ?? null,
+				interventionId: input.interventionId ?? null,
+				requestedAt: input.requestedAt,
+				completedAt: input.completedAt,
+			},
+		});
+	});
+}
+
+/** Feedback derives before facts exclusively from the persisted source turn. */
+export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedbackInput) {
+	return db.$transaction(async (transaction) => {
+		const source = await transaction.xiaofeiTestTurn.findUnique({
+			where: {
+				organizationId_id: { organizationId: input.organizationId, id: input.sourceTestTurnId },
+			},
+			include: { evidenceRevision: true, capabilityVersion: { include: { knowledgeUnits: true } } },
+		});
+		if (
+			!source?.evidenceRevision ||
+			!source.evidenceRevisionId ||
+			source.evidenceRevision.origin !== "merchant"
+		)
+			throw new XiaofeiVersioningNotFoundError(input.organizationId, input.sourceTestTurnId);
+		if (
+			source.capabilityVersion.capabilityKey !== "xiaofei-hosting" ||
+			!source.capabilityVersion.knowledgeUnits.some(
+				(member) => member.knowledgeUnitRevisionId === source.evidenceRevisionId,
+			)
+		)
+			throw new XiaofeiVersioningNotFoundError(input.organizationId, source.evidenceRevisionId);
+		const applied = await applyXiaofeiResponseInterventionInTransaction(transaction, {
+			organizationId: input.organizationId,
+			capabilityKey: "xiaofei-hosting",
+			beforeCapabilityVersionId: source.capabilityVersionId,
+			beforeKnowledgeRevisionId: source.evidenceRevisionId,
+			correction: input.correction,
+			correctedContent: input.correctedContent,
+			beforeResponse: {
+				question: source.question,
+				answer: source.answer,
+				runtimeMetadata: source.runtimeMetadata,
+			},
+		});
+		await transaction.xiaofeiTestTurn.update({
+			where: { organizationId_id: { organizationId: input.organizationId, id: source.id } },
+			data: { interventionId: applied.intervention.id },
+		});
+		return applied;
+	});
+}
+
+/** Persists a real rerun before filling the intervention's previously-null after response. */
+export async function createXiaofeiTestTurnRerun(
+	organizationId: string,
+	input: CreateXiaofeiTestTurnRerunInput,
+) {
+	const intervention = await db.xiaofeiResponseIntervention.findUnique({
+		where: { organizationId_id: { organizationId, id: input.interventionId } },
+		select: { id: true, resultCapabilityVersionId: true },
+	});
+	if (!intervention || intervention.resultCapabilityVersionId !== input.capabilityVersionId)
+		throw new XiaofeiVersioningNotFoundError(organizationId, input.interventionId);
+	const turn = await createXiaofeiTestTurn(organizationId, input);
+	await db.xiaofeiResponseIntervention.updateMany({
+		where: {
+			organizationId,
+			id: intervention.id,
+			resultCapabilityVersionId: input.capabilityVersionId,
+			afterResponse: { equals: Prisma.DbNull },
+		},
+		data: {
+			afterResponse: JSON.parse(
+				JSON.stringify({ answer: input.answer, runtimeMetadata: input.runtimeMetadata }),
+			) as Prisma.InputJsonValue,
+		},
+	});
+	return turn;
 }
 
 async function createXiaofeiKnowledgeUnitRevisionInTransaction(

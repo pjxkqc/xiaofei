@@ -42,8 +42,9 @@ const queryMocks = vi.hoisted(() => {
 			findUnique: vi.fn(),
 		},
 		xiaofeiCapabilityVersionKnowledgeUnit: { createMany: vi.fn() },
-		xiaofeiCapabilityBinding: { upsert: vi.fn() },
+		xiaofeiCapabilityBinding: { findUnique: vi.fn(), upsert: vi.fn() },
 		xiaofeiResponseIntervention: { create: vi.fn() },
+		xiaofeiTestTurn: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
 	};
 
 	return {
@@ -83,6 +84,9 @@ const queryMocks = vi.hoisted(() => {
 		createCapabilityKnowledgeUnits:
 			transactionClient.xiaofeiCapabilityVersionKnowledgeUnit.createMany,
 		upsertCapabilityBinding: transactionClient.xiaofeiCapabilityBinding.upsert,
+		findHostingBindingInTransaction: transactionClient.xiaofeiCapabilityBinding.findUnique,
+		getHostingBinding: vi.fn(),
+		createTestTurn: transactionClient.xiaofeiTestTurn.create,
 		createResponseIntervention: transactionClient.xiaofeiResponseIntervention.create,
 		createInboundEvent: transactionClient.xiaofeiInboundEvent.create,
 		findInboundEventInTransaction: transactionClient.xiaofeiInboundEvent.findUnique,
@@ -423,6 +427,7 @@ vi.mock("../client", () => ({
 			findUnique: queryMocks.findRevisionById,
 		},
 		xiaofeiCapabilityVersion: { findUnique: queryMocks.findCapabilityVersion },
+		xiaofeiCapabilityBinding: { findUnique: queryMocks.getHostingBinding },
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
 			findUnique: queryMocks.getInboundEvent,
@@ -479,6 +484,8 @@ import {
 	applyXiaofeiResponseIntervention,
 	createXiaofeiCapabilityVersion,
 	createXiaofeiKnowledgeUnitRevision,
+	createXiaofeiTestTurn,
+	loadXiaofeiRuntimeHostingCapability,
 	XiaofeiCapabilityPartitionError,
 	XiaofeiDuplicateLogicalKnowledgeUnitError,
 	XiaofeiVersioningNotFoundError,
@@ -487,6 +494,88 @@ import {
 
 describe("Xiaofei Organization queries", () => {
 	beforeEach(() => vi.clearAllMocks());
+
+	it("normalizes persisted hashes and maps the selected hosting pointer to domain status", async () => {
+		queryMocks.getHostingBinding.mockResolvedValueOnce({
+			activeCapabilityVersion: {
+				id: "active-version",
+				capabilityKey: "xiaofei-hosting",
+				manifestHash: "persistence-hash",
+				createdAt: new Date("2026-08-04T00:00:00.000Z"),
+				knowledgeUnits: [
+					{
+						knowledgeUnitRevisionId: "merchant-revision",
+						knowledgeUnitRevision: {
+							id: "merchant-revision",
+							organizationId: "organization-a",
+							logicalKnowledgeUnitId: "ku-a",
+							revision: 1,
+							origin: "merchant",
+							contentHash: "persistence-content-hash",
+							createdAt: new Date("2026-08-04T00:00:00.000Z"),
+							content: {
+								id: "knowledge-a",
+								title: "Knowledge A",
+								status: "released",
+								standardReplyPolicy: "Use policy.",
+								fallbackReply: "Fallback.",
+								sourceSection: "FAQ",
+								quality: { status: "passed" },
+							},
+						},
+					},
+				],
+			},
+			testCapabilityVersion: null,
+		});
+
+		const runtime = await loadXiaofeiRuntimeHostingCapability("organization-a", "active");
+		expect(runtime.manifest.status).toBe("active");
+		expect(runtime.manifest.manifestHash).not.toBe("persistence-hash");
+		expect(runtime.revisions[0]?.contentHash).not.toBe("persistence-content-hash");
+		expect(runtime.manifest.knowledgeUnitRevisionIds).toEqual(["merchant-revision"]);
+	});
+
+	it("persists a no-hit test turn without accepting a caller-selected revision", async () => {
+		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
+			activeCapabilityVersion: {
+				id: "active-version",
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [],
+			},
+			testCapabilityVersion: null,
+		});
+		queryMocks.createTestTurn.mockResolvedValueOnce({ id: "test-turn" });
+
+		await createXiaofeiTestTurn("organization-a", {
+			testSessionId: "session-a",
+			question: "What is the policy?",
+			answer: "The actual answer.",
+			capabilityVersionId: "active-version",
+			runtimeMetadata: {
+				knowledgeTitle: null,
+				knowledgeEvidence: null,
+				nextAction: "reply",
+				riskLevel: "low",
+				ownerType: "ai",
+				stage: "admission",
+				missingSlots: [],
+				traces: [],
+			},
+			requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+			completedAt: new Date("2026-08-04T00:00:01.000Z"),
+		});
+
+		expect(queryMocks.createTestTurn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					evidenceRevisionScopeKey: null,
+					evidenceRevisionId: null,
+					capabilityVersionId: "active-version",
+				}),
+			}),
+		);
+	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {
 		await upsertXiaofeiOrganizationConfig("organization-a", { xiaofeiEnabled: true });
