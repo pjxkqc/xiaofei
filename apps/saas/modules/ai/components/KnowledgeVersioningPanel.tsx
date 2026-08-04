@@ -167,6 +167,7 @@ function VersionOverview({
 	section: "prepare" | "hosting" | "all";
 }) {
 	const isPrepare = section === "prepare";
+	const testIsActive = active?.id === testVersion?.id && testVersion !== null;
 	async function act(action: () => Promise<unknown>, success: string) {
 		setBusy(true);
 		try {
@@ -198,7 +199,7 @@ function VersionOverview({
 				</div>
 				{!isPrepare && (
 					<Button
-						disabled={busy || !testVersion}
+						disabled={busy || !testVersion || testIsActive}
 						onClick={() =>
 							void act(
 								() => orpcClient.xiaofei.activateHostingVersion(),
@@ -206,7 +207,7 @@ function VersionOverview({
 							)
 						}
 					>
-						人工验收 Test CA
+						{testIsActive ? "Test CA 已验收" : "人工验收 Test CA"}
 					</Button>
 				)}
 				<MembershipSummary active={active} testVersion={testVersion} />
@@ -393,10 +394,13 @@ function MembershipSummary({
 		new Set(activeRows.map((row) => row.knowledgeUnitRevisionId)),
 		new Set(testRows.map((row) => row.knowledgeUnitRevisionId)),
 	);
+	const testIsActive = active?.id === testVersion?.id && testVersion !== null;
 	return (
 		<div className="gap-3 flex flex-col">
 			<p className="text-sm text-muted-foreground">
-				Test 与 Active 相差 {changed} 个成员；未人工验收前，Active 不会改变。
+				{testIsActive
+					? "当前 Test CA 已人工验收，Active 与 Test 一致。"
+					: `Test 与 Active 相差 ${changed} 个成员；未人工验收前，Active 不会改变。`}
 			</p>
 			<div className="gap-3 sm:grid-cols-2 grid">
 				<MembershipCard

@@ -57,6 +57,8 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 
 	it("calculates Test-versus-Active membership by revision-set difference and locks actions", () => {
 		expect(panel).toContain("symmetricDifferenceSize");
+		expect(panel).toContain("active?.id === testVersion?.id");
+		expect(panel).toContain("Test CA 已验收");
 		expect(panel).toContain("knowledgeUnitRevisionId");
 		expect(panel).toContain("TestTurn：");
 		expect(panel).toContain("capabilityVersionId={rerun.source.capabilityVersionId}");
