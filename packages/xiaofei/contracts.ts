@@ -399,6 +399,72 @@ export const CapabilityPlanSchema = z.object({
 	evalSuggestions: z.array(z.string().min(1)).default([]),
 });
 
+/** Stable P0 capability partitions; these are product concepts, not provider modes. */
+export const CapabilityKeySchema = z.enum([
+	"platform-fallback",
+	"merchant-knowledge",
+	"xiaofei-hosting",
+]);
+
+export const KnowledgeUnitRevisionSchema = z
+	.object({
+		id: z.string().min(1),
+		logicalKnowledgeUnitId: z.string().min(1),
+		organizationId: z.string().min(1).nullable(),
+		revision: z.number().int().positive(),
+		sourceCapabilityKey: CapabilityKeySchema,
+		knowledgeUnit: KnowledgeUnitSchema,
+		contentHash: z.string().min(1),
+		createdAt: z.string().datetime({ offset: true }),
+	})
+	.strict()
+	.superRefine((revision, context) => {
+		if (revision.sourceCapabilityKey === "platform-fallback" && revision.organizationId !== null) {
+			context.addIssue({
+				code: "custom",
+				path: ["organizationId"],
+				message: "Platform fallback revisions are not merchant-owned.",
+			});
+		}
+		if (revision.sourceCapabilityKey !== "platform-fallback" && revision.organizationId === null) {
+			context.addIssue({
+				code: "custom",
+				path: ["organizationId"],
+				message: "Merchant and hosting revisions require an organization.",
+			});
+		}
+	});
+
+export const CapabilityVersionStatusSchema = z.enum(["test", "active", "retired"]);
+export const CapabilityVersionManifestSchema = z
+	.object({
+		id: z.string().min(1),
+		organizationId: z.string().min(1),
+		capabilityKey: CapabilityKeySchema,
+		status: CapabilityVersionStatusSchema,
+		knowledgeUnitRevisionIds: z.array(z.string().min(1)).min(1),
+		manifestHash: z.string().min(1),
+		createdAt: z.string().datetime({ offset: true }),
+	})
+	.strict()
+	.superRefine((manifest, context) => {
+		if (
+			new Set(manifest.knowledgeUnitRevisionIds).size !== manifest.knowledgeUnitRevisionIds.length
+		) {
+			context.addIssue({
+				code: "custom",
+				path: ["knowledgeUnitRevisionIds"],
+				message: "A capability manifest may include each KU revision only once.",
+			});
+		}
+	});
+
+export const KnowledgeVersioningSnapshotSchema = z.object({
+	knowledgeUnitRevisions: z.array(KnowledgeUnitRevisionSchema).default([]),
+	capabilityVersionManifests: z.array(CapabilityVersionManifestSchema).default([]),
+	activeCapabilityVersionId: z.string().min(1).nullable().default(null),
+});
+
 /**
  * The authenticated outer layer resolves a channel/conversation to this record
  * before invoking the runtime. The kernel verifies it but never resolves
@@ -449,6 +515,11 @@ export const XiaofeiWorkspaceSnapshotSchema = z.object({
 	guardrails: GuardrailPolicySchema,
 	tools: z.array(ToolDefinitionSchema),
 	capabilityPlan: CapabilityPlanSchema,
+	knowledgeVersioning: KnowledgeVersioningSnapshotSchema.default({
+		knowledgeUnitRevisions: [],
+		capabilityVersionManifests: [],
+		activeCapabilityVersionId: null,
+	}),
 	evalSuite: EvalSuiteSchema,
 	gates: z.array(ReleaseGateSchema),
 	updatedAt: z.string().min(1),
@@ -543,6 +614,15 @@ export const TraceEventSchema = z.object({
 
 export const RuntimeMetadataSchema = z.object({
 	knowledgeTitle: z.string().nullable(),
+	knowledgeEvidence: z
+		.object({
+			logicalKnowledgeUnitId: z.string().min(1),
+			knowledgeUnitRevisionId: z.string().min(1),
+			capabilityVersionId: z.string().min(1),
+			sourceCapabilityKey: CapabilityKeySchema,
+		})
+		.nullable()
+		.default(null),
 	nextAction: NextActionSchema,
 	riskLevel: RiskLevelSchema,
 	ownerType: OwnerTypeSchema,
@@ -623,6 +703,11 @@ export type KnowledgeUnitDraft = z.infer<typeof KnowledgeUnitDraftSchema>;
 export type GuardrailPolicy = z.infer<typeof GuardrailPolicySchema>;
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 export type CapabilityPlan = z.infer<typeof CapabilityPlanSchema>;
+export type CapabilityKey = z.infer<typeof CapabilityKeySchema>;
+export type KnowledgeUnitRevision = z.infer<typeof KnowledgeUnitRevisionSchema>;
+export type CapabilityVersionStatus = z.infer<typeof CapabilityVersionStatusSchema>;
+export type CapabilityVersionManifest = z.infer<typeof CapabilityVersionManifestSchema>;
+export type KnowledgeVersioningSnapshot = z.infer<typeof KnowledgeVersioningSnapshotSchema>;
 export type KnowledgeWorkspaceBinding = z.infer<typeof KnowledgeWorkspaceBindingSchema>;
 export type EvalCaseResult = z.infer<typeof EvalCaseResultSchema>;
 export type EvalSuite = z.infer<typeof EvalSuiteSchema>;

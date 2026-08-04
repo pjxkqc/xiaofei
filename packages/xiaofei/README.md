@@ -58,6 +58,21 @@ facts but does not persist an Outbox or perform HTTP delivery.
 `index.ts` is the public package boundary. Consumers should import from
 `@repo/xiaofei`, not from internal files.
 
+## P0 knowledge/version feedback contract
+
+`KnowledgeUnitRevision` separates immutable revision identity from a logical KU
+identity. `CapabilityVersionManifest` records a content-hashed, explicit
+many-to-many list of KU revision IDs and represents `platform-fallback`,
+`merchant-knowledge`, and `xiaofei-hosting`. A correction creates a successor;
+it never overwrites an existing revision.
+
+`RuntimeMetadata.knowledgeEvidence` is emitted only when the selected KU is in
+the active manifest. It carries the logical KU, exact KU revision, CA version,
+and source capability key. `evaluateCorrectionAdmission` allows only an owning
+organization to correct `merchant-knowledge`; platform fallback, hosting, and
+cross-organization targets are rejected. Persistence and API layers must
+enforce this decision again.
+
 ## Hard invariants
 
 1. Every owner transition increments `ownerEpoch`.

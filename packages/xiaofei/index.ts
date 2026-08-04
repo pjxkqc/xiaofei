@@ -5,3 +5,4 @@ export * from "./eval";
 export * from "./knowledge";
 export * from "./ports";
 export * from "./runtime";
+export * from "./versioning";

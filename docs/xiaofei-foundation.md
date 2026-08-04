@@ -48,6 +48,15 @@ Changing a source or normalized entry deterministically revokes KU eligibility,
 capability review, and Eval evidence. This does not replace the final Guardrail
 or `ownerEpoch` lease check; those remain the customer-visible send authority.
 
+Knowledge feedback is revision-bound. A logical KU and an immutable KU Revision
+are distinct identities; a content-hashed Capability Version Manifest explicitly
+references KU Revisions and can reuse a Revision across multiple capabilities.
+The runtime returns the selected logical KU, KU Revision, CA Version, and source
+capability key as answer evidence only from the active manifest. The domain only
+admits corrections to an owning organization's merchant knowledge; platform
+fallback, Xiaofei-hosting revisions, and cross-organization targets are rejected
+before persistence.
+
 Knowledge absence is fail-safe without being an automatic ownership transfer.
 The kernel may send only a configured, deterministic clarification reply while
 keeping AI ownership; it never asks a model to invent missing facts. Every miss

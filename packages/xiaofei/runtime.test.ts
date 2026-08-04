@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	ConversationStateSchema,
 	XiaofeiWorkspaceSnapshotSchema,
+	createCapabilityVersionManifest,
 	createConversationState,
 	createDefaultWorkspaceSnapshot,
+	createKnowledgeUnitRevision,
 	finalizeTurn,
 	prepareTurn,
 	runP0EvalSuite,
@@ -29,6 +31,50 @@ async function setup() {
 }
 
 describe("P0 runtime kernel", () => {
+	it("returns active KU revision and CA version evidence with a generated answer", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const message = "你们的商品价格和库存怎么确认？";
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		expect(prepared.knowledge).not.toBeNull();
+		const revision = createKnowledgeUnitRevision({
+			id: "ku-revision-price-1",
+			logicalKnowledgeUnitId: "logical-ku-price",
+			organizationId: "tenant-1",
+			revision: 1,
+			sourceCapabilityKey: "merchant-knowledge",
+			knowledgeUnit: prepared.knowledge!,
+			createdAt: NOW,
+		});
+		const capabilityVersion = createCapabilityVersionManifest({
+			id: "ca-active-1",
+			organizationId: "tenant-1",
+			capabilityKey: "xiaofei-hosting",
+			status: "active",
+			knowledgeUnitRevisionIds: [revision.id],
+			createdAt: NOW,
+		});
+		snapshot.knowledgeVersioning = {
+			knowledgeUnitRevisions: [revision],
+			capabilityVersionManifests: [capabilityVersion],
+			activeCapabilityVersionId: capabilityVersion.id,
+		};
+
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message,
+			replyGenerator: { generate: async () => "这是经过审核的商品说明。" },
+			now,
+		});
+
+		expect(result.metadata.knowledgeEvidence).toEqual({
+			logicalKnowledgeUnitId: "logical-ku-price",
+			knowledgeUnitRevisionId: revision.id,
+			capabilityVersionId: capabilityVersion.id,
+			sourceCapabilityKey: "merchant-knowledge",
+		});
+	});
+
 	it("blocks automatic handling until the KU capability plan is reviewed", async () => {
 		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
 		const state = createConversationState({
