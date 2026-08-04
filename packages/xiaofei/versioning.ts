@@ -4,6 +4,7 @@ import {
 	CapabilityVersionManifestSchema,
 	KnowledgeUnitRevisionSchema,
 	KnowledgeVersioningSnapshotSchema,
+	XiaofeiWorkspaceSnapshotSchema,
 	type CapabilityKey,
 	type CapabilityVersionManifest,
 	type KnowledgeUnit,
@@ -72,12 +73,10 @@ export function resolveRuntimeKnowledgeEvidence(
 	knowledgeUnitId: string | null,
 ): RuntimeKnowledgeEvidence | null {
 	const validated = KnowledgeVersioningSnapshotSchema.parse(versioning);
-	const runtimeVersionId = validated.testCapabilityVersionId ?? validated.activeCapabilityVersionId;
-	if (!knowledgeUnitId || !runtimeVersionId) return null;
+	if (!knowledgeUnitId || !validated.activeCapabilityVersionId) return null;
 	const manifest = validated.capabilityVersionManifests.find(
 		(candidate) =>
-			candidate.id === runtimeVersionId &&
-			(candidate.status === "active" || candidate.status === "test"),
+			candidate.id === validated.activeCapabilityVersionId && candidate.status === "active",
 	);
 	if (!manifest) return null;
 	const revision = validated.knowledgeUnitRevisions.find(
@@ -138,17 +137,17 @@ export function materializeTestCapabilitySnapshot(input: {
 		...deriveCapabilityPlan(knowledgeUnits, input.manifest.createdAt),
 		reviewed: true,
 	};
-	return {
+	const runtimeManifest = { ...input.manifest, status: "active" as const };
+	return XiaofeiWorkspaceSnapshotSchema.parse({
 		...input.base,
 		knowledgeUnits,
 		capabilityPlan,
 		knowledgeVersioning: {
 			knowledgeUnitRevisions: exact,
-			capabilityVersionManifests: [input.manifest],
-			activeCapabilityVersionId: input.base.knowledgeVersioning.activeCapabilityVersionId,
-			testCapabilityVersionId: input.manifest.id,
+			capabilityVersionManifests: [runtimeManifest],
+			activeCapabilityVersionId: runtimeManifest.id,
 		},
-	};
+	});
 }
 
 export type CorrectionAdmission =

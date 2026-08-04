@@ -467,7 +467,6 @@ export const KnowledgeVersioningSnapshotSchema = z
 		knowledgeUnitRevisions: z.array(KnowledgeUnitRevisionSchema).default([]),
 		capabilityVersionManifests: z.array(CapabilityVersionManifestSchema).default([]),
 		activeCapabilityVersionId: z.string().min(1).nullable().default(null),
-		testCapabilityVersionId: z.string().min(1).nullable().optional(),
 	})
 	.superRefine((snapshot, context) => {
 		const revisionsById = new Map<string, (typeof snapshot.knowledgeUnitRevisions)[number]>();
@@ -553,20 +552,6 @@ export const KnowledgeVersioningSnapshotSchema = z
 						"The active capability version must reference an active xiaofei-hosting manifest.",
 				});
 			}
-		}
-		if (snapshot.testCapabilityVersionId) {
-			const test = snapshot.capabilityVersionManifests.filter(
-				(manifest) =>
-					manifest.id === snapshot.testCapabilityVersionId &&
-					manifest.status === "test" &&
-					manifest.capabilityKey === "xiaofei-hosting",
-			);
-			if (test.length !== 1)
-				context.addIssue({
-					code: "custom",
-					path: ["testCapabilityVersionId"],
-					message: "Test runtime must resolve to exactly one test hosting manifest.",
-				});
 		}
 	});
 

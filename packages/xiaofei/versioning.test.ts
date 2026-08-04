@@ -66,8 +66,8 @@ describe("knowledge revision and capability version contracts", () => {
 			revisions: [merchant, platform],
 		});
 		expect(materialized.knowledgeUnits).toEqual([merchant.knowledgeUnit, platform.knowledgeUnit]);
-		expect(materialized.knowledgeVersioning.testCapabilityVersionId).toBe(manifest.id);
-		expect(base.knowledgeVersioning.testCapabilityVersionId).toBeUndefined();
+		expect(materialized.knowledgeVersioning.activeCapabilityVersionId).toBe(manifest.id);
+		expect(base.knowledgeVersioning.activeCapabilityVersionId).not.toBe(manifest.id);
 		expect(() =>
 			materializeTestCapabilitySnapshot({
 				base,
