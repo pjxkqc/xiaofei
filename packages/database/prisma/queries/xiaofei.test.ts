@@ -31,6 +31,19 @@ const queryMocks = vi.hoisted(() => {
 			findUnique: vi.fn(),
 			updateMany: vi.fn(),
 		},
+		xiaofeiKnowledgeUnitRevision: {
+			create: vi.fn(),
+			findFirst: vi.fn(),
+			findMany: vi.fn(),
+			findUnique: vi.fn(),
+		},
+		xiaofeiCapabilityVersion: {
+			create: vi.fn(),
+			findUnique: vi.fn(),
+		},
+		xiaofeiCapabilityVersionKnowledgeUnit: { createMany: vi.fn() },
+		xiaofeiCapabilityBinding: { upsert: vi.fn() },
+		xiaofeiResponseIntervention: { create: vi.fn() },
 	};
 
 	return {
@@ -61,6 +74,16 @@ const queryMocks = vi.hoisted(() => {
 		listAdminOrganizations: vi.fn(),
 		countAdminOrganizations: vi.fn(),
 		invalidateUnits: transactionClient.xiaofeiKnowledgeUnit.updateMany,
+		createRevision: transactionClient.xiaofeiKnowledgeUnitRevision.create,
+		findRevision: transactionClient.xiaofeiKnowledgeUnitRevision.findFirst,
+		findRevisions: transactionClient.xiaofeiKnowledgeUnitRevision.findMany,
+		findRevisionById: transactionClient.xiaofeiKnowledgeUnitRevision.findUnique,
+		createCapabilityVersion: transactionClient.xiaofeiCapabilityVersion.create,
+		findCapabilityVersion: transactionClient.xiaofeiCapabilityVersion.findUnique,
+		createCapabilityKnowledgeUnits:
+			transactionClient.xiaofeiCapabilityVersionKnowledgeUnit.createMany,
+		upsertCapabilityBinding: transactionClient.xiaofeiCapabilityBinding.upsert,
+		createResponseIntervention: transactionClient.xiaofeiResponseIntervention.create,
 		createInboundEvent: transactionClient.xiaofeiInboundEvent.create,
 		findInboundEventInTransaction: transactionClient.xiaofeiInboundEvent.findUnique,
 		updateInboundEvent: transactionClient.xiaofeiInboundEvent.update,
@@ -80,6 +103,103 @@ const queryMocks = vi.hoisted(() => {
 		findCustomerInTransaction: transactionClient.xiaofeiCustomer.findUnique,
 		upsertConversation: transactionClient.xiaofeiConversation.upsert,
 	};
+});
+
+describe("Xiaofei immutable knowledge version persistence", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("creates Organization-scoped CA membership only from local or platform revisions", async () => {
+		queryMocks.findRevisions.mockResolvedValueOnce([
+			{ id: "merchant-revision", organizationId: "organization-a" },
+			{ id: "platform-revision", organizationId: null },
+		]);
+		queryMocks.createCapabilityVersion.mockResolvedValueOnce({ id: "capability-version-1" });
+
+		await createXiaofeiCapabilityVersion({
+			organizationId: "organization-a",
+			capabilityKey: "xiaofei-hosting",
+			knowledgeUnits: [
+				{ knowledgeUnitRevisionId: "platform-revision", role: "fallback", priority: 1 },
+				{ knowledgeUnitRevisionId: "merchant-revision", priority: 10 },
+			],
+		});
+
+		expect(queryMocks.findRevisions).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: [{ organizationId: "organization-a" }, { organizationId: null }],
+				}),
+			}),
+		);
+		expect(queryMocks.createCapabilityKnowledgeUnits).toHaveBeenCalledWith({
+			data: expect.arrayContaining([
+				expect.objectContaining({
+					organizationId: "organization-a",
+					capabilityVersionId: "capability-version-1",
+					knowledgeUnitRevisionId: "merchant-revision",
+					revisionOrganizationId: "organization-a",
+				}),
+				expect.objectContaining({
+					knowledgeUnitRevisionId: "platform-revision",
+					revisionOrganizationId: null,
+				}),
+			]),
+		});
+	});
+
+	it("refuses a platform baseline intervention before creating any successor", async () => {
+		queryMocks.findRevisionById.mockResolvedValueOnce(null);
+		queryMocks.findRevision.mockResolvedValueOnce({ id: "platform-revision", origin: "platform" });
+
+		await expect(
+			applyXiaofeiResponseIntervention({
+				organizationId: "organization-a",
+				capabilityKey: "xiaofei-hosting",
+				beforeCapabilityVersionId: "capability-version-1",
+				beforeKnowledgeRevisionId: "platform-revision",
+				correction: "Please change this.",
+				correctedContent: { answer: "new" },
+			}),
+		).rejects.toBeInstanceOf(XiaofeiPlatformKnowledgeInterventionError);
+		expect(queryMocks.createRevision).not.toHaveBeenCalled();
+		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+	});
+
+	it("atomically switches only the local active capability pointer", async () => {
+		queryMocks.findCapabilityVersion.mockResolvedValueOnce({
+			id: "capability-version-test",
+			capabilityKey: "xiaofei-hosting",
+		});
+		await activateXiaofeiCapabilityVersion(
+			"organization-a",
+			"xiaofei-hosting",
+			"capability-version-test",
+		);
+
+		expect(queryMocks.findCapabilityVersion).toHaveBeenCalledWith({
+			where: {
+				organizationId_id: {
+					organizationId: "organization-a",
+					id: "capability-version-test",
+				},
+			},
+			select: { id: true, capabilityKey: true },
+		});
+		expect(queryMocks.upsertCapabilityBinding).toHaveBeenCalledWith({
+			where: {
+				organizationId_capabilityKey: {
+					organizationId: "organization-a",
+					capabilityKey: "xiaofei-hosting",
+				},
+			},
+			create: {
+				organizationId: "organization-a",
+				capabilityKey: "xiaofei-hosting",
+				activeCapabilityVersionId: "capability-version-test",
+			},
+			update: { activeCapabilityVersionId: "capability-version-test" },
+		});
+	});
 });
 
 vi.mock("../client", () => ({
@@ -102,6 +222,11 @@ vi.mock("../client", () => ({
 			findMany: queryMocks.listUnits,
 			findUnique: queryMocks.findUnit,
 		},
+		xiaofeiKnowledgeUnitRevision: {
+			findMany: queryMocks.findRevisions,
+			findUnique: queryMocks.findRevisionById,
+		},
+		xiaofeiCapabilityVersion: { findUnique: queryMocks.findCapabilityVersion },
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
 			findUnique: queryMocks.getInboundEvent,
@@ -154,6 +279,10 @@ import {
 	upsertXiaofeiOrganizationConversation,
 	updateXiaofeiInboundEventStatus,
 	XiaofeiOrganizationCustomerNotFoundError,
+	activateXiaofeiCapabilityVersion,
+	applyXiaofeiResponseIntervention,
+	createXiaofeiCapabilityVersion,
+	XiaofeiPlatformKnowledgeInterventionError,
 } from "./xiaofei";
 
 describe("Xiaofei Organization queries", () => {

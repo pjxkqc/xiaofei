@@ -154,6 +154,36 @@ export const XiaofeiKnowledgeUnitScalarFieldEnumSchema = z.enum(['id', 'workspac
 
 export type XiaofeiKnowledgeUnitScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeUnitScalarFieldEnumSchema>;
 
+// File: XiaofeiKnowledgeUnitRevisionScalarFieldEnum.schema.ts
+
+export const XiaofeiKnowledgeUnitRevisionScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'logicalKnowledgeUnitId', 'knowledgeUnitId', 'origin', 'revision', 'content', 'contentHash', 'createdAt'])
+
+export type XiaofeiKnowledgeUnitRevisionScalarFieldEnum = z.infer<typeof XiaofeiKnowledgeUnitRevisionScalarFieldEnumSchema>;
+
+// File: XiaofeiCapabilityVersionScalarFieldEnum.schema.ts
+
+export const XiaofeiCapabilityVersionScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'capabilityKey', 'status', 'manifestHash', 'createdAt'])
+
+export type XiaofeiCapabilityVersionScalarFieldEnum = z.infer<typeof XiaofeiCapabilityVersionScalarFieldEnumSchema>;
+
+// File: XiaofeiCapabilityBindingScalarFieldEnum.schema.ts
+
+export const XiaofeiCapabilityBindingScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'capabilityKey', 'activeCapabilityVersionId', 'testCapabilityVersionId', 'createdAt', 'updatedAt'])
+
+export type XiaofeiCapabilityBindingScalarFieldEnum = z.infer<typeof XiaofeiCapabilityBindingScalarFieldEnumSchema>;
+
+// File: XiaofeiCapabilityVersionKnowledgeUnitScalarFieldEnum.schema.ts
+
+export const XiaofeiCapabilityVersionKnowledgeUnitScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'capabilityVersionId', 'revisionOrganizationId', 'knowledgeUnitRevisionId', 'role', 'priority', 'createdAt'])
+
+export type XiaofeiCapabilityVersionKnowledgeUnitScalarFieldEnum = z.infer<typeof XiaofeiCapabilityVersionKnowledgeUnitScalarFieldEnumSchema>;
+
+// File: XiaofeiResponseInterventionScalarFieldEnum.schema.ts
+
+export const XiaofeiResponseInterventionScalarFieldEnumSchema = z.enum(['id', 'organizationId', 'correction', 'beforeResponse', 'afterResponse', 'beforeCapabilityVersionId', 'resultCapabilityVersionId', 'beforeKnowledgeRevisionId', 'resultKnowledgeRevisionId', 'createdAt'])
+
+export type XiaofeiResponseInterventionScalarFieldEnum = z.infer<typeof XiaofeiResponseInterventionScalarFieldEnumSchema>;
+
 // File: SortOrder.schema.ts
 
 export const SortOrderSchema = z.enum(['asc', 'desc'])
@@ -691,4 +721,84 @@ export const XiaofeiKnowledgeUnitSchema = z.object({
 });
 
 export type XiaofeiKnowledgeUnitType = z.infer<typeof XiaofeiKnowledgeUnitSchema>;
+
+
+// File: XiaofeiKnowledgeUnitRevision.schema.ts
+
+export const XiaofeiKnowledgeUnitRevisionSchema = z.object({
+  id: z.string(),
+  organizationId: z.string().nullish(),
+  logicalKnowledgeUnitId: z.string(),
+  knowledgeUnitId: z.string().nullish(),
+  origin: z.string(),
+  revision: z.number().int(),
+  content: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10"),
+  contentHash: z.string(),
+  createdAt: z.date(),
+});
+
+export type XiaofeiKnowledgeUnitRevisionType = z.infer<typeof XiaofeiKnowledgeUnitRevisionSchema>;
+
+
+// File: XiaofeiCapabilityVersion.schema.ts
+
+export const XiaofeiCapabilityVersionSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  capabilityKey: z.string(),
+  status: z.string().default("test"),
+  manifestHash: z.string(),
+  createdAt: z.date(),
+});
+
+export type XiaofeiCapabilityVersionType = z.infer<typeof XiaofeiCapabilityVersionSchema>;
+
+
+// File: XiaofeiCapabilityBinding.schema.ts
+
+export const XiaofeiCapabilityBindingSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  capabilityKey: z.string(),
+  activeCapabilityVersionId: z.string().nullish(),
+  testCapabilityVersionId: z.string().nullish(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type XiaofeiCapabilityBindingType = z.infer<typeof XiaofeiCapabilityBindingSchema>;
+
+
+// File: XiaofeiCapabilityVersionKnowledgeUnit.schema.ts
+
+export const XiaofeiCapabilityVersionKnowledgeUnitSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  capabilityVersionId: z.string(),
+  revisionOrganizationId: z.string().nullish(),
+  knowledgeUnitRevisionId: z.string(),
+  role: z.string().default("primary"),
+  priority: z.number().int(),
+  createdAt: z.date(),
+});
+
+export type XiaofeiCapabilityVersionKnowledgeUnitType = z.infer<typeof XiaofeiCapabilityVersionKnowledgeUnitSchema>;
+
+
+// File: XiaofeiResponseIntervention.schema.ts
+
+export const XiaofeiResponseInterventionSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  correction: z.string(),
+  beforeResponse: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").nullish(),
+  afterResponse: z.unknown().refine((val) => { const getDepth = (obj: unknown, depth: number = 0): number => { if (depth > 10) return depth; if (obj === null || typeof obj !== 'object') return depth; const values = Object.values(obj as Record<string, unknown>); if (values.length === 0) return depth; return Math.max(...values.map(v => getDepth(v, depth + 1))); }; return getDepth(val) <= 10; }, "JSON nesting depth exceeds maximum of 10").nullish(),
+  beforeCapabilityVersionId: z.string(),
+  resultCapabilityVersionId: z.string(),
+  beforeKnowledgeRevisionId: z.string(),
+  resultKnowledgeRevisionId: z.string(),
+  createdAt: z.date(),
+});
+
+export type XiaofeiResponseInterventionType = z.infer<typeof XiaofeiResponseInterventionSchema>;
 
