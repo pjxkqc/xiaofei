@@ -327,8 +327,13 @@ export interface ApplyXiaofeiTestTurnFeedbackInput {
 	correction: string;
 }
 
-export interface CreateXiaofeiTestTurnRerunInput extends CreateXiaofeiTestTurnInput {
+export interface CreateXiaofeiTestTurnRerunInput {
 	interventionId: string;
+	answer: string;
+	capabilityVersionId: string;
+	runtimeMetadata: RuntimeMetadata;
+	requestedAt: Date;
+	completedAt: Date;
 }
 
 export interface XiaofeiRuntimeCapabilityDto {
@@ -343,6 +348,12 @@ export class XiaofeiVersioningNotFoundError extends Error {
 	) {
 		super("The requested versioned knowledge record was not found in this Organization.");
 		this.name = "XiaofeiVersioningNotFoundError";
+	}
+}
+
+export class XiaofeiTestTurnFeedbackConflictError extends Error {
+	constructor(readonly sourceTestTurnId: string) {
+		super("This TestTurn already has a different applied correction.");
 	}
 }
 
@@ -2356,6 +2367,7 @@ async function createXiaofeiTestTurnInTransaction(
 /** Feedback derives before facts exclusively from the persisted source turn. */
 export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedbackInput) {
 	return db.$transaction(async (transaction) => {
+		const correction = normalizeXiaofeiTestTurnCorrection(input.correction);
 		await lockXiaofeiVersioningScope(
 			transaction,
 			`test-turn-feedback:${input.organizationId}:${input.sourceTestTurnId}`,
@@ -2390,10 +2402,13 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 			include: { resultKnowledgeRevision: true, resultCapabilityVersion: true },
 		});
 		if (existing) {
+			if (normalizeXiaofeiTestTurnCorrection(existing.correction) !== correction)
+				throw new XiaofeiTestTurnFeedbackConflictError(source.id);
 			return {
 				intervention: existing,
 				resultRevision: existing.resultKnowledgeRevision,
 				resultVersion: existing.resultCapabilityVersion,
+				sourceTestTurn: source,
 			};
 		}
 		const applied = await applyXiaofeiResponseInterventionInTransaction(transaction, {
@@ -2401,8 +2416,8 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 			capabilityKey: "xiaofei-hosting",
 			beforeCapabilityVersionId: source.capabilityVersionId,
 			beforeKnowledgeRevisionId: source.evidenceRevisionId,
-			correction: input.correction,
-			correctedContent: { ...correctedKnowledgeUnit, standardReplyPolicy: input.correction },
+			correction,
+			correctedContent: { ...correctedKnowledgeUnit, standardReplyPolicy: correction },
 			beforeResponse: {
 				question: source.question,
 				answer: source.answer,
@@ -2419,7 +2434,7 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 			where: { organizationId_id: { organizationId: input.organizationId, id: source.id } },
 			data: { interventionId: applied.intervention.id },
 		});
-		return applied;
+		return { ...applied, sourceTestTurn: source };
 	});
 }
 
@@ -2449,11 +2464,20 @@ export async function createXiaofeiTestTurnRerun(
 		});
 		const turn =
 			existing ??
-			(await createXiaofeiTestTurnInTransaction(transaction, organizationId, input, {
-				sourceTestTurnId: intervention.sourceTestTurn.id,
-				rerunOfTestTurnId: intervention.sourceTestTurn.id,
-				interventionId: intervention.id,
-			}));
+			(await createXiaofeiTestTurnInTransaction(
+				transaction,
+				organizationId,
+				{
+					...input,
+					testSessionId: intervention.sourceTestTurn.testSessionId,
+					question: intervention.sourceTestTurn.question,
+				},
+				{
+					sourceTestTurnId: intervention.sourceTestTurn.id,
+					rerunOfTestTurnId: intervention.sourceTestTurn.id,
+					interventionId: intervention.id,
+				},
+			));
 		const afterResponse = JSON.parse(
 			JSON.stringify({ answer: turn.answer, runtimeMetadata: turn.runtimeMetadata }),
 		) as Prisma.InputJsonValue;
@@ -2619,6 +2643,10 @@ function stableXiaofeiVersioningJson(value: unknown): string {
 			.join(",")}}`;
 	}
 	return JSON.stringify(value);
+}
+
+function normalizeXiaofeiTestTurnCorrection(correction: string): string {
+	return correction.trim().replace(/\r\n/g, "\n");
 }
 
 async function invalidateKnowledgeUnits(

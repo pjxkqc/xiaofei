@@ -502,6 +502,7 @@ import {
 	XiaofeiDuplicateLogicalKnowledgeUnitError,
 	XiaofeiVersioningNotFoundError,
 	XiaofeiPlatformKnowledgeInterventionError,
+	XiaofeiTestTurnFeedbackConflictError,
 } from "./xiaofei";
 
 describe("Xiaofei Organization queries", () => {
@@ -754,7 +755,11 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 			id: "intervention-a",
 			resultCapabilityVersionId: "result-version",
 			afterResponse: null,
-			sourceTestTurn: { id: "source-turn" },
+			sourceTestTurn: {
+				id: "source-turn",
+				testSessionId: "saved-session",
+				question: "Saved source question",
+			},
 		});
 		queryMocks.findTestTurn.mockResolvedValueOnce(null);
 		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
@@ -774,8 +779,6 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 
 		await createXiaofeiTestTurnRerun("organization-a", {
 			interventionId: "intervention-a",
-			testSessionId: "session-a",
-			question: "What is the policy?",
 			answer: "Actual rerun answer.",
 			capabilityVersionId: "result-version",
 			runtimeMetadata,
@@ -786,6 +789,8 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		expect(queryMocks.createTestTurn).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
+					testSessionId: "saved-session",
+					question: "Saved source question",
 					sourceTestTurnId: "source-turn",
 					rerunOfTestTurnId: "source-turn",
 					interventionId: "intervention-a",
@@ -797,6 +802,95 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 				data: { afterResponse: { answer: "Actual rerun answer.", runtimeMetadata } },
 			}),
 		);
+	});
+
+	it("rejects no-hit and platform source feedback before creating an intervention", async () => {
+		queryMocks.findTestTurn.mockResolvedValueOnce({
+			evidenceRevision: null,
+			evidenceRevisionId: null,
+		});
+		await expect(
+			applyXiaofeiTestTurnFeedback({
+				organizationId: "organization-a",
+				sourceTestTurnId: "no-hit-turn",
+				correction: "New policy.",
+			}),
+		).rejects.toBeInstanceOf(XiaofeiVersioningNotFoundError);
+
+		queryMocks.findTestTurn.mockResolvedValueOnce({
+			evidenceRevisionId: "platform-revision",
+			evidenceRevision: { origin: "platform" },
+		});
+		await expect(
+			applyXiaofeiTestTurnFeedback({
+				organizationId: "organization-a",
+				sourceTestTurnId: "platform-turn",
+				correction: "New policy.",
+			}),
+		).rejects.toBeInstanceOf(XiaofeiVersioningNotFoundError);
+		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+	});
+
+	it("returns only an exact normalized retry and rejects a different correction", async () => {
+		const source = {
+			id: "source-turn",
+			evidenceRevisionId: "merchant-revision",
+			evidenceRevision: {
+				origin: "merchant",
+				content: {
+					id: "knowledge-unit",
+					title: "Saved knowledge",
+					status: "released",
+					standardReplyPolicy: "Old policy.",
+					fallbackReply: "Fallback.",
+					sourceSection: "FAQ",
+					quality: { status: "passed" },
+				},
+			},
+			capabilityVersion: {
+				capabilityKey: "xiaofei-hosting",
+				knowledgeUnits: [{ knowledgeUnitRevisionId: "merchant-revision" }],
+			},
+		};
+		queryMocks.findTestTurn.mockResolvedValue(source);
+		queryMocks.findResponseIntervention.mockResolvedValue({
+			correction: "Same correction.",
+			resultKnowledgeRevision: { id: "result-revision" },
+			resultCapabilityVersion: { id: "result-version" },
+		});
+
+		await expect(
+			applyXiaofeiTestTurnFeedback({
+				organizationId: "organization-a",
+				sourceTestTurnId: "source-turn",
+				correction: "  Same correction.\r\n",
+			}),
+		).resolves.toEqual(expect.objectContaining({ sourceTestTurn: source }));
+		await expect(
+			applyXiaofeiTestTurnFeedback({
+				organizationId: "organization-a",
+				sourceTestTurnId: "source-turn",
+				correction: "Different correction.",
+			}),
+		).rejects.toBeInstanceOf(XiaofeiTestTurnFeedbackConflictError);
+	});
+
+	it("rejects reruns that do not use the intervention result CA", async () => {
+		queryMocks.findResponseIntervention.mockResolvedValueOnce({
+			id: "intervention-a",
+			resultCapabilityVersionId: "result-version",
+			sourceTestTurn: { id: "source-turn", testSessionId: "saved-session", question: "Saved" },
+		});
+		await expect(
+			createXiaofeiTestTurnRerun("organization-a", {
+				interventionId: "intervention-a",
+				answer: "Actual rerun answer.",
+				capabilityVersionId: "wrong-version",
+				runtimeMetadata,
+				requestedAt: new Date("2026-08-04T00:00:02.000Z"),
+				completedAt: new Date("2026-08-04T00:00:03.000Z"),
+			}),
+		).rejects.toBeInstanceOf(XiaofeiVersioningNotFoundError);
 	});
 
 	it("derives the corrected revision from saved evidence instead of caller content", async () => {
