@@ -5,6 +5,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { BookOpenTextIcon, CheckCircle2Icon, FlaskConicalIcon, Settings2Icon } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 import { KnowledgeCapabilities } from "./KnowledgeCapabilities";
 import { KnowledgeDocuments } from "./KnowledgeDocuments";
@@ -80,11 +81,12 @@ export function KnowledgeWorkspace({ stage }: { stage: KnowledgeWorkspaceStage }
 }
 
 function Preparation() {
+	const [versioningKey, setVersioningKey] = useState(0);
 	return (
 		<div className="gap-6 flex flex-col">
 			<div className="gap-6 lg:grid-cols-2 lg:items-start grid">
-				<KnowledgeVersioningPanel section="prepare" />
-				<QuickKnowledgePreparation />
+				<KnowledgeVersioningPanel key={versioningKey} section="prepare" />
+				<QuickKnowledgePreparation onPrepared={() => setVersioningKey((key) => key + 1)} />
 			</div>
 			<AdvancedLink />
 		</div>

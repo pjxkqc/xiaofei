@@ -62,4 +62,11 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("capabilityVersionId={rerun.source.capabilityVersionId}");
 		expect(panel).toContain("setBusy(true)");
 	});
+
+	it("requires a Test CA before exposing the test form", () => {
+		expect(panel).toContain("hasTestVersion");
+		expect(panel).toContain("还没有 Test CA");
+		expect(panel).toContain("先去准备知识");
+		expect(panel).toContain("!testVersion");
+	});
 });

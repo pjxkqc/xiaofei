@@ -15,6 +15,7 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
 import { orpcClient } from "@shared/lib/orpc-client";
 import { RefreshCcwIcon } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 const TEST_SESSION_STORAGE_KEY = "xiaofei.test-session-id";
@@ -73,7 +74,7 @@ export function KnowledgeVersioningPanel({
 		}
 	}
 	async function test() {
-		if (!question.trim() || !testSessionId) return;
+		if (!question.trim() || !testSessionId || !testVersion) return;
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.runVersionedTest({
@@ -137,7 +138,8 @@ export function KnowledgeVersioningPanel({
 					setCorrection={setCorrection}
 					rerun={rerun}
 					busy={busy}
-					ready={testSessionId !== null}
+					ready={testSessionId !== null && testVersion !== null}
+					hasTestVersion={testVersion !== null}
 					onTest={test}
 					onCorrect={correct}
 					onReset={resetSession}
@@ -238,6 +240,7 @@ function TestConversation({
 	rerun,
 	busy,
 	ready,
+	hasTestVersion,
 	onTest,
 	onCorrect,
 	onReset,
@@ -252,6 +255,7 @@ function TestConversation({
 	rerun: Correction | null;
 	busy: boolean;
 	ready: boolean;
+	hasTestVersion: boolean;
 	onTest: () => Promise<void>;
 	onCorrect: (turn: TestTurn) => Promise<void>;
 	onReset: () => Promise<void>;
@@ -279,18 +283,30 @@ function TestConversation({
 				</div>
 			</CardHeader>
 			<CardContent className="gap-4 flex flex-col">
-				<Label>
-					下一轮问题
-					<Input
-						value={question}
-						onChange={(event) => setQuestion(event.target.value)}
-						disabled={busy || !ready}
-					/>
-				</Label>
-				<Button disabled={busy || !ready || !question.trim()} onClick={() => void onTest()}>
-					发送到 Test CA
-				</Button>
-				{!ready ? <p className="text-sm text-muted-foreground">正在恢复测试会话…</p> : null}
+				{!hasTestVersion ? (
+					<div className="gap-3 p-4 flex flex-col rounded-lg border border-dashed">
+						<p className="font-medium">还没有 Test CA</p>
+						<p className="text-sm text-muted-foreground">请先准备知识，再开始多轮测试与修正。</p>
+						<Button className="w-fit" asChild>
+							<Link href="/knowledge?stage=prepare">先去准备知识</Link>
+						</Button>
+					</div>
+				) : (
+					<>
+						<Label>
+							下一轮问题
+							<Input
+								value={question}
+								onChange={(event) => setQuestion(event.target.value)}
+								disabled={busy || !ready}
+							/>
+						</Label>
+						<Button disabled={busy || !ready || !question.trim()} onClick={() => void onTest()}>
+							发送到 Test CA
+						</Button>
+						{!ready ? <p className="text-sm text-muted-foreground">正在恢复测试会话…</p> : null}
+					</>
+				)}
 				{turns.map((turn, index) => (
 					<div
 						key={turn.turn.id}

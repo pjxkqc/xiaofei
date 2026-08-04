@@ -21,7 +21,7 @@ const TEST_SESSION_STORAGE_KEY = "xiaofei.test-session-id";
 type Entry = Awaited<ReturnType<typeof orpcClient.xiaofei.listKnowledgeEntries>>["items"][number];
 type Document = Awaited<ReturnType<typeof orpcClient.xiaofei.createKnowledgeDocument>>;
 
-export function QuickKnowledgePreparation() {
+export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => void }) {
 	const [document, setDocument] = useState<Document | null>(null);
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [busy, setBusy] = useState(false);
@@ -111,6 +111,7 @@ export function QuickKnowledgePreparation() {
 			const session = await orpcClient.xiaofei.resetTestSession();
 			sessionStorage.setItem(TEST_SESSION_STORAGE_KEY, session.testSessionId);
 			setPrepared(true);
+			onPrepared?.();
 			await refresh(document.id);
 			toastSuccess("Test CA 已准备", "资料、KU 和新测试会话已就绪；Active 没有改变。");
 		} catch (error) {

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { registerOrganizationAdmin } from "./xiaofei-test-utils";
 
@@ -7,6 +7,7 @@ test.describe("knowledge document management", () => {
 		await registerOrganizationAdmin(page, "knowledge");
 
 		await page.goto("/knowledge?stage=advanced");
+		await openDocumentGovernance(page);
 		await expect(page.getByLabel("Organization required")).toHaveCount(0);
 		await expect(page.getByRole("heading", { name: "知识文档" })).toBeVisible();
 		await expect(
@@ -37,6 +38,7 @@ test.describe("knowledge document management", () => {
 		await page.getByRole("button", { name: "保存" }).click();
 
 		await page.reload();
+		await openDocumentGovernance(page);
 		await page.getByRole("button", { name: /acceptance-renamed\.md/u }).click();
 		await expect(page.locator("#document-category")).toHaveValue("POSTSALES");
 		await expect(page.locator("#document-status")).toHaveValue("active");
@@ -49,3 +51,8 @@ test.describe("knowledge document management", () => {
 		await expect(page.getByText("还没有知识文档")).toBeVisible();
 	});
 });
+
+async function openDocumentGovernance(page: Page) {
+	await page.getByText("高级治理与诊断", { exact: true }).click();
+	await page.getByText("完整资料与条目", { exact: true }).click();
+}

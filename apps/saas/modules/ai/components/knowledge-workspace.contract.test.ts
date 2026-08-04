@@ -43,11 +43,15 @@ describe("knowledge workspace information architecture", () => {
 
 	it("keeps the two knowledge inputs visible and moves a prepared source to one test action", () => {
 		expect(workspace).toContain("lg:grid-cols-2");
-		expect(workspace).toContain('<KnowledgeVersioningPanel section="prepare" />');
+		expect(workspace).toContain(
+			'<KnowledgeVersioningPanel key={versioningKey} section="prepare" />',
+		);
 		expect(quickPreparation).toContain("这份资料没有可用于 Test CA 的当前条目");
 		expect(quickPreparation).toContain("这份资料没有已发布的可用 KU");
 		expect(quickPreparation).toContain("Test CA 已准备");
 		expect(quickPreparation).toContain('href="/knowledge?stage=test"');
 		expect(quickPreparation).toContain("resetTestSession");
+		expect(quickPreparation).toContain("onPrepared?.()");
+		expect(workspace).toContain("onPrepared={() => setVersioningKey");
 	});
 });
