@@ -60,6 +60,12 @@ logical KUs in a manifest, and foreign merchant revisions. The domain only admit
 corrections to an owning organization's merchant knowledge; platform and
 cross-organization targets are rejected before persistence.
 
+The three capability layers are origin-safe: platform-fallback manifests contain
+platform-origin KUs only, merchant-knowledge manifests contain merchant-origin
+KUs only, and xiaofei-hosting may combine both. Because it drives runtime
+evidence, the active version pointer must resolve to an active xiaofei-hosting
+manifest.
+
 Knowledge absence is fail-safe without being an automatic ownership transfer.
 The kernel may send only a configured, deterministic clarification reply while
 keeping AI ownership; it never asks a model to invent missing facts. Every miss

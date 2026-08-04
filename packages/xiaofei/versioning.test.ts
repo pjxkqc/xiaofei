@@ -37,6 +37,15 @@ function activeManifest(knowledgeUnitRevisionIds: string[]) {
 	});
 }
 
+function platformRevision() {
+	return revision({
+		id: "ku-revision-platform-1",
+		logicalKnowledgeUnitId: "logical-ku-platform-1",
+		organizationId: null,
+		origin: "platform",
+	});
+}
+
 describe("knowledge revision and capability version contracts", () => {
 	it("hashes immutable KU content, not revision identity, and changes with answer policy", () => {
 		const first = revision();
@@ -98,6 +107,76 @@ describe("knowledge revision and capability version contracts", () => {
 			capabilityKey: "xiaofei-hosting",
 			knowledgeUnitOrigin: "merchant",
 		});
+	});
+
+	it("enforces manifest capability/origin partitions and activates only hosting", () => {
+		const merchant = revision();
+		const platform = platformRevision();
+		const platformManifest = createCapabilityVersionManifest({
+			id: "ca-platform-1",
+			organizationId: "organization-a",
+			capabilityKey: "platform-fallback",
+			status: "active",
+			knowledgeUnitRevisionIds: [platform.id],
+			createdAt: CREATED_AT,
+		});
+		const merchantManifest = createCapabilityVersionManifest({
+			id: "ca-merchant-1",
+			organizationId: "organization-a",
+			capabilityKey: "merchant-knowledge",
+			status: "active",
+			knowledgeUnitRevisionIds: [merchant.id],
+			createdAt: CREATED_AT,
+		});
+		const hostingManifest = activeManifest([merchant.id, platform.id]);
+		const base = { knowledgeUnitRevisions: [merchant, platform] };
+
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [platformManifest],
+				activeCapabilityVersionId: null,
+			}).success,
+		).toBe(true);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [
+					{ ...platformManifest, knowledgeUnitRevisionIds: [merchant.id] },
+				],
+				activeCapabilityVersionId: null,
+			}).success,
+		).toBe(false);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [merchantManifest],
+				activeCapabilityVersionId: null,
+			}).success,
+		).toBe(true);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [
+					{ ...merchantManifest, knowledgeUnitRevisionIds: [platform.id] },
+				],
+				activeCapabilityVersionId: null,
+			}).success,
+		).toBe(false);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [hostingManifest],
+				activeCapabilityVersionId: hostingManifest.id,
+			}).success,
+		).toBe(true);
+		expect(
+			KnowledgeVersioningSnapshotSchema.safeParse({
+				...base,
+				capabilityVersionManifests: [merchantManifest],
+				activeCapabilityVersionId: merchantManifest.id,
+			}).success,
+		).toBe(false);
 	});
 
 	it("rejects invalid manifest references, logical duplicates, tenant mismatches, and ambiguous active manifests", () => {

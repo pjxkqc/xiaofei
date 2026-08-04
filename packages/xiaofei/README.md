@@ -77,6 +77,11 @@ allows only an owning organization to correct merchant-origin KUs; platform and
 cross-organization targets are rejected. Persistence and API layers must
 enforce this decision again.
 
+`platform-fallback` manifests contain only platform-origin revisions,
+`merchant-knowledge` manifests contain only merchant-origin revisions, and
+`xiaofei-hosting` may combine both. The runtime's active pointer must resolve to
+an active `xiaofei-hosting` manifest.
+
 ## Hard invariants
 
 1. Every owner transition increments `ownerEpoch`.

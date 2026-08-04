@@ -516,6 +516,21 @@ export const KnowledgeVersioningSnapshotSchema = z
 						message: "Merchant KU revisions must belong to the manifest organization.",
 					});
 				}
+				if (manifest.capabilityKey === "platform-fallback" && revision.origin !== "platform") {
+					context.addIssue({
+						code: "custom",
+						path: ["capabilityVersionManifests", manifestIndex, "knowledgeUnitRevisionIds"],
+						message: "Platform fallback manifests may reference only platform-origin KU revisions.",
+					});
+				}
+				if (manifest.capabilityKey === "merchant-knowledge" && revision.origin !== "merchant") {
+					context.addIssue({
+						code: "custom",
+						path: ["capabilityVersionManifests", manifestIndex, "knowledgeUnitRevisionIds"],
+						message:
+							"Merchant knowledge manifests may reference only merchant-origin KU revisions.",
+					});
+				}
 			}
 		}
 		if (snapshot.activeCapabilityVersionId) {
@@ -528,6 +543,13 @@ export const KnowledgeVersioningSnapshotSchema = z
 					code: "custom",
 					path: ["activeCapabilityVersionId"],
 					message: "The active capability version must resolve to exactly one active manifest.",
+				});
+			} else if (activeMatches[0]!.capabilityKey !== "xiaofei-hosting") {
+				context.addIssue({
+					code: "custom",
+					path: ["activeCapabilityVersionId"],
+					message:
+						"The active capability version must reference an active xiaofei-hosting manifest.",
 				});
 			}
 		}
