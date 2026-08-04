@@ -285,9 +285,10 @@ export interface CreateXiaofeiKnowledgeUnitRevisionInput {
 
 export interface CreateXiaofeiCapabilityVersionInput {
 	organizationId: string;
-	capabilityKey: string;
+	capabilityKey: "platform-fallback" | "merchant-knowledge" | "xiaofei-hosting";
 	knowledgeUnits: Array<{
-		knowledgeUnitRevisionId: string;
+		origin: "platform" | "merchant";
+		logicalKnowledgeUnitId: string;
 		role?: string;
 		priority?: number;
 	}>;
@@ -295,7 +296,7 @@ export interface CreateXiaofeiCapabilityVersionInput {
 
 export interface ApplyXiaofeiResponseInterventionInput {
 	organizationId: string;
-	capabilityKey: string;
+	capabilityKey: "platform-fallback" | "merchant-knowledge" | "xiaofei-hosting";
 	beforeCapabilityVersionId: string;
 	beforeKnowledgeRevisionId: string;
 	correction: string;
@@ -328,6 +329,20 @@ export class XiaofeiPlatformKnowledgeInterventionError extends Error {
 	constructor(readonly id: string) {
 		super("Platform baseline knowledge cannot be corrected by an Organization.");
 		this.name = "XiaofeiPlatformKnowledgeInterventionError";
+	}
+}
+
+export class XiaofeiCapabilityPartitionError extends Error {
+	constructor(readonly capabilityKey: string) {
+		super("The selected knowledge origins are not allowed for this capability.");
+		this.name = "XiaofeiCapabilityPartitionError";
+	}
+}
+
+export class XiaofeiDuplicateLogicalKnowledgeUnitError extends Error {
+	constructor(readonly logicalKnowledgeUnitId: string) {
+		super("A capability version may select only one revision for each logical knowledge unit.");
+		this.name = "XiaofeiDuplicateLogicalKnowledgeUnitError";
 	}
 }
 
@@ -2008,55 +2023,9 @@ export function listXiaofeiKnowledgeUnitRevisions(organizationId: string) {
 export function createXiaofeiCapabilityVersion(input: CreateXiaofeiCapabilityVersionInput) {
 	if (input.knowledgeUnits.length === 0)
 		throw new Error("A capability version requires knowledge.");
-	return db.$transaction(async (transaction) => {
-		const revisions = await transaction.xiaofeiKnowledgeUnitRevision.findMany({
-			where: {
-				id: { in: input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId) },
-				OR: [{ organizationId: input.organizationId }, { organizationId: null }],
-			},
-			select: { id: true, organizationId: true },
-		});
-		if (
-			revisions.length !==
-			new Set(input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId)).size
-		)
-			throw new XiaofeiVersioningCrossOrganizationError(
-				input.organizationId,
-				input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId).join(","),
-			);
-		const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]));
-		const knowledgeUnits = input.knowledgeUnits
-			.map((unit) => ({
-				knowledgeUnitRevisionId: unit.knowledgeUnitRevisionId,
-				revisionOrganizationId:
-					revisionsById.get(unit.knowledgeUnitRevisionId)?.organizationId ?? null,
-				role: unit.role ?? "primary",
-				priority: unit.priority ?? 0,
-			}))
-			.sort((left, right) =>
-				left.knowledgeUnitRevisionId.localeCompare(right.knowledgeUnitRevisionId),
-			);
-		const manifestHash = stableXiaofeiVersioningHash({
-			organizationId: input.organizationId,
-			capabilityKey: input.capabilityKey,
-			knowledgeUnits,
-		});
-		const version = await transaction.xiaofeiCapabilityVersion.create({
-			data: {
-				organizationId: input.organizationId,
-				capabilityKey: input.capabilityKey,
-				manifestHash,
-			},
-		});
-		await transaction.xiaofeiCapabilityVersionKnowledgeUnit.createMany({
-			data: knowledgeUnits.map((unit) => ({
-				organizationId: input.organizationId,
-				capabilityVersionId: version.id,
-				...unit,
-			})),
-		});
-		return version;
-	});
+	return db.$transaction(async (transaction) =>
+		createXiaofeiCapabilityVersionInTransaction(transaction, input),
+	);
 }
 
 export function getXiaofeiCapabilityVersion(organizationId: string, id: string) {
@@ -2080,15 +2049,18 @@ export function applyXiaofeiResponseIntervention(input: ApplyXiaofeiResponseInte
 	return db.$transaction(async (transaction) => {
 		const beforeRevision = await transaction.xiaofeiKnowledgeUnitRevision.findUnique({
 			where: {
-				organizationId_id: {
-					organizationId: input.organizationId,
+				scopeKey_id: {
+					scopeKey: xiaofeiKnowledgeRevisionScopeKey(input.organizationId),
 					id: input.beforeKnowledgeRevisionId,
 				},
 			},
 		});
 		if (!beforeRevision) {
 			const platformRevision = await transaction.xiaofeiKnowledgeUnitRevision.findFirst({
-				where: { organizationId: null, id: input.beforeKnowledgeRevisionId },
+				where: {
+					scopeKey: xiaofeiKnowledgeRevisionScopeKey(null),
+					id: input.beforeKnowledgeRevisionId,
+				},
 			});
 			if (platformRevision)
 				throw new XiaofeiPlatformKnowledgeInterventionError(platformRevision.id);
@@ -2106,7 +2078,7 @@ export function applyXiaofeiResponseIntervention(input: ApplyXiaofeiResponseInte
 					id: input.beforeCapabilityVersionId,
 				},
 			},
-			include: { knowledgeUnits: true },
+			include: { knowledgeUnits: { include: { knowledgeUnitRevision: true } } },
 		});
 		if (!beforeVersion)
 			throw new XiaofeiVersioningNotFoundError(
@@ -2139,10 +2111,16 @@ export function applyXiaofeiResponseIntervention(input: ApplyXiaofeiResponseInte
 			organizationId: input.organizationId,
 			capabilityKey: input.capabilityKey,
 			knowledgeUnits: beforeVersion.knowledgeUnits.map((unit) => ({
-				knowledgeUnitRevisionId:
+				origin:
 					unit.knowledgeUnitRevisionId === beforeRevision.id
-						? resultRevision.id
-						: unit.knowledgeUnitRevisionId,
+						? "merchant"
+						: unit.knowledgeUnitRevisionScopeKey === "platform"
+							? "platform"
+							: "merchant",
+				logicalKnowledgeUnitId:
+					unit.knowledgeUnitRevisionId === beforeRevision.id
+						? resultRevision.logicalKnowledgeUnitId
+						: unit.knowledgeUnitRevision.logicalKnowledgeUnitId,
 				role: unit.role,
 				priority: unit.priority,
 			})),
@@ -2155,7 +2133,9 @@ export function applyXiaofeiResponseIntervention(input: ApplyXiaofeiResponseInte
 				afterResponse: input.afterResponse,
 				beforeCapabilityVersionId: beforeVersion.id,
 				resultCapabilityVersionId: resultVersion.id,
+				beforeKnowledgeRevisionScopeKey: beforeRevision.scopeKey,
 				beforeKnowledgeRevisionId: beforeRevision.id,
+				resultKnowledgeRevisionScopeKey: resultRevision.scopeKey,
 				resultKnowledgeRevisionId: resultRevision.id,
 			},
 		});
@@ -2188,7 +2168,7 @@ export function activateXiaofeiCapabilityVersion(
 			where: { organizationId_id: { organizationId, id: capabilityVersionId } },
 			select: { id: true, capabilityKey: true },
 		});
-		if (!version || version.capabilityKey !== capabilityKey)
+		if (!version || version.capabilityKey !== capabilityKey || capabilityKey !== "xiaofei-hosting")
 			throw new XiaofeiVersioningNotFoundError(organizationId, capabilityVersionId);
 		return transaction.xiaofeiCapabilityBinding.upsert({
 			where: { organizationId_capabilityKey: { organizationId, capabilityKey } },
@@ -2202,10 +2182,12 @@ async function createXiaofeiKnowledgeUnitRevisionInTransaction(
 	transaction: Prisma.TransactionClient,
 	input: CreateXiaofeiKnowledgeUnitRevisionInput,
 ) {
+	const scopeKey = xiaofeiKnowledgeRevisionScopeKey(input.organizationId);
+	await lockXiaofeiVersioningScope(transaction, `${scopeKey}:${input.logicalKnowledgeUnitId}`);
 	const contentHash = stableXiaofeiVersioningHash(input.content);
 	const existing = await transaction.xiaofeiKnowledgeUnitRevision.findFirst({
 		where: {
-			organizationId: input.organizationId,
+			scopeKey,
 			logicalKnowledgeUnitId: input.logicalKnowledgeUnitId,
 			contentHash,
 		},
@@ -2213,7 +2195,7 @@ async function createXiaofeiKnowledgeUnitRevisionInTransaction(
 	if (existing) return existing;
 	const latest = await transaction.xiaofeiKnowledgeUnitRevision.findFirst({
 		where: {
-			organizationId: input.organizationId,
+			scopeKey,
 			logicalKnowledgeUnitId: input.logicalKnowledgeUnitId,
 		},
 		orderBy: { revision: "desc" },
@@ -2222,6 +2204,7 @@ async function createXiaofeiKnowledgeUnitRevisionInTransaction(
 	return transaction.xiaofeiKnowledgeUnitRevision.create({
 		data: {
 			organizationId: input.organizationId,
+			scopeKey,
 			logicalKnowledgeUnitId: input.logicalKnowledgeUnitId,
 			knowledgeUnitId: input.knowledgeUnitId ?? null,
 			origin: input.origin,
@@ -2236,27 +2219,52 @@ async function createXiaofeiCapabilityVersionInTransaction(
 	transaction: Prisma.TransactionClient,
 	input: CreateXiaofeiCapabilityVersionInput,
 ) {
+	const duplicate = firstDuplicateLogicalKnowledgeUnit(input.knowledgeUnits);
+	if (duplicate) throw new XiaofeiDuplicateLogicalKnowledgeUnitError(duplicate);
+	if (
+		(input.capabilityKey === "platform-fallback" &&
+			input.knowledgeUnits.some((unit) => unit.origin !== "platform")) ||
+		(input.capabilityKey === "merchant-knowledge" &&
+			input.knowledgeUnits.some((unit) => unit.origin !== "merchant"))
+	)
+		throw new XiaofeiCapabilityPartitionError(input.capabilityKey);
+	await lockXiaofeiVersioningScope(
+		transaction,
+		`capability:${input.organizationId}:${input.capabilityKey}`,
+	);
+	const selectors = input.knowledgeUnits.map((unit) => ({
+		origin: unit.origin,
+		logicalKnowledgeUnitId: unit.logicalKnowledgeUnitId,
+		scopeKey:
+			unit.origin === "platform"
+				? xiaofeiKnowledgeRevisionScopeKey(null)
+				: xiaofeiKnowledgeRevisionScopeKey(input.organizationId),
+	}));
 	const revisions = await transaction.xiaofeiKnowledgeUnitRevision.findMany({
 		where: {
-			id: { in: input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId) },
-			OR: [{ organizationId: input.organizationId }, { organizationId: null }],
+			OR: selectors,
 		},
-		select: { id: true, organizationId: true },
+		orderBy: { revision: "desc" },
+		select: { id: true, scopeKey: true, origin: true, logicalKnowledgeUnitId: true },
 	});
-	if (
-		revisions.length !==
-		new Set(input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId)).size
-	)
+	const revisionsBySelector = new Map<string, (typeof revisions)[number]>();
+	for (const revision of revisions) {
+		const selector = `${revision.origin}:${revision.logicalKnowledgeUnitId}`;
+		if (!revisionsBySelector.has(selector)) revisionsBySelector.set(selector, revision);
+	}
+	if (revisionsBySelector.size !== selectors.length)
 		throw new XiaofeiVersioningCrossOrganizationError(
 			input.organizationId,
-			input.knowledgeUnits.map((unit) => unit.knowledgeUnitRevisionId).join(","),
+			input.knowledgeUnits.map((unit) => unit.logicalKnowledgeUnitId).join(","),
 		);
-	const revisionsById = new Map(revisions.map((revision) => [revision.id, revision]));
 	const knowledgeUnits = input.knowledgeUnits
 		.map((unit) => ({
-			knowledgeUnitRevisionId: unit.knowledgeUnitRevisionId,
-			revisionOrganizationId:
-				revisionsById.get(unit.knowledgeUnitRevisionId)?.organizationId ?? null,
+			knowledgeUnitRevisionId: revisionsBySelector.get(
+				`${unit.origin}:${unit.logicalKnowledgeUnitId}`,
+			)!.id,
+			knowledgeUnitRevisionScopeKey: revisionsBySelector.get(
+				`${unit.origin}:${unit.logicalKnowledgeUnitId}`,
+			)!.scopeKey,
 			role: unit.role ?? "primary",
 			priority: unit.priority ?? 0,
 		}))
@@ -2268,6 +2276,16 @@ async function createXiaofeiCapabilityVersionInTransaction(
 		capabilityKey: input.capabilityKey,
 		knowledgeUnits,
 	});
+	const existing = await transaction.xiaofeiCapabilityVersion.findUnique({
+		where: {
+			organizationId_capabilityKey_manifestHash: {
+				organizationId: input.organizationId,
+				capabilityKey: input.capabilityKey,
+				manifestHash,
+			},
+		},
+	});
+	if (existing) return existing;
 	const version = await transaction.xiaofeiCapabilityVersion.create({
 		data: {
 			organizationId: input.organizationId,
@@ -2283,6 +2301,26 @@ async function createXiaofeiCapabilityVersionInTransaction(
 		})),
 	});
 	return version;
+}
+
+function xiaofeiKnowledgeRevisionScopeKey(organizationId: string | null): string {
+	return organizationId === null ? "platform" : `organization:${organizationId}`;
+}
+
+function firstDuplicateLogicalKnowledgeUnit(
+	knowledgeUnits: CreateXiaofeiCapabilityVersionInput["knowledgeUnits"],
+): string | null {
+	const logicalKnowledgeUnitIds = new Set<string>();
+	for (const unit of knowledgeUnits) {
+		if (logicalKnowledgeUnitIds.has(unit.logicalKnowledgeUnitId))
+			return unit.logicalKnowledgeUnitId;
+		logicalKnowledgeUnitIds.add(unit.logicalKnowledgeUnitId);
+	}
+	return null;
+}
+
+async function lockXiaofeiVersioningScope(transaction: Prisma.TransactionClient, scope: string) {
+	await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${scope}, 0))`;
 }
 
 function stableXiaofeiVersioningHash(value: unknown): string {
