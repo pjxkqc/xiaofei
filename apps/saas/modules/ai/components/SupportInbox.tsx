@@ -44,7 +44,7 @@ import {
 } from "../lib/support-inbox-state";
 
 export function SupportInbox() {
-	const { activeOrganization } = useActiveOrganization();
+	const { activeOrganization, loaded: activeOrganizationLoaded } = useActiveOrganization();
 	const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [conversation, setConversation] = useState<SupportConversation | null>(null);
@@ -79,18 +79,26 @@ export function SupportInbox() {
 	}, []);
 
 	useEffect(() => {
+		const requestedOrganizationId = activeOrganization?.id;
 		setSelectedId(null);
 		setConversation(null);
 		setConversationOrganizationId(undefined);
 		setConversations([]);
+		setLoading(true);
+		if (!activeOrganizationLoaded) return;
 		void refreshList()
-			.catch(() => toastError("无法读取客户会话"))
-			.finally(() => setLoading(false));
+			.catch(() => {
+				if (activeOrganizationIdRef.current === requestedOrganizationId)
+					toastError("无法读取客户会话");
+			})
+			.finally(() => {
+				if (activeOrganizationIdRef.current === requestedOrganizationId) setLoading(false);
+			});
 		const interval = globalThis.setInterval(() => {
 			void refreshList().catch(() => undefined);
 		}, 3_000);
 		return () => globalThis.clearInterval(interval);
-	}, [activeOrganization?.id, refreshList]);
+	}, [activeOrganization?.id, activeOrganizationLoaded, refreshList]);
 
 	useEffect(() => {
 		if (!selectedId) {

@@ -44,6 +44,8 @@ describe("Email integration UI contract", () => {
 	it("shows the Email processing action in Inbox and guards every setup page by Organization", () => {
 		expect(inbox).toContain("让小飞处理并回递");
 		expect(inbox).toContain("已接收，待小飞处理");
+		expect(inbox).toContain("loaded: activeOrganizationLoaded");
+		expect(inbox).toContain("if (!activeOrganizationLoaded) return");
 		for (const page of [guidePage, inboundPage, deliveryPage])
 			expect(page).toContain("OrganizationRequired");
 	});
