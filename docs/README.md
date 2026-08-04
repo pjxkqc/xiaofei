@@ -15,8 +15,10 @@ rules remain visible where changes are made.
 | [`xiaofei-loopdesk-integration-plan.md`](./xiaofei-loopdesk-integration-plan.md)       | Planning the proposed Flyranking / LoopDesk integration            |
 | [`pr-preview-setup.md`](./pr-preview-setup.md)                                         | Operating GitHub, Vercel, Neon, Preview databases, or CI/CD        |
 | [`releases/README.md`](./releases/README.md)                                           | Finding the current version, environments, URLs, and test access   |
+| [`acceptance/UAT-2026-08-03.md`](./acceptance/UAT-2026-08-03.md)                       | Reviewing the latest exact-head UAT acceptance evidence            |
 | [`repository-structure.md`](./repository-structure.md)                                 | Finding code ownership, allowed dependencies, and validation scope |
 | [`multica/README.md`](./multica/README.md)                                             | Importing this repository into a Multica project and Agent squad   |
+| [`multica/codex-parallel-handoff.md`](./multica/codex-parallel-handoff.md)             | Starting a parallel Codex Feature stream safely through Multica    |
 | [`acceptance/FLY-99.md`](./acceptance/FLY-99.md)                                       | Reviewing the durable FLY-99 Preview acceptance evidence           |
 
 ## Boundary documentation

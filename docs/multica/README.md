@@ -3,6 +3,12 @@
 This directory is the repository-owned input for creating the Xiaofei project,
 Agents, and squad in Multica.
 
+For a second Codex conversation that will coordinate an independent Feature,
+start with [`codex-parallel-handoff.md`](./codex-parallel-handoff.md). It records
+the handoff snapshot, session-isolation rules, Issue-to-UAT flow, and a
+ready-to-paste starter prompt. Reuse the existing `xiaofei-pr-delivery` Skill;
+do not create a duplicate delivery Skill for each conversation.
+
 It is intentionally **not** stored under `.multica/`. Multica does not document
 a repository-native Agent manifest that it automatically applies. The
 [`bootstrap.yaml`](./bootstrap.yaml) file is a Xiaofei import blueprint for a
@@ -122,6 +128,9 @@ the owning Agent.
 - Every Agent instruction tells it to read root `AGENTS.md`.
 - Every Agent has `xiaofei-pr-delivery`; ordinary repository checkout uses
   `--ref uat` and an ordinary Draft PR targets `uat`.
+- Every active parent Feature Issue and its PR identify the immutable Origin
+  Codex session and current Managing Codex session; child Issues inherit the
+  controller identity from the parent.
 - No secret was copied from the repository, browser, shell, or deployment
   provider into Multica.
 - A dry-run issue can be routed without allowing two Agents to edit the same

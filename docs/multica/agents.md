@@ -37,6 +37,9 @@ Read `AGENTS.md`, `docs/repository-structure.md`, and
   architecture docs with the implementation owner.
 - Give one implementation boundary to one Agent. For a cross-boundary feature,
   create or request child issues and define the contract between them.
+- Before routing implementation, require the parent Issue's immutable Origin
+  Codex session and current Managing Codex session metadata. Keep those values
+  aligned with the PR ownership block; a transfer changes only the manager.
 - Prefer the smallest coherent increment that closes the issue acceptance
   criteria. Keep deferred work explicit.
 - Do not have multiple Agents implement competing versions of the same change.
@@ -160,6 +163,8 @@ linked architecture document before reviewing.
   isolation, and cleanup targeting.
 - Verify acceptance criteria against code and executable evidence. Do not treat
   a green build as proof of product behavior.
+- Verify that the parent Issue metadata and PR body identify the same immutable
+  Origin Codex session and current Managing Codex session.
 - Verify the exact current PR head with `pnpm delivery:head`; reject cached
   evidence from an older SHA. Confirm the current GitHub and Vercel checks
   belong to that same head before returning a pass verdict.
