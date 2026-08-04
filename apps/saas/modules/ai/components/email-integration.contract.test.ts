@@ -46,6 +46,8 @@ describe("Email integration UI contract", () => {
 		expect(inbox).toContain("已接收，待小飞处理");
 		expect(inbox).toContain("loaded: activeOrganizationLoaded");
 		expect(inbox).toContain("if (!activeOrganizationLoaded) return");
+		expect(inbox).toContain("conversationListOrganizationId !== activeOrganization?.id");
+		expect(inbox).toContain("正在加载会话…");
 		for (const page of [guidePage, inboundPage, deliveryPage])
 			expect(page).toContain("OrganizationRequired");
 	});

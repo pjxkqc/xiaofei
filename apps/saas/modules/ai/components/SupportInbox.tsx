@@ -51,6 +51,9 @@ export function SupportInbox() {
 	const [conversationOrganizationId, setConversationOrganizationId] = useState<
 		string | undefined
 	>();
+	const [conversationListOrganizationId, setConversationListOrganizationId] = useState<
+		string | null | undefined
+	>(null);
 	const [input, setInput] = useState("");
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
@@ -83,6 +86,7 @@ export function SupportInbox() {
 		setSelectedId(null);
 		setConversation(null);
 		setConversationOrganizationId(undefined);
+		setConversationListOrganizationId(null);
 		setConversations([]);
 		setLoading(true);
 		if (!activeOrganizationLoaded) return;
@@ -92,7 +96,10 @@ export function SupportInbox() {
 					toastError("无法读取客户会话");
 			})
 			.finally(() => {
-				if (activeOrganizationIdRef.current === requestedOrganizationId) setLoading(false);
+				if (activeOrganizationIdRef.current === requestedOrganizationId) {
+					setConversationListOrganizationId(requestedOrganizationId);
+					setLoading(false);
+				}
 			});
 		const interval = globalThis.setInterval(() => {
 			void refreshList().catch(() => undefined);
@@ -189,6 +196,8 @@ export function SupportInbox() {
 			}),
 		[conversations, customerFilter, channelFilter, ownerFilter, statusFilter],
 	);
+	const conversationListLoading =
+		loading || conversationListOrganizationId !== activeOrganization?.id;
 	const visibleConversation =
 		conversation &&
 		conversationOrganizationId === activeOrganization?.id &&
@@ -238,7 +247,11 @@ export function SupportInbox() {
 						<div className="gap-2 flex items-center justify-between">
 							<div>
 								<CardTitle>客户会话</CardTitle>
-								<CardDescription>{filteredConversations.length} 个会话</CardDescription>
+								<CardDescription>
+									{conversationListLoading
+										? "正在加载会话…"
+										: `${filteredConversations.length} 个会话`}
+								</CardDescription>
 							</div>
 							<Badge status="info">{conversations.filter((item) => item.online).length} 在线</Badge>
 						</div>
@@ -285,7 +298,7 @@ export function SupportInbox() {
 						</select>
 					</div>
 					<CardContent className="p-2 gap-1 flex max-h-[680px] flex-col overflow-y-auto">
-						{loading ? (
+						{conversationListLoading ? (
 							<div className="py-20 flex justify-center">
 								<LoaderCircleIcon className="size-5 animate-spin text-primary" />
 							</div>
