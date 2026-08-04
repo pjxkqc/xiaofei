@@ -35,6 +35,8 @@ describe("Xiaofei versioned test-turn API contract", () => {
 		expect(source).toContain("conversationState: result.state");
 		expect(source).toContain("The Test version changed; start a new test session.");
 		expect(source).toContain("export const resetXiaofeiTestSession");
+		expect(source).toContain("expectedPreviousTestTurnId: savedSession?.id ?? null");
+		expect(source).toContain("This test session changed; reload and try again.");
 	});
 
 	it("maps no-hit, platform, foreign, and conflicting feedback to fail-closed errors", () => {

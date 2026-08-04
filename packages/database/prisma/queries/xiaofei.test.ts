@@ -508,6 +508,7 @@ import {
 	XiaofeiPlatformKnowledgeInterventionError,
 	XiaofeiTestTurnFeedbackConflictError,
 	XiaofeiTestSessionCapabilityConflictError,
+	XiaofeiTestSessionConflictError,
 } from "./xiaofei";
 
 const conversationState = createConversationState({
@@ -574,6 +575,7 @@ describe("Xiaofei Organization queries", () => {
 
 		await createXiaofeiTestTurn("organization-a", {
 			testSessionId: "session-a",
+			expectedPreviousTestTurnId: null,
 			question: "What is the policy?",
 			answer: "The actual answer.",
 			capabilityVersionId: "active-version",
@@ -603,21 +605,38 @@ describe("Xiaofei Organization queries", () => {
 		);
 	});
 
-	it("loads only the newest Organization-scoped session snapshot", async () => {
+	it("loads only the newest Organization-scoped non-legacy session snapshot", async () => {
 		queryMocks.findLatestTestTurn.mockResolvedValueOnce({
+			id: "turn-a",
 			capabilityVersionId: "version-a",
 			conversationState,
 		});
 
 		await expect(getXiaofeiTestSession("organization-a", "session-a")).resolves.toEqual({
+			id: "turn-a",
 			capabilityVersionId: "version-a",
 			conversationState,
 		});
 		expect(queryMocks.findLatestTestTurn).toHaveBeenCalledWith({
-			where: { organizationId: "organization-a", testSessionId: "session-a" },
+			where: {
+				organizationId: "organization-a",
+				testSessionId: "session-a",
+				conversationState: { not: expect.anything() },
+			},
 			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-			select: { capabilityVersionId: true, conversationState: true },
+			select: { id: true, capabilityVersionId: true, conversationState: true },
 		});
+	});
+
+	it("leaves a legacy null snapshot as audit history instead of resuming it", async () => {
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce(null);
+
+		await expect(getXiaofeiTestSession("organization-a", "legacy-session")).resolves.toBeNull();
+		expect(queryMocks.findLatestTestTurn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ conversationState: { not: expect.anything() } }),
+			}),
+		);
 	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {
@@ -739,11 +758,15 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 	};
 
 	it("fails closed when an existing session is submitted against another Test CA", async () => {
-		queryMocks.findLatestTestTurn.mockResolvedValueOnce({ capabilityVersionId: "version-a" });
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce({
+			id: "turn-a",
+			capabilityVersionId: "version-a",
+		});
 
 		await expect(
 			createXiaofeiTestTurn("organization-a", {
 				testSessionId: "session-a",
+				expectedPreviousTestTurnId: "turn-a",
 				question: "What is the policy?",
 				answer: "Actual answer.",
 				capabilityVersionId: "version-b",
@@ -753,6 +776,28 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 				completedAt: new Date("2026-08-04T00:00:01.000Z"),
 			}),
 		).rejects.toBeInstanceOf(XiaofeiTestSessionCapabilityConflictError);
+		expect(queryMocks.createTestTurn).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when a concurrent turn replaced the loaded session snapshot", async () => {
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce({
+			id: "newer-turn",
+			capabilityVersionId: "version-a",
+		});
+
+		await expect(
+			createXiaofeiTestTurn("organization-a", {
+				testSessionId: "session-a",
+				expectedPreviousTestTurnId: "loaded-turn",
+				question: "What is the policy?",
+				answer: "Actual answer.",
+				capabilityVersionId: "version-a",
+				conversationState,
+				runtimeMetadata,
+				requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			}),
+		).rejects.toBeInstanceOf(XiaofeiTestSessionConflictError);
 		expect(queryMocks.createTestTurn).not.toHaveBeenCalled();
 	});
 
@@ -778,6 +823,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		await expect(
 			createXiaofeiTestTurn("organization-a", {
 				testSessionId: "session-a",
+				expectedPreviousTestTurnId: null,
 				question: "What is the policy?",
 				answer: "Actual answer.",
 				capabilityVersionId: "active-version",
@@ -829,6 +875,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		await createXiaofeiTestTurnRerun("organization-a", {
 			interventionId: "intervention-a",
 			testSessionId: "rerun-session",
+			expectedPreviousTestTurnId: null,
 			answer: "Actual rerun answer.",
 			capabilityVersionId: "result-version",
 			conversationState,
@@ -936,6 +983,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 			createXiaofeiTestTurnRerun("organization-a", {
 				interventionId: "intervention-a",
 				testSessionId: "rerun-session",
+				expectedPreviousTestTurnId: null,
 				answer: "Actual rerun answer.",
 				capabilityVersionId: "wrong-version",
 				conversationState,

@@ -69,11 +69,15 @@ the persistence `contentHash` and `manifestHash` are never passed through as
 domain hashes. Active and Test are selected only from their respective
 Organization-local hosting pointers.
 
-`XiaofeiTestTurn` retains one actual test answer, immutable `ConversationState`
-snapshot, runtime metadata, and optional normalized evidence revision. A session
-loads its newest snapshot only through the compound Organization + session query
-and is pinned to its initial Test CA; a CA switch requires a new session rather
-than mixing evidence. Writes prove the referenced CA is that
+`XiaofeiTestTurn` retains one actual test answer, optional immutable `ConversationState`
+snapshot, runtime metadata, and optional normalized evidence revision. The optional
+column preserves pre-session records during lossless Preview schema pushes; only a
+non-null, schema-valid snapshot can resume a session. A session loads its newest
+snapshot only through the compound Organization + session query and is pinned to
+its initial Test CA; a CA switch requires a new session rather than mixing evidence.
+Each new turn uses a session advisory lock and compares the previously loaded turn
+ID before writing, so concurrent stale turns fail closed instead of overwriting the
+latest state. Writes prove the referenced CA is that
 Organization's current Active/Test hosting pointer and that evidence is an
 exact member; no-hit evidence remains null. Feedback derives all before facts
 from the saved source turn, writes only the Test pointer, and a real rerun may

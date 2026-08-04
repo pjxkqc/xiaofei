@@ -314,6 +314,7 @@ export interface ApplyXiaofeiResponseInterventionInput {
 
 export interface CreateXiaofeiTestTurnInput {
 	testSessionId: string;
+	expectedPreviousTestTurnId: string | null;
 	question: string;
 	answer: string;
 	capabilityVersionId: string;
@@ -332,6 +333,7 @@ export interface ApplyXiaofeiTestTurnFeedbackInput {
 export interface CreateXiaofeiTestTurnRerunInput {
 	interventionId: string;
 	testSessionId: string;
+	expectedPreviousTestTurnId: string | null;
 	answer: string;
 	capabilityVersionId: string;
 	conversationState: ConversationState;
@@ -370,6 +372,17 @@ export class XiaofeiTestSessionCapabilityConflictError extends Error {
 	) {
 		super("This test session belongs to a different Test capability version.");
 		this.name = "XiaofeiTestSessionCapabilityConflictError";
+	}
+}
+
+/** A concurrent turn changed the session after the caller loaded its snapshot. */
+export class XiaofeiTestSessionConflictError extends Error {
+	constructor(
+		readonly organizationId: string,
+		readonly testSessionId: string,
+	) {
+		super("This test session changed; reload its latest state before trying again.");
+		this.name = "XiaofeiTestSessionConflictError";
 	}
 }
 
@@ -2332,11 +2345,17 @@ async function createXiaofeiTestTurnInTransaction(
 ) {
 	const metadata = RuntimeMetadataSchema.parse(input.runtimeMetadata);
 	const conversationState = ConversationStateSchema.parse(input.conversationState);
+	await lockXiaofeiVersioningScope(
+		transaction,
+		`test-session:${organizationId}:${input.testSessionId}`,
+	);
 	const previousTurn = await transaction.xiaofeiTestTurn.findFirst({
 		where: { organizationId, testSessionId: input.testSessionId },
 		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-		select: { capabilityVersionId: true },
+		select: { id: true, capabilityVersionId: true },
 	});
+	if ((previousTurn?.id ?? null) !== input.expectedPreviousTestTurnId)
+		throw new XiaofeiTestSessionConflictError(organizationId, input.testSessionId);
 	if (previousTurn && previousTurn.capabilityVersionId !== input.capabilityVersionId)
 		throw new XiaofeiTestSessionCapabilityConflictError(organizationId, input.testSessionId);
 	const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
@@ -2392,12 +2411,17 @@ async function createXiaofeiTestTurnInTransaction(
 /** Returns only the newest immutable state snapshot within one Organization. */
 export async function getXiaofeiTestSession(organizationId: string, testSessionId: string) {
 	const turn = await db.xiaofeiTestTurn.findFirst({
-		where: { organizationId, testSessionId },
+		where: {
+			organizationId,
+			testSessionId,
+			conversationState: { not: Prisma.DbNull },
+		},
 		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-		select: { capabilityVersionId: true, conversationState: true },
+		select: { id: true, capabilityVersionId: true, conversationState: true },
 	});
 	if (!turn) return null;
 	return {
+		id: turn.id,
 		capabilityVersionId: turn.capabilityVersionId,
 		conversationState: ConversationStateSchema.parse(turn.conversationState),
 	};

@@ -715,7 +715,7 @@ model XiaofeiTestTurn {
   answer                   String                       @db.Text
   capabilityVersionId      String
   capabilityVersion        XiaofeiCapabilityVersion     @relation(fields: [organizationId, capabilityVersionId], references: [organizationId, id], onDelete: Restrict)
-  conversationState        Json
+  conversationState        Json?
   runtimeMetadata          Json
   evidenceRevisionScopeKey String?
   evidenceRevisionId       String?

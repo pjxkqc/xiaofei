@@ -17,6 +17,7 @@ import {
 	upsertXiaofeiOrganizationConfig,
 	XiaofeiTestTurnFeedbackConflictError,
 	XiaofeiTestSessionCapabilityConflictError,
+	XiaofeiTestSessionConflictError,
 	XiaofeiVersioningNotFoundError,
 } from "@repo/database";
 import { createConversationState, RuntimeMetadataSchema } from "@repo/xiaofei";
@@ -163,6 +164,7 @@ export const runXiaofeiVersionedTest = supportProcedure
 		try {
 			turn = await createXiaofeiTestTurn(organizationId, {
 				testSessionId,
+				expectedPreviousTestTurnId: savedSession?.id ?? null,
 				question: input.question,
 				answer: result.reply,
 				capabilityVersionId: capability.manifest.id,
@@ -172,9 +174,15 @@ export const runXiaofeiVersionedTest = supportProcedure
 				completedAt: new Date(),
 			});
 		} catch (error) {
-			if (error instanceof XiaofeiTestSessionCapabilityConflictError)
+			if (
+				error instanceof XiaofeiTestSessionCapabilityConflictError ||
+				error instanceof XiaofeiTestSessionConflictError
+			)
 				throw new ORPCError("CONFLICT", {
-					message: "The Test version changed; start a new test session.",
+					message:
+						error instanceof XiaofeiTestSessionCapabilityConflictError
+							? "The Test version changed; start a new test session."
+							: "This test session changed; reload and try again.",
 				});
 			throw error;
 		}
@@ -235,6 +243,7 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 			const rerun = await createXiaofeiTestTurnRerun(organizationId, {
 				interventionId: feedback.intervention.id,
 				testSessionId: globalThis.crypto.randomUUID(),
+				expectedPreviousTestTurnId: null,
 				answer: result.reply,
 				capabilityVersionId: capability.manifest.id,
 				conversationState: result.state,
