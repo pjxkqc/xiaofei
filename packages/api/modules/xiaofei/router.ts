@@ -66,9 +66,10 @@ import {
 } from "./procedures/support-conversations";
 import {
 	activateXiaofeiHostingVersion,
-	applyXiaofeiCorrection,
+	applyXiaofeiTestTurnCorrection,
 	getXiaofeiVersioningOverview,
 	initializeXiaofeiVersioning,
+	runXiaofeiVersionedTest,
 	setXiaofeiHostingEnabled,
 } from "./procedures/versioning";
 
@@ -105,7 +106,8 @@ export const xiaofeiRouter = {
 	resetConversation: resetXiaofeiConversation,
 	getVersioningOverview: getXiaofeiVersioningOverview,
 	initializeVersioning: initializeXiaofeiVersioning,
-	applyCorrection: applyXiaofeiCorrection,
+	runVersionedTest: runXiaofeiVersionedTest,
+	applyTestTurnCorrection: applyXiaofeiTestTurnCorrection,
 	activateHostingVersion: activateXiaofeiHostingVersion,
 	setHostingEnabled: setXiaofeiHostingEnabled,
 	runEval: runXiaofeiEval,
