@@ -105,7 +105,7 @@ function materializeExactCapabilitySnapshot(
 	if (
 		input.manifest.status !== expectedStatus ||
 		input.manifest.capabilityKey !== "xiaofei-hosting" ||
-		input.manifest.organizationId !== input.base.agent.tenantId
+		input.base.agent.tenantId !== `organization:${input.manifest.organizationId}`
 	)
 		throw new Error("Capability manifest is not the requested organization hosting version.");
 	const ids = input.manifest.knowledgeUnitRevisionIds;

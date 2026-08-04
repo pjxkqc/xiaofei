@@ -13,14 +13,16 @@ import {
 } from "./index";
 
 const CREATED_AT = "2026-08-05T00:00:00.000Z";
-const snapshot = createDefaultWorkspaceSnapshot("organization-a", () => CREATED_AT);
+const ORGANIZATION_ID = "organization-a";
+const TENANT_ID = `organization:${ORGANIZATION_ID}`;
+const snapshot = createDefaultWorkspaceSnapshot(TENANT_ID, () => CREATED_AT);
 const unit = snapshot.knowledgeUnits[0]!;
 
 function revision(input: Partial<Parameters<typeof createKnowledgeUnitRevision>[0]> = {}) {
 	return createKnowledgeUnitRevision({
 		id: "ku-revision-1",
 		logicalKnowledgeUnitId: "logical-ku-1",
-		organizationId: "organization-a",
+		organizationId: ORGANIZATION_ID,
 		revision: 1,
 		origin: "merchant",
 		knowledgeUnit: unit,
@@ -32,7 +34,7 @@ function revision(input: Partial<Parameters<typeof createKnowledgeUnitRevision>[
 function activeManifest(knowledgeUnitRevisionIds: string[]) {
 	return createCapabilityVersionManifest({
 		id: "ca-active-1",
-		organizationId: "organization-a",
+		organizationId: ORGANIZATION_ID,
 		capabilityKey: "xiaofei-hosting",
 		status: "active",
 		knowledgeUnitRevisionIds,
@@ -60,13 +62,13 @@ describe("knowledge revision and capability version contracts", () => {
 		const existingManifest = activeManifest([existing.id]);
 		const manifest = createCapabilityVersionManifest({
 			id: "ca-test-runtime",
-			organizationId: "organization-a",
+			organizationId: ORGANIZATION_ID,
 			capabilityKey: "xiaofei-hosting",
 			status: "test",
 			knowledgeUnitRevisionIds: [merchant.id, platform.id],
 			createdAt: CREATED_AT,
 		});
-		const base = createDefaultWorkspaceSnapshot("organization-a", () => CREATED_AT);
+		const base = createDefaultWorkspaceSnapshot(TENANT_ID, () => CREATED_AT);
 		base.knowledgeVersioning = {
 			knowledgeUnitRevisions: [existing],
 			capabilityVersionManifests: [existingManifest],
@@ -96,6 +98,13 @@ describe("knowledge revision and capability version contracts", () => {
 			materializeTestCapabilitySnapshot({
 				base,
 				manifest: { ...manifest, manifestHash: "wrong" },
+				revisions: [merchant, platform],
+			}),
+		).toThrow();
+		expect(() =>
+			materializeTestCapabilitySnapshot({
+				base: createDefaultWorkspaceSnapshot("organization:organization-b", () => CREATED_AT),
+				manifest,
 				revisions: [merchant, platform],
 			}),
 		).toThrow();

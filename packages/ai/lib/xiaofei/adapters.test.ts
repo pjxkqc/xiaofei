@@ -13,14 +13,16 @@ import { runLangGraphTurn } from "./langgraph";
 import { runXiaofeiTestTurn, runXiaofeiTurn } from "./runtime";
 
 const CREATED_AT = "2026-08-05T00:00:00.000Z";
+const ORGANIZATION_ID = "org-a";
+const TENANT_ID = `organization:${ORGANIZATION_ID}`;
 
 async function setup() {
-	const snapshot = createDefaultWorkspaceSnapshot("tenant-1");
+	const snapshot = createDefaultWorkspaceSnapshot(TENANT_ID);
 	snapshot.capabilityPlan.reviewed = true;
 	snapshot.evalSuite = await runP0EvalSuite(snapshot);
 	const state = createConversationState({
 		id: "conversation-unified",
-		tenantId: "tenant-1",
+		tenantId: TENANT_ID,
 		agentId: snapshot.agent.id,
 		maxFollowUps: snapshot.agent.maxFollowUps,
 	});
@@ -73,7 +75,7 @@ describe("Xiaofei runtime adapters", () => {
 		const revision = createKnowledgeUnitRevision({
 			id: "test-ku-price",
 			logicalKnowledgeUnitId: "logical-test-price",
-			organizationId: "tenant-1",
+			organizationId: ORGANIZATION_ID,
 			revision: 1,
 			origin: "merchant",
 			knowledgeUnit: knowledge,
@@ -81,7 +83,7 @@ describe("Xiaofei runtime adapters", () => {
 		});
 		const manifest = createCapabilityVersionManifest({
 			id: "test-hosting-ca",
-			organizationId: "tenant-1",
+			organizationId: ORGANIZATION_ID,
 			capabilityKey: "xiaofei-hosting",
 			status: "test",
 			knowledgeUnitRevisionIds: [revision.id],
@@ -114,7 +116,7 @@ describe("Xiaofei runtime adapters", () => {
 		const revision = createKnowledgeUnitRevision({
 			id: "test-ku-safety",
 			logicalKnowledgeUnitId: "logical-test-safety",
-			organizationId: "tenant-1",
+			organizationId: ORGANIZATION_ID,
 			revision: 1,
 			origin: "merchant",
 			knowledgeUnit: knowledge,
@@ -122,7 +124,7 @@ describe("Xiaofei runtime adapters", () => {
 		});
 		const manifest = createCapabilityVersionManifest({
 			id: "test-hosting-safety",
-			organizationId: "tenant-1",
+			organizationId: ORGANIZATION_ID,
 			capabilityKey: "xiaofei-hosting",
 			status: "test",
 			knowledgeUnitRevisionIds: [revision.id],
@@ -158,7 +160,7 @@ describe("Xiaofei runtime adapters", () => {
 		const revision = createKnowledgeUnitRevision({
 			id: "active-ku-price",
 			logicalKnowledgeUnitId: "logical-active-price",
-			organizationId: "tenant-1",
+			organizationId: ORGANIZATION_ID,
 			revision: 1,
 			origin: "merchant",
 			knowledgeUnit: knowledge,
@@ -166,7 +168,7 @@ describe("Xiaofei runtime adapters", () => {
 		});
 		const activeManifest = createCapabilityVersionManifest({
 			id: "active-hosting-ca",
-			organizationId: "tenant-1",
+			organizationId: ORGANIZATION_ID,
 			capabilityKey: "xiaofei-hosting",
 			status: "active",
 			knowledgeUnitRevisionIds: [revision.id],
