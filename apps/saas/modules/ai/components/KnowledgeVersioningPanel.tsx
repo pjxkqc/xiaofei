@@ -121,6 +121,7 @@ export function KnowledgeVersioningPanel({
 					active={active}
 					testVersion={testVersion}
 					busy={busy}
+					setBusy={setBusy}
 					refresh={refresh}
 					section={section}
 				/>
@@ -151,6 +152,7 @@ function VersionOverview({
 	active,
 	testVersion,
 	busy,
+	setBusy,
 	refresh,
 	section,
 }: {
@@ -158,17 +160,21 @@ function VersionOverview({
 	active: CapabilityVersion | null;
 	testVersion: CapabilityVersion | null;
 	busy: boolean;
+	setBusy: (busy: boolean) => void;
 	refresh: () => Promise<void>;
 	section: "prepare" | "hosting" | "all";
 }) {
 	const isPrepare = section === "prepare";
 	async function act(action: () => Promise<unknown>, success: string) {
+		setBusy(true);
 		try {
 			await action();
 			await refresh();
 			toastSuccess(success);
 		} catch (error) {
 			toastError("操作失败", message(error));
+		} finally {
+			setBusy(false);
 		}
 	}
 	return (
@@ -296,6 +302,7 @@ function TestConversation({
 						<Evidence
 							metadata={turn.metadata}
 							capabilityVersionId={turn.turn.capabilityVersionId}
+							testTurnId={turn.turn.id}
 						/>
 						{turn.feedbackAllowed ? (
 							<Button
@@ -335,12 +342,18 @@ function TestConversation({
 				)}
 				{rerun && (
 					<div className="gap-3 md:grid-cols-2 grid">
-						<AnswerEvidence label="Before" answer={rerun.source.answer} />
+						<AnswerEvidence
+							label="Before"
+							answer={rerun.source.answer}
+							testTurnId={rerun.source.id}
+							capabilityVersionId={rerun.source.capabilityVersionId}
+						/>
 						<AnswerEvidence
 							label="After"
 							answer={rerun.answer}
 							metadata={rerun.metadata}
 							capabilityVersionId={rerun.resultCapabilityVersionId}
+							testTurnId={rerun.rerun.id}
 						/>
 					</div>
 				)}
@@ -360,7 +373,10 @@ function MembershipSummary({
 	const testRows = testVersion?.knowledgeUnits ?? [];
 	const count = (rows: MembershipRow[], origin: "platform" | "merchant") =>
 		rows.filter((row) => row.knowledgeUnitRevision.origin === origin).length;
-	const changed = Math.abs(testRows.length - activeRows.length);
+	const changed = symmetricDifferenceSize(
+		new Set(activeRows.map((row) => row.knowledgeUnitRevisionId)),
+		new Set(testRows.map((row) => row.knowledgeUnitRevisionId)),
+	);
 	return (
 		<div className="gap-3 flex flex-col">
 			<p className="text-sm text-muted-foreground">
@@ -403,9 +419,11 @@ function MembershipCard({
 			<details className="mt-3 text-xs text-muted-foreground">
 				<summary className="cursor-pointer">查看成员与技术 ID</summary>
 				<p className="mt-2">多个 KU revision 共同组成一个 CA；同一 revision 可被多个版本复用。</p>
+				<p className="mt-2">CA 版本：{rows[0]?.capabilityVersionId ?? "暂无成员"}</p>
 				{rows.map((row) => (
 					<p key={row.id} className="mt-1">
-						{row.knowledgeUnitRevision.origin === "merchant" ? "商户资料" : "平台兜底"} · CA/KU：
+						{row.knowledgeUnitRevision.origin === "merchant" ? "商户资料" : "平台兜底"} · 逻辑 KU：
+						{row.knowledgeUnitRevision.logicalKnowledgeUnitId} · KU revision：
 						{row.knowledgeUnitRevisionId}
 					</p>
 				))}
@@ -418,18 +436,32 @@ function AnswerEvidence({
 	answer,
 	metadata,
 	capabilityVersionId,
+	testTurnId,
 }: {
 	label: string;
 	answer: string;
 	metadata?: TestTurn["metadata"];
 	capabilityVersionId?: string;
+	testTurnId?: string;
 }) {
 	return (
 		<div className="p-3 rounded-lg border">
 			<p className="font-medium">{label}</p>
 			<p className="mt-2">{answer}</p>
 			{metadata && capabilityVersionId ? (
-				<Evidence metadata={metadata} capabilityVersionId={capabilityVersionId} />
+				<Evidence
+					metadata={metadata}
+					capabilityVersionId={capabilityVersionId}
+					testTurnId={testTurnId}
+				/>
+			) : null}
+			{!metadata && capabilityVersionId ? (
+				<details className="text-xs text-muted-foreground">
+					<summary className="cursor-pointer">来源证据</summary>
+					<p className="mt-1">
+						TestTurn：{testTurnId ?? "当前轮"} · CA：{capabilityVersionId}
+					</p>
+				</details>
 			) : null}
 		</div>
 	);
@@ -437,9 +469,11 @@ function AnswerEvidence({
 function Evidence({
 	metadata,
 	capabilityVersionId,
+	testTurnId,
 }: {
 	metadata: TestTurn["metadata"];
 	capabilityVersionId: string;
+	testTurnId?: string;
 }) {
 	const evidence = metadata.knowledgeEvidence;
 	const origin =
@@ -452,10 +486,15 @@ function Evidence({
 		<details className="text-xs text-muted-foreground">
 			<summary className="cursor-pointer">来源：{origin}</summary>
 			<p className="mt-1">
-				CA：{capabilityVersionId} · KU revision：{evidence?.knowledgeUnitRevisionId ?? "无"}
+				TestTurn：{testTurnId ?? "当前轮"} · CA：{capabilityVersionId} · KU revision：
+				{evidence?.knowledgeUnitRevisionId ?? "无"}
 			</p>
 		</details>
 	);
+}
+
+export function symmetricDifferenceSize(left: Set<string>, right: Set<string>) {
+	return new Set([...left, ...right]).size * 2 - left.size - right.size;
 }
 function message(error: unknown) {
 	return error instanceof Error ? error.message : "请稍后重试。";

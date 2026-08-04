@@ -82,7 +82,10 @@ export function KnowledgeWorkspace({ stage }: { stage: KnowledgeWorkspaceStage }
 function Preparation() {
 	return (
 		<div className="gap-6 flex flex-col">
-			<QuickKnowledgePreparation />
+			<div className="gap-6 lg:grid-cols-2 lg:items-start grid">
+				<KnowledgeVersioningPanel section="prepare" />
+				<QuickKnowledgePreparation />
+			</div>
 			<AdvancedLink />
 		</div>
 	);

@@ -54,4 +54,12 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("setSelectedTurnId(turn.turn.id)");
 		expect(panel).toContain("正在修正第");
 	});
+
+	it("calculates Test-versus-Active membership by revision-set difference and locks actions", () => {
+		expect(panel).toContain("symmetricDifferenceSize");
+		expect(panel).toContain("knowledgeUnitRevisionId");
+		expect(panel).toContain("TestTurn：");
+		expect(panel).toContain("capabilityVersionId={rerun.source.capabilityVersionId}");
+		expect(panel).toContain("setBusy(true)");
+	});
 });
