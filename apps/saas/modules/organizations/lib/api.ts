@@ -16,6 +16,7 @@ export const useOrganizationListQuery = () => {
 
 			return data;
 		},
+		retry: 2,
 	});
 };
 
@@ -54,6 +55,7 @@ export const useActiveOrganizationQuery = (
 		},
 		enabled: options?.enabled && !!cacheKey,
 		placeholderData: (previousData) => previousData,
+		retry: 2,
 	});
 };
 

@@ -32,7 +32,12 @@ describe("synchronizePreviewFixtures", () => {
 		await synchronizePreviewFixtures({
 			users: [
 				{ email: "operator@example.invalid", name: "Operator" },
-				{ email: "owner@example.invalid", name: "Owner", passwordHash: "hash" },
+				{
+					email: "owner@example.invalid",
+					name: "Owner",
+					passwordHash: "hash",
+					activeOrganizationSlug: "a",
+				},
 			],
 			organizations: [
 				{ name: "A", slug: "a" },
@@ -61,6 +66,13 @@ describe("synchronizePreviewFixtures", () => {
 				}),
 			}),
 		);
+		expect(mocks.transaction.user.upsert).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				create: expect.objectContaining({ lastActiveOrganizationId: "org-a" }),
+				update: expect.objectContaining({ lastActiveOrganizationId: "org-a" }),
+			}),
+		);
 		expect(mocks.transaction.member.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({ update: { role: "owner" } }),
 		);
@@ -70,6 +82,7 @@ describe("synchronizePreviewFixtures", () => {
 		expect(mocks.transaction).not.toHaveProperty("delete");
 		expect(mocks.db.$transaction).toHaveBeenCalledWith(expect.any(Function), {
 			isolationLevel: "Serializable",
+			maxWait: 15_000,
 			timeout: 20_000,
 		});
 	});

@@ -43,6 +43,14 @@ export const previewFixtureOrganizations = [
 	{ name: "FLY-99 验收商户 B", slug: "fly-99-b" },
 ] as const;
 
+const previewDefaultOrganizationByEmail: Record<string, string> = {
+	[previewOperatorEmail]: "fly-99-a",
+	"preview-owner@xiaofei.invalid": "fly-99-a",
+	"preview-admin@xiaofei.invalid": "fly-99-a",
+	"preview-member@xiaofei.invalid": "fly-99-a",
+	"preview-owner-b@xiaofei.invalid": "fly-99-b",
+};
+
 type PreviewLoginEnvironment = {
 	PREVIEW_ONE_CLICK_LOGIN_ENABLED?: string;
 	VERCEL_ENV?: string;
@@ -55,12 +63,19 @@ type PreviewOperator = {
 export function createPreviewFixtureInput(passwordHashes: Record<string, string>) {
 	return {
 		users: [
-			{ email: previewOperatorEmail, name: "Preview operator" },
+			{
+				email: previewOperatorEmail,
+				name: "Preview operator",
+				activeOrganizationSlug: previewDefaultOrganizationByEmail[previewOperatorEmail],
+			},
 			...previewRoleAccounts.map((account) => ({
 				email: account.email,
 				name: account.role,
 				role: account.applicationRole,
 				passwordHash: passwordHashes[account.email],
+				...(previewDefaultOrganizationByEmail[account.email]
+					? { activeOrganizationSlug: previewDefaultOrganizationByEmail[account.email] }
+					: {}),
 			})),
 		],
 		organizations: [...previewFixtureOrganizations],

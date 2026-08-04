@@ -31,15 +31,9 @@ export const getActiveOrganization = cache(async (slug: string) => {
 });
 
 export const getOrganizationList = cache(async () => {
-	try {
-		const organizationList = await auth.api.listOrganizations({
-			headers: await headers(),
-		});
-
-		return organizationList;
-	} catch {
-		return [];
-	}
+	return auth.api.listOrganizations({
+		headers: await headers(),
+	});
 });
 
 export const getUserAccounts = cache(async () => {

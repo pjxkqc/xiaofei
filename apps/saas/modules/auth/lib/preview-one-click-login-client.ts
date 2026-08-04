@@ -13,14 +13,36 @@ export async function completePreviewOneClickLogin({
 	redirectPath,
 	request = requestPreviewOneClickLogin,
 	navigate = (path: string) => window.location.assign(path),
+	wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 }: {
 	redirectPath: string;
 	request?: () => Promise<Response>;
 	navigate?: (path: string) => void;
+	wait?: (milliseconds: number) => Promise<unknown>;
 }) {
-	const response = await request();
+	let response: Response | undefined;
+	let lastError: unknown;
 
-	if (!response.ok) {
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			response = await request();
+			lastError = undefined;
+		} catch (error) {
+			lastError = error;
+		}
+
+		if (response?.ok) break;
+
+		const shouldRetry =
+			attempt === 0 && (!response || response.status === 429 || response.status >= 500);
+		if (!shouldRetry) break;
+
+		response = undefined;
+		await wait(500);
+	}
+
+	if (!response?.ok) {
+		if (lastError) throw lastError;
 		throw new Error("Preview sign-in failed");
 	}
 

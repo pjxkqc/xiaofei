@@ -78,6 +78,21 @@ describe("Preview one-click login", () => {
 				passwordHash: "global-admin-hash",
 			}),
 		);
+		expect(input.users).toContainEqual(
+			expect.objectContaining({
+				email: "preview-operator@xiaofei.invalid",
+				activeOrganizationSlug: "fly-99-a",
+			}),
+		);
+		expect(input.users).toContainEqual(
+			expect.objectContaining({
+				email: "preview-owner-b@xiaofei.invalid",
+				activeOrganizationSlug: "fly-99-b",
+			}),
+		);
+		expect(
+			input.users.find((user) => user.email === "preview-global-admin@xiaofei.invalid"),
+		).not.toHaveProperty("activeOrganizationSlug");
 		expect(
 			input.memberships.some(
 				(membership) => membership.userEmail === "preview-global-admin@xiaofei.invalid",
@@ -194,6 +209,56 @@ describe("Preview one-click login", () => {
 		});
 
 		expect(navigate).toHaveBeenCalledWith("/knowledge/units");
+	});
+
+	it("retries one transient Preview initialization failure before navigating", async () => {
+		const navigate = vi.fn();
+		const wait = vi.fn().mockResolvedValue(undefined);
+		const request = vi
+			.fn<() => Promise<Response>>()
+			.mockResolvedValueOnce(new Response(null, { status: 500 }))
+			.mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+		await completePreviewOneClickLogin({
+			redirectPath: "/",
+			request,
+			navigate,
+			wait,
+		});
+
+		expect(request).toHaveBeenCalledTimes(2);
+		expect(wait).toHaveBeenCalledWith(500);
+		expect(navigate).toHaveBeenCalledWith("/");
+	});
+
+	it("does not retry a non-transient Preview sign-in rejection", async () => {
+		const request = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
+
+		await expect(
+			completePreviewOneClickLogin({
+				redirectPath: "/",
+				request,
+				navigate: vi.fn(),
+				wait: vi.fn(),
+			}),
+		).rejects.toThrow("Preview sign-in failed");
+
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not turn an Organization lookup failure into an empty tenant list", () => {
+		const serverSource = readFileSync(path.resolve(import.meta.dirname, "./server.ts"), "utf8");
+		const organizationApiSource = readFileSync(
+			path.resolve(import.meta.dirname, "../../organizations/lib/api.ts"),
+			"utf8",
+		);
+		const organizationListServerSource = serverSource.slice(
+			serverSource.indexOf("export const getOrganizationList"),
+			serverSource.indexOf("export const getUserAccounts"),
+		);
+
+		expect(organizationListServerSource).not.toContain("return [];");
+		expect(organizationApiSource).toContain("retry: 2");
 	});
 
 	it.each([
