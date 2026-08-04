@@ -6,6 +6,7 @@ import {
 	createDefaultWorkspaceSnapshot,
 	createKnowledgeUnitRevision,
 	evaluateCorrectionAdmission,
+	materializeTestCapabilitySnapshot,
 	resolveRuntimeKnowledgeEvidence,
 } from "./index";
 
@@ -47,6 +48,44 @@ function platformRevision() {
 }
 
 describe("knowledge revision and capability version contracts", () => {
+	it("materializes an isolated exact hosting test snapshot without changing live state", () => {
+		const merchant = revision();
+		const platform = platformRevision();
+		const manifest = createCapabilityVersionManifest({
+			id: "ca-test-runtime",
+			organizationId: "organization-a",
+			capabilityKey: "xiaofei-hosting",
+			status: "test",
+			knowledgeUnitRevisionIds: [merchant.id, platform.id],
+			createdAt: CREATED_AT,
+		});
+		const base = createDefaultWorkspaceSnapshot("organization-a", () => CREATED_AT);
+		const materialized = materializeTestCapabilitySnapshot({
+			base,
+			manifest,
+			revisions: [merchant, platform],
+		});
+		expect(materialized.knowledgeUnits).toEqual([merchant.knowledgeUnit, platform.knowledgeUnit]);
+		expect(materialized.knowledgeVersioning.testCapabilityVersionId).toBe(manifest.id);
+		expect(base.knowledgeVersioning.testCapabilityVersionId).toBeUndefined();
+		expect(() =>
+			materializeTestCapabilitySnapshot({
+				base,
+				manifest: { ...manifest, manifestHash: "wrong" },
+				revisions: [merchant, platform],
+			}),
+		).toThrow();
+		expect(() =>
+			materializeTestCapabilitySnapshot({
+				base,
+				manifest,
+				revisions: [
+					merchant,
+					{ ...platform, organizationId: "organization-b", origin: "merchant" },
+				],
+			}),
+		).toThrow();
+	});
 	it("hashes immutable KU content, not revision identity, and changes with answer policy", () => {
 		const first = revision();
 		const identicalSuccessor = revision({ id: "ku-revision-2", revision: 2 });

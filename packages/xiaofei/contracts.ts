@@ -467,6 +467,7 @@ export const KnowledgeVersioningSnapshotSchema = z
 		knowledgeUnitRevisions: z.array(KnowledgeUnitRevisionSchema).default([]),
 		capabilityVersionManifests: z.array(CapabilityVersionManifestSchema).default([]),
 		activeCapabilityVersionId: z.string().min(1).nullable().default(null),
+		testCapabilityVersionId: z.string().min(1).nullable().optional(),
 	})
 	.superRefine((snapshot, context) => {
 		const revisionsById = new Map<string, (typeof snapshot.knowledgeUnitRevisions)[number]>();
@@ -552,6 +553,20 @@ export const KnowledgeVersioningSnapshotSchema = z
 						"The active capability version must reference an active xiaofei-hosting manifest.",
 				});
 			}
+		}
+		if (snapshot.testCapabilityVersionId) {
+			const test = snapshot.capabilityVersionManifests.filter(
+				(manifest) =>
+					manifest.id === snapshot.testCapabilityVersionId &&
+					manifest.status === "test" &&
+					manifest.capabilityKey === "xiaofei-hosting",
+			);
+			if (test.length !== 1)
+				context.addIssue({
+					code: "custom",
+					path: ["testCapabilityVersionId"],
+					message: "Test runtime must resolve to exactly one test hosting manifest.",
+				});
 		}
 	});
 
@@ -728,6 +743,19 @@ export const RuntimeTurnResultSchema = z.object({
 	metadata: RuntimeMetadataSchema,
 });
 
+export const XiaofeiTestTurnInputSchema = z.object({
+	question: z.string().min(1),
+	capabilityVersionId: z.string().min(1),
+	sourceTestTurnId: z.string().min(1).nullable().default(null),
+	rerunOfTestTurnId: z.string().min(1).nullable().default(null),
+	requestedAt: z.string().datetime({ offset: true }),
+});
+export const XiaofeiTestTurnRecordSchema = XiaofeiTestTurnInputSchema.extend({
+	answer: z.string(),
+	runtimeMetadata: RuntimeMetadataSchema,
+	completedAt: z.string().datetime({ offset: true }),
+});
+
 export const SupportMessageRoleSchema = z.enum(["customer", "ai", "human"]);
 
 export const SupportMessageSchema = z.object({
@@ -836,6 +864,8 @@ export type AiRunLease = z.infer<typeof AiRunLeaseSchema>;
 export type TraceEvent = z.infer<typeof TraceEventSchema>;
 export type RuntimeMetadata = z.infer<typeof RuntimeMetadataSchema>;
 export type RuntimeTurnResult = z.infer<typeof RuntimeTurnResultSchema>;
+export type XiaofeiTestTurnInput = z.infer<typeof XiaofeiTestTurnInputSchema>;
+export type XiaofeiTestTurnRecord = z.infer<typeof XiaofeiTestTurnRecordSchema>;
 export type SupportMessageRole = z.infer<typeof SupportMessageRoleSchema>;
 export type SupportMessage = z.infer<typeof SupportMessageSchema>;
 export type SupportConversationStatus = z.infer<typeof SupportConversationStatusSchema>;

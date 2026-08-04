@@ -11,6 +11,7 @@ import {
 	type KnowledgeUnitRevision,
 	type KnowledgeVersioningSnapshot,
 } from "./contracts";
+import { deriveCapabilityPlan } from "./defaults";
 
 export interface CreateKnowledgeUnitRevisionInput {
 	id: string;
@@ -71,10 +72,12 @@ export function resolveRuntimeKnowledgeEvidence(
 	knowledgeUnitId: string | null,
 ): RuntimeKnowledgeEvidence | null {
 	const validated = KnowledgeVersioningSnapshotSchema.parse(versioning);
-	if (!knowledgeUnitId || !validated.activeCapabilityVersionId) return null;
+	const runtimeVersionId = validated.testCapabilityVersionId ?? validated.activeCapabilityVersionId;
+	if (!knowledgeUnitId || !runtimeVersionId) return null;
 	const manifest = validated.capabilityVersionManifests.find(
 		(candidate) =>
-			candidate.id === validated.activeCapabilityVersionId && candidate.status === "active",
+			candidate.id === runtimeVersionId &&
+			(candidate.status === "active" || candidate.status === "test"),
 	);
 	if (!manifest) return null;
 	const revision = validated.knowledgeUnitRevisions.find(
@@ -89,6 +92,62 @@ export function resolveRuntimeKnowledgeEvidence(
 		capabilityVersionId: manifest.id,
 		capabilityKey: manifest.capabilityKey,
 		knowledgeUnitOrigin: revision.origin,
+	};
+}
+
+/** Creates an isolated test snapshot without changing the live active pointer. */
+export function materializeTestCapabilitySnapshot(input: {
+	base: import("./contracts").XiaofeiWorkspaceSnapshot;
+	manifest: CapabilityVersionManifest;
+	revisions: KnowledgeUnitRevision[];
+}): import("./contracts").XiaofeiWorkspaceSnapshot {
+	if (
+		input.manifest.status !== "test" ||
+		input.manifest.capabilityKey !== "xiaofei-hosting" ||
+		input.manifest.organizationId !== input.base.agent.tenantId
+	)
+		throw new Error("Test manifest is not an organization hosting test version.");
+	const ids = input.manifest.knowledgeUnitRevisionIds;
+	if (new Set(ids).size !== ids.length || input.revisions.length !== ids.length)
+		throw new Error("Test manifest revisions must be exact and unique.");
+	const byId = new Map(input.revisions.map((revision) => [revision.id, revision]));
+	if (ids.some((id) => !byId.has(id))) throw new Error("Test manifest has missing revisions.");
+	const exact = ids.map((id) => byId.get(id)!);
+	for (const revision of exact) {
+		if (
+			revision.knowledgeUnit.status !== "released" ||
+			revision.knowledgeUnit.eligibility !== "eligible"
+		)
+			throw new Error("Test revision is not published and eligible.");
+		if (revision.origin === "merchant" && revision.organizationId !== input.manifest.organizationId)
+			throw new Error("Test revision crosses organizations.");
+		if (
+			createKnowledgeUnitRevision({ ...revision, contentHash: undefined } as never).contentHash !==
+			revision.contentHash
+		)
+			throw new Error("Test revision content hash mismatch.");
+	}
+	const expected = createCapabilityVersionManifest({
+		...input.manifest,
+		manifestHash: undefined,
+	} as never);
+	if (expected.manifestHash !== input.manifest.manifestHash)
+		throw new Error("Test manifest hash mismatch.");
+	const knowledgeUnits = exact.map((revision) => revision.knowledgeUnit);
+	const capabilityPlan = {
+		...deriveCapabilityPlan(knowledgeUnits, input.manifest.createdAt),
+		reviewed: true,
+	};
+	return {
+		...input.base,
+		knowledgeUnits,
+		capabilityPlan,
+		knowledgeVersioning: {
+			knowledgeUnitRevisions: exact,
+			capabilityVersionManifests: [input.manifest],
+			activeCapabilityVersionId: input.base.knowledgeVersioning.activeCapabilityVersionId,
+			testCapabilityVersionId: input.manifest.id,
+		},
 	};
 }
 
