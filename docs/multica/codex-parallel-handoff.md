@@ -4,6 +4,12 @@
 
 本文用于把新的 Codex 会话接入 Xiaofei，并让它通过 Multica 独立跟进一个 Feature。它补充现有规范，不创建第二套 Skill。
 
+跨机器首次准备、Mac/Windows 命令、能力矩阵、固定每日提示、状态机、protected paths
+audit、冲突停写和 Origin/Manager 交接，以
+[`cross-machine-feature-operations.md`](./cross-machine-feature-operations.md) 为唯一事实源。
+本页只保留项目快照、路由背景和可复制提示；PR/Preview/UAT/晋级细节继续以
+`xiaofei-pr-delivery` 为准。
+
 ## 1. 当前状态
 
 | 项目       | 当前状态                                                                                |
@@ -43,10 +49,12 @@
 2. 本文；
 3. [`../repository-structure.md`](../repository-structure.md)；
 4. [`README.md`](./README.md)；
-5. [`collaboration.md`](./collaboration.md)；
-6. [`agents.md`](./agents.md)；
-7. [`skills/xiaofei-pr-delivery/SKILL.md`](./skills/xiaofei-pr-delivery/SKILL.md)；
-8. [`../releases/README.md`](../releases/README.md) 和 Feature 所属边界旁的 README。
+5. [`cross-machine-feature-operations.md`](./cross-machine-feature-operations.md)；
+6. [`collaboration.md`](./collaboration.md)；
+7. [`agents.md`](./agents.md)；
+8. [`skills/xiaofei-feature-orchestration/SKILL.md`](./skills/xiaofei-feature-orchestration/SKILL.md)；
+9. [`skills/xiaofei-pr-delivery/SKILL.md`](./skills/xiaofei-pr-delivery/SKILL.md)；
+10. [`../releases/README.md`](../releases/README.md) 和 Feature 所属边界旁的 README。
 
 ## 3. Codex 与 Multica 分工
 
@@ -70,10 +78,13 @@
 
 ## 4. 并行安全规则
 
+本节是速查；完整且 canonical 的冲突停写与跨主机交接步骤见
+[`cross-machine-feature-operations.md`](./cross-machine-feature-operations.md)。
+
 1. **一个会话，一个 Feature 父 Issue。** 先用 Session metadata 和 PR body
    确认没有别人处理同一目标。
 2. **一个边界，一个 Owner。** 不并发修改同一契约、Schema、页面或交付脚本。
-3. **隔离工作树。** 实现必须用 `multica repo checkout ... --ref uat`；不能复用另一会话正在使用的 `/Users/club/project/xiaofei` 工作树或分支。
+3. **隔离工作树。** 实现必须用 `multica repo checkout ... --ref uat`；不能复用另一会话正在使用的工作树或分支。
 4. **先契约后消费者。** 跨边界按“领域/数据库契约 → API/持久化 → 页面/交互 → Quality”串行推进。
 5. **普通工作只走 UAT。** 从最新 `origin/uat` 开分支，Draft PR 回到 `uat`；不要直接 `uat → main`。
 6. **不操作别人交付物。** 未经负责会话或用户授权，不 merge、close、rebase、force-push、删分支或清理别人的 Preview。
@@ -199,7 +210,7 @@ git rev-parse HEAD
 ```text
 你负责 Xiaofei 项目的一个独立 Feature 流，并通过 Multica 安排和跟进。
 
-仓库：/Users/club/project/xiaofei
+仓库：通过 Multica 项目资源 checkout，不使用固定本机路径
 GitHub：https://github.com/pjxkqc/xiaofei
 Multica Project：Xiaofei（dd543ecd-01d2-495d-a517-3c8455050581）
 本次 Feature：<本次 Feature>
@@ -209,9 +220,12 @@ CX-<thread-id 第一段>，在第一条进度更新中声明完整 Thread ID、�
 本次 Feature。Origin session 代表最初提出者，创建后不可修改；Managing
 session 代表当前管理者，只能在用户或原管理会话明确交接后更新。
 
-开始先只读，不改代码、不建重复 Issue、不操作现有 PR。完整读取 AGENTS.md、
+开始先只读，不改代码、不建重复 Issue、不操作现有 PR。仓库必须通过项目资源或
+`multica repo checkout https://github.com/pjxkqc/xiaofei --ref uat` 获取。完整读取 AGENTS.md、
 docs/multica/codex-parallel-handoff.md、docs/repository-structure.md、
-docs/multica/README.md、docs/multica/collaboration.md、docs/multica/agents.md、
+docs/multica/README.md、docs/multica/cross-machine-feature-operations.md、
+docs/multica/collaboration.md、docs/multica/agents.md、
+docs/multica/skills/xiaofei-feature-orchestration/SKILL.md、
 docs/multica/skills/xiaofei-pr-delivery/SKILL.md、docs/releases/README.md，
 以及 Feature 所属边界旁的 README。
 

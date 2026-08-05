@@ -4,6 +4,13 @@ This protocol keeps Multica coordination predictable as the repository grows.
 The squad adds routing; it does not remove code ownership or human merge
 control.
 
+For host preparation, Mac/Windows capability profiles, the daily controller
+prompt, shared-branch protected-path audit, and manager transfer procedure,
+follow the canonical
+[`cross-machine-feature-operations.md`](./cross-machine-feature-operations.md).
+This document retains Issue/Agent routing; `xiaofei-pr-delivery` retains PR,
+Preview, UAT, cleanup, and promotion mechanics.
+
 ## Unit of work
 
 Every implementation issue must contain:
@@ -99,6 +106,10 @@ to the squad so the leader can route it.
 13. Platform evidence confirms Preview creation/cleanup or production delivery
     when the issue affects those lifecycles.
 
+The cross-machine state is always:
+`Issue → Agent owner → shared branch → Draft PR to uat → exact-head Preview →
+exact-head Quality → human merge decision → UAT/cleanup → handoff`.
+
 ## Delivery preflight
 
 Repository commands are the source of truth; a prompt saying that checks were
@@ -187,6 +198,9 @@ unredacted logs.
 
 - First owner keeps the shared file; the second Agent pauses and comments on
   the issue.
+- Before every write handoff, compare the remote shared-branch SHA and changed
+  paths with the accepted handoff SHA and parent protected paths. An unexpected
+  SHA, dirty worktree, or overlap is a stop-writing condition.
 - The lead resolves scope by sequencing, extracting a contract, or assigning a
   different file boundary.
 - Never solve conflict by force-pushing another Agent's branch, discarding

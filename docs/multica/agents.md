@@ -18,6 +18,8 @@ commit; amend it before handoff.
 All five Agents must use `$xiaofei-pr-delivery` for repository checkout, branch
 creation, PR publication, exact-head verification, Preview evidence, and
 cleanup. Ordinary work starts from `uat` and opens a Draft PR back to `uat`.
+Cross-machine Features are coordinated with `$xiaofei-feature-orchestration`;
+it is assigned alongside the delivery Skill and does not replace it.
 Only an explicitly authorized release may use a temporary `promote/uat-*`
 branch to `main`; never open `uat → main` directly.
 

@@ -110,3 +110,11 @@ skills:
       - xiaofei-app
       - xiaofei-platform
       - xiaofei-quality
+  - name: xiaofei-feature-orchestration
+    source: skills/xiaofei-feature-orchestration/SKILL.md
+    assign_to:
+      - xiaofei-lead
+      - xiaofei-runtime
+      - xiaofei-app
+      - xiaofei-platform
+      - xiaofei-quality
