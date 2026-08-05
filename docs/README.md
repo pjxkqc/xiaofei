@@ -10,6 +10,7 @@ rules remain visible where changes are made.
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | [`../README.md`](../README.md)                                                         | Setting up the repository or understanding the full system         |
 | [`xiaofei-p0-framework.md`](./xiaofei-p0-framework.md)                                 | Reviewing the current P0 architecture, flow, and deliberate limits |
+| [`xiaofei-sag-harness-decision.md`](./xiaofei-sag-harness-decision.md)                 | 了解 P0 继续使用 Harness、并行评估 SAG 类知识治理的决策            |
 | [`xiaofei-foundation.md`](./xiaofei-foundation.md)                                     | Changing ownership, state, handoff, or trace invariants            |
 | [`xiaofei-loopdesk-target-architecture.md`](./xiaofei-loopdesk-target-architecture.md) | Reviewing the proposed Xiaofei control plane and its P0 boundary   |
 | [`xiaofei-loopdesk-integration-plan.md`](./xiaofei-loopdesk-integration-plan.md)       | Planning the proposed Flyranking / LoopDesk integration            |
