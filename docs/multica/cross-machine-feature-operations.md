@@ -47,6 +47,36 @@ gh auth status
 multica auth status
 ```
 
+推荐依次使用官方安装入口：Multica 的 Windows `install.ps1`、GitHub CLI 的官方
+Windows release，以及仓库锁定版本的 pnpm。若 Corepack 因 NVM 安装目录权限失败，
+将同版本 pnpm 安装到当前用户可写目录，不修改系统级 Node。安装完成后要关闭并重开
+Multica Desktop；重新启动的进程必须继承当前 Machine PATH 与 User PATH，不能沿用安装
+前的旧环境。
+
+```powershell
+irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+```
+
+如果 Desktop Runtime 中的普通任务仍看不到用户级 `gh` 或 `pnpm`，可以在一个已经位于
+该 Runtime PATH 的**用户级**目录放置只指向已校验官方安装的最小 shim；不得覆盖现有
+文件，也不得把另一台机器的二进制或凭据复制过来。若 Git 访问私有仓库复现 Windows
+Schannel `SEC_E_NO_CREDENTIALS`，先记录当前非敏感 `http.sslBackend` 设置，再在当前
+用户范围改用 `openssl`，执行 `gh auth setup-git` 并用目标仓库的 `git ls-remote` 验证；
+同时记录恢复原设置的回滚步骤。
+
+Windows 最终 smoke 应从无改动的 exact-SHA checkout 直接运行仓库脚本，避免 package
+script 为一个只读检查触发依赖安装：
+
+```powershell
+node scripts/verify-feature-runtime.mjs --profile runtime --json
+git ls-remote origin refs/heads/<shared-branch>
+gh auth status
+multica project get dd543ecd-01d2-495d-a517-3c8455050581 --output json
+```
+
+输出只保留版本、账号名、项目/Runtime 标识、分支 SHA、检查状态和脱敏错误。完成一次性
+主机修复后，应立即撤销临时写权限；后续 smoke Agent 保持只读。
+
 两类主机都通过项目资源 checkout，不假设固定本机路径：
 
 ```text
