@@ -47,7 +47,10 @@ test.describe("knowledge document management", () => {
 		);
 
 		page.once("dialog", async (dialog) => await dialog.accept());
-		await page.getByRole("button", { name: "删除" }).click();
+		const documentEditor = page.locator("form").filter({
+			has: page.getByText("编辑文档", { exact: true }),
+		});
+		await documentEditor.getByRole("button", { name: "删除" }).click();
 		await expect(page.getByText("还没有知识文档")).toBeVisible();
 	});
 });

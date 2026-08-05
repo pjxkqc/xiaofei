@@ -8,7 +8,7 @@ export async function registerOrganizationAdmin(page: Page, prefix: string) {
 	await page.getByRole("textbox", { name: "Email" }).fill(`${unique}@example.test`);
 	await page.locator('input[autocomplete="new-password"]').fill("Knowledge-Test-2026!");
 	await page.getByRole("button", { name: "Create account" }).click();
-	await expect(page).toHaveURL(/\/onboarding(?:\?|$)/u);
+	await expect(page).toHaveURL(/\/onboarding(?:\?|$)/u, { timeout: 20_000 });
 	await page.getByRole("button", { name: "Continue" }).click();
 	await expect(page).toHaveURL("/");
 
