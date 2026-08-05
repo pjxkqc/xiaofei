@@ -21,6 +21,45 @@ const CAPABILITY_COMMANDS = {
 	vercel: ["vercel", ["whoami"]],
 };
 
+const REQUIRED_IDENTITY = {
+	controller: ["CODEX_THREAD_ID"],
+	app: [
+		"XIAOFEI_AGENT_ID",
+		"XIAOFEI_AGENT_ROLE",
+		"XIAOFEI_RUNTIME_ID",
+		"XIAOFEI_RUNTIME_TAG",
+		"XIAOFEI_RUNTIME_OS",
+	],
+	lead: [
+		"XIAOFEI_AGENT_ID",
+		"XIAOFEI_AGENT_ROLE",
+		"XIAOFEI_RUNTIME_ID",
+		"XIAOFEI_RUNTIME_TAG",
+		"XIAOFEI_RUNTIME_OS",
+	],
+	runtime: [
+		"XIAOFEI_AGENT_ID",
+		"XIAOFEI_AGENT_ROLE",
+		"XIAOFEI_RUNTIME_ID",
+		"XIAOFEI_RUNTIME_TAG",
+		"XIAOFEI_RUNTIME_OS",
+	],
+	platform: [
+		"XIAOFEI_AGENT_ID",
+		"XIAOFEI_AGENT_ROLE",
+		"XIAOFEI_RUNTIME_ID",
+		"XIAOFEI_RUNTIME_TAG",
+		"XIAOFEI_RUNTIME_OS",
+	],
+	quality: [
+		"XIAOFEI_AGENT_ID",
+		"XIAOFEI_AGENT_ROLE",
+		"XIAOFEI_RUNTIME_ID",
+		"XIAOFEI_RUNTIME_TAG",
+		"XIAOFEI_RUNTIME_OS",
+	],
+};
+
 export function parseFeatureRuntimeArguments(arguments_ = process.argv.slice(2)) {
 	const options = { dryRun: false, json: false, profile: "controller" };
 
@@ -55,7 +94,10 @@ export function parseFeatureRuntimeArguments(arguments_ = process.argv.slice(2))
 }
 
 export function runFeatureRuntimePreflight({
+	arch = process.arch,
 	dryRun = false,
+	environment = process.env,
+	platform = process.platform,
 	profile = "controller",
 	runCommand = runCommandWithHiddenOutput,
 } = {}) {
@@ -71,6 +113,17 @@ export function runFeatureRuntimePreflight({
 	if (dryRun) {
 		checks.push(createSkippedCheck("repository", "git", ["rev-parse", "--show-toplevel"]));
 		checks.push(createSkippedCheck("repository", "git", ["remote", "get-url", "origin"]));
+		checks.push(createSkippedCheck("repository-target", "git", ["remote", "get-url", "origin"]));
+		checks.push(createSkippedCheck("github-target", "gh", ["repo", "view", "pjxkqc/xiaofei"]));
+		checks.push(
+			createSkippedCheck("multica-project", "multica", [
+				"project",
+				"get",
+				"dd543ecd-01d2-495d-a517-3c8455050581",
+				"--output",
+				"json",
+			]),
+		);
 		checks.push(
 			createSkippedCheck("repository", "git", [
 				"show-ref",
@@ -88,9 +141,40 @@ export function runFeatureRuntimePreflight({
 		);
 		checks.push(rootResult.check);
 		repositoryRoot = rootResult.output?.trim();
+		const remoteResult = executeCheck(
+			"repository",
+			"git",
+			["remote", "get-url", "origin"],
+			runCommand,
+			repositoryRoot,
+		);
+		checks.push(remoteResult.check);
+		checks.push({
+			arguments: ["remote", "get-url", "origin"],
+			capability: "repository-target",
+			command: "git",
+			status:
+				remoteResult.check.status === "passed" && isXiaofeiRemote(remoteResult.output)
+					? "passed"
+					: "failed",
+		});
 		checks.push(
-			executeCheck("repository", "git", ["remote", "get-url", "origin"], runCommand, repositoryRoot)
-				.check,
+			executeCheck(
+				"github-target",
+				"gh",
+				["repo", "view", "pjxkqc/xiaofei"],
+				runCommand,
+				repositoryRoot,
+			).check,
+		);
+		checks.push(
+			executeCheck(
+				"multica-project",
+				"multica",
+				["project", "get", "dd543ecd-01d2-495d-a517-3c8455050581", "--output", "json"],
+				runCommand,
+				repositoryRoot,
+			).check,
 		);
 		checks.push(
 			executeCheck(
@@ -102,6 +186,21 @@ export function runFeatureRuntimePreflight({
 			).check,
 		);
 	}
+	const identity = REQUIRED_IDENTITY[profile];
+	checks.push(
+		dryRun
+			? createSkippedCheck("identity", "env", identity)
+			: {
+					arguments: identity,
+					capability: "identity",
+					command: "env",
+					status: identity.every(
+						(name) => typeof environment[name] === "string" && environment[name].length > 0,
+					)
+						? "passed"
+						: "failed",
+				},
+	);
 
 	for (const capability of capabilities.filter((capability) => capability !== "repository")) {
 		const [command, arguments_] = CAPABILITY_COMMANDS[capability];
@@ -117,8 +216,17 @@ export function runFeatureRuntimePreflight({
 		dryRun,
 		ok: checks.every((check) => check.status !== "failed"),
 		profile,
-		repositoryRoot,
+		repositoryRootResolved: typeof repositoryRoot === "string" && repositoryRoot.length > 0,
+		platform,
+		arch,
 	};
+}
+
+function isXiaofeiRemote(value) {
+	const remote = String(value ?? "")
+		.trim()
+		.replace(/\.git$/, "");
+	return remote === "pjxkqc/xiaofei" || /(?:github\.com[/:])pjxkqc\/xiaofei$/.test(remote);
 }
 
 function createSkippedCheck(capability, command, arguments_) {
@@ -139,11 +247,14 @@ function executeCheck(capability, command, arguments_, runner, cwd) {
 	}
 }
 
+export function resolveFeatureRuntimeExecutable(command, platform = process.platform) {
+	return platform === "win32" && ["pnpm", "vercel", "neonctl"].includes(command)
+		? `${command}.cmd`
+		: command;
+}
+
 function runCommandWithHiddenOutput(command, arguments_, { cwd } = {}) {
-	const executable =
-		process.platform === "win32" && ["pnpm", "vercel"].includes(command)
-			? `${command}.cmd`
-			: command;
+	const executable = resolveFeatureRuntimeExecutable(command);
 	return execFileSync(executable, arguments_, {
 		cwd,
 		encoding: "utf8",
