@@ -13,7 +13,7 @@ export const FEATURE_RUNTIME_PROFILES = {
 const CAPABILITY_COMMANDS = {
 	chrome: ["pnpm", ["exec", "playwright", "--version"]],
 	git: ["git", ["--version"]],
-	github: ["gh", ["auth", "status"]],
+	github: ["gh", ["api", "user", "--jq", ".login"]],
 	multica: ["multica", ["auth", "status"]],
 	neon: ["neonctl", ["me"]],
 	node: ["node", ["--version"]],

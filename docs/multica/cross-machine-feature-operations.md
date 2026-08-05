@@ -70,12 +70,21 @@ script 为一个只读检查触发依赖安装：
 ```powershell
 node scripts/verify-feature-runtime.mjs --profile runtime --json
 git ls-remote origin refs/heads/<shared-branch>
-gh auth status
+gh api user --jq .login
+gh repo view pjxkqc/xiaofei
 multica project get dd543ecd-01d2-495d-a517-3c8455050581 --output json
 ```
 
 输出只保留版本、账号名、项目/Runtime 标识、分支 SHA、检查状态和脱敏错误。完成一次性
 主机修复后，应立即撤销临时写权限；后续 smoke Agent 保持只读。
+
+普通沙箱 Runtime 如需读取私有仓库，可在 Agent secret `custom_env` 中使用该 Runtime
+专用、仅限 `pjxkqc/xiaofei` 的 fine-grained PAT。Token 只能作为环境变量存在，绝不写入
+仓库、日志或命令输出；记录其 90 天到期日并在到期前轮换。Git HTTPS 必须使用同样仅在
+环境中存在的 scoped 配置：`GIT_CONFIG_COUNT`、`GIT_CONFIG_KEY_0` 和
+`GIT_CONFIG_VALUE_0`，不得持久化 credential helper 或配置值。`gh api user --jq .login`、
+私有仓库 `gh repo view pjxkqc/xiaofei` 与目标分支的 `git ls-remote` 共同构成权威只读
+验收；单独 `gh auth status` 不能验证仅通过环境变量提供的 token。
 
 两类主机都通过项目资源 checkout，不假设固定本机路径：
 

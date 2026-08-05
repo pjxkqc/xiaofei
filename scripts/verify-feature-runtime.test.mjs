@@ -176,3 +176,23 @@ void test("runs from the resolved Git root and fails closed without command outp
 	assert.equal(calls[1].options.cwd, "/workspace/xiaofei");
 	assert.equal(calls.at(-1).options.cwd, "/workspace/xiaofei");
 });
+
+void test("uses the API identity probe for GitHub without exposing command output", () => {
+	const result = runFeatureRuntimePreflight({
+		profile: "controller",
+		runCommand: (command, arguments_) => {
+			if (command === "git" && arguments_.join(" ") === "rev-parse --show-toplevel") {
+				return "/workspace/xiaofei\n";
+			}
+			if (command === "gh" && arguments_.join(" ") === "api user --jq .login") {
+				throw new Error("fine-grained token output must remain hidden");
+			}
+			return "sensitive command output";
+		},
+	});
+
+	const githubCheck = result.checks.find((check) => check.capability === "github");
+	assert.deepEqual(githubCheck?.arguments, ["api", "user", "--jq", ".login"]);
+	assert.equal(githubCheck?.status, "failed");
+	assert.equal(JSON.stringify(result).includes("fine-grained token output"), false);
+});
