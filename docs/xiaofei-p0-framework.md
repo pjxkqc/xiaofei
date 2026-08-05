@@ -150,6 +150,10 @@ This is a framework slice, not a production-complete Agent Center:
   recursive site crawling are deferred;
 - KU matching is deterministic exact plus bounded character-pair similarity;
   semantic embeddings, vector search and reranking are deferred;
+- P0 does not directly integrate SAG as a knowledge-governance or runtime
+  system; the [SAG and Harness decision](./xiaofei-sag-harness-decision.md)
+  limits it to isolated research until a separately authorized Feature meets
+  the recorded adoption gates;
 - capability plans are deterministically derived and reviewed as part of the
   workspace snapshot; LLM planning, version history, and rollback are deferred;
 - the LangGraph graph uses Neon as the product persistence boundary rather than
