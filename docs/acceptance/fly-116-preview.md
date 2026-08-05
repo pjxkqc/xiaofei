@@ -35,11 +35,13 @@ Vercel Preview 与独立 Neon Preview branch；不得在 UAT 或 Production 上�
 
 ### 3. 单条回答修正与同题复测
 
-1. 选择一条命中商户知识的回答并提交修正意见。
+1. 选择一条命中商户知识的回答并提交修正后的商户口径。
 2. 核对系统保留 source TestTurn/answer/CA/KU Revision，并生成新的 KU Revision、Test CA 和
    rerun TestTurn；Before/After 技术证据默认折叠但可展开。
 3. 修正前 Active 仍保持原版本。使用同一问题复测，确认新回答采用修正后的知识且 Test CA
    成员关系展示 KU Revision ↔ CA Version 多对多复用。
+4. 再选择一条平台兜底或未命中的回答，确认页面显示“补充为商户知识并修正”；提交后应新增
+   商户 KU Revision 并追加到新 Test CA，平台 KU 不变，随后自动完成同题 Before/After 复测。
 
 ### 4. 人工验收与托管
 

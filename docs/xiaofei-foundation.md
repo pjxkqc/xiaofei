@@ -58,7 +58,10 @@ CA Version, CA capability, and KU origin as answer evidence only from a validate
 active manifest. Validation rejects dangling or ambiguous versions, duplicate
 logical KUs in a manifest, and foreign merchant revisions. The domain only admits
 corrections to an owning organization's merchant knowledge; platform and
-cross-organization targets are rejected before persistence.
+cross-organization targets are rejected before persistence. An authenticated
+merchant administrator may instead turn a saved platform/no-hit TestTurn into a
+new merchant-owned logical KU and Test CA. This supplementation never revises
+the platform KU or changes Active before human acceptance.
 
 The three capability layers are origin-safe: platform-fallback manifests contain
 platform-origin KUs only, merchant-knowledge manifests contain merchant-origin

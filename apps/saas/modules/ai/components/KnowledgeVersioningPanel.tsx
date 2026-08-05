@@ -269,7 +269,7 @@ function TestConversation({
 					<div>
 						<CardTitle>Test CA 多轮会话</CardTitle>
 						<CardDescription>
-							浏览器会保留本次 Test session；刷新或离开后再回来，下一轮仍继续同一服务端状态。
+							测试任意回答：商户命中会生成新 KU Revision；平台兜底或未命中会补充为新的商户 KU。
 						</CardDescription>
 					</div>
 					<Button
@@ -329,11 +329,11 @@ function TestConversation({
 								disabled={busy}
 								onClick={() => setSelectedTurnId(turn.turn.id)}
 							>
-								选择并修正这条回答
+								{turn.feedbackMode === "revise" ? "选择并修正这条回答" : "补充为商户知识并修正"}
 							</Button>
 						) : (
 							<p className="text-xs text-muted-foreground">
-								该回答来自平台兜底或未命中，不能作为商户修正依据。
+								该回答的测试证据已失效，请重置会话后重新测试。
 							</p>
 						)}
 					</div>
@@ -341,11 +341,11 @@ function TestConversation({
 				{selected && (
 					<div className="gap-3 p-3 flex flex-col rounded-lg border border-primary">
 						<p className="text-sm font-medium">
-							正在修正第 {turns.findIndex((turn) => turn.turn.id === selected.turn.id) + 1}{" "}
-							轮商户回答
+							{selected.feedbackMode === "revise" ? "正在修正" : "正在补充"}第{" "}
+							{turns.findIndex((turn) => turn.turn.id === selected.turn.id) + 1} 轮回答
 						</p>
 						<Label>
-							修正意见
+							修正后的商户口径
 							<Textarea
 								value={correction}
 								onChange={(event) => setCorrection(event.target.value)}
@@ -353,7 +353,9 @@ function TestConversation({
 							/>
 						</Label>
 						<Button disabled={busy || !correction.trim()} onClick={() => void onCorrect(selected)}>
-							提出修正并同题复测
+							{selected.feedbackMode === "revise"
+								? "生成新 KU Revision 并同题复测"
+								: "生成商户 KU 并同题复测"}
 						</Button>
 					</div>
 				)}

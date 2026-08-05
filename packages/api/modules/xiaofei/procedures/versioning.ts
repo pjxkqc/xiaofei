@@ -191,7 +191,11 @@ export const runXiaofeiVersionedTest = supportProcedure
 			testSessionId,
 			answer: result.reply,
 			metadata: result.metadata,
-			feedbackAllowed: result.metadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant",
+			feedbackAllowed: true,
+			feedbackMode:
+				result.metadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
+					? ("revise" as const)
+					: ("supplement" as const),
 		};
 	});
 
@@ -263,7 +267,7 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 				});
 			if (error instanceof XiaofeiVersioningNotFoundError)
 				throw new ORPCError("BAD_REQUEST", {
-					message: "This answer has no correctable merchant knowledge evidence.",
+					message: "This saved answer can no longer be corrected from the current Test CA.",
 				});
 			throw error;
 		}

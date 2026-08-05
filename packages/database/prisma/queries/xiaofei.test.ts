@@ -902,32 +902,106 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		);
 	});
 
-	it("rejects no-hit and platform source feedback before creating an intervention", async () => {
-		queryMocks.findTestTurn.mockResolvedValueOnce({
-			evidenceRevision: null,
-			evidenceRevisionId: null,
-		});
-		await expect(
-			applyXiaofeiTestTurnFeedback({
-				organizationId: "organization-a",
-				sourceTestTurnId: "no-hit-turn",
-				correction: "New policy.",
-			}),
-		).rejects.toBeInstanceOf(XiaofeiVersioningNotFoundError);
+	it.each([
+		["no-hit", null],
+		[
+			"platform",
+			{
+				id: "platform-revision",
+				origin: "platform",
+			},
+		],
+	])(
+		"supplements %s feedback as a new merchant KU without changing the baseline",
+		async (_, evidence) => {
+			queryMocks.findTestTurn.mockResolvedValueOnce({
+				id: "source-turn",
+				evidenceRevisionId: evidence?.id ?? null,
+				evidenceRevision: evidence,
+				capabilityVersionId: "before-version",
+				question: "星云灯适合多大房间？",
+				answer: "请提供型号后人工确认。",
+				runtimeMetadata,
+				capabilityVersion: {
+					capabilityKey: "xiaofei-hosting",
+					knowledgeUnits: [
+						{
+							knowledgeUnitRevisionId: "platform-revision",
+							role: "fallback",
+							priority: 0,
+						},
+					],
+				},
+			});
+			queryMocks.findResponseIntervention.mockResolvedValueOnce(null);
+			queryMocks.findRevision.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+			queryMocks.createRevision.mockResolvedValueOnce({
+				id: "result-supplement-revision",
+				scopeKey: "organization:organization-a",
+			});
+			queryMocks.findRevisions.mockResolvedValueOnce([
+				{
+					id: "platform-revision",
+					scopeKey: "platform",
+					origin: "platform",
+					logicalKnowledgeUnitId: "platform:baseline",
+				},
+				{
+					id: "result-supplement-revision",
+					scopeKey: "organization:organization-a",
+					origin: "merchant",
+					logicalKnowledgeUnitId: "merchant:test-turn:source-turn",
+				},
+			]);
+			queryMocks.findCapabilityVersion.mockResolvedValueOnce(null);
+			queryMocks.createCapabilityVersion.mockResolvedValueOnce({ id: "result-version" });
+			queryMocks.createResponseIntervention.mockResolvedValueOnce({ id: "intervention-a" });
 
-		queryMocks.findTestTurn.mockResolvedValueOnce({
-			evidenceRevisionId: "platform-revision",
-			evidenceRevision: { origin: "platform" },
-		});
-		await expect(
-			applyXiaofeiTestTurnFeedback({
-				organizationId: "organization-a",
-				sourceTestTurnId: "platform-turn",
-				correction: "New policy.",
-			}),
-		).rejects.toBeInstanceOf(XiaofeiVersioningNotFoundError);
-		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
-	});
+			await expect(
+				applyXiaofeiTestTurnFeedback({
+					organizationId: "organization-a",
+					sourceTestTurnId: "source-turn",
+					correction: "星云灯适合不超过 20 平方米的房间。",
+				}),
+			).resolves.toEqual(
+				expect.objectContaining({
+					resultRevision: expect.objectContaining({ id: "result-supplement-revision" }),
+					resultVersion: expect.objectContaining({ id: "result-version" }),
+				}),
+			);
+
+			expect(queryMocks.createRevision).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						origin: "merchant",
+						content: expect.objectContaining({
+							status: "released",
+							standardReplyPolicy: "星云灯适合不超过 20 平方米的房间。",
+						}),
+					}),
+				}),
+			);
+			expect(queryMocks.createResponseIntervention).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						beforeKnowledgeRevisionScopeKey: null,
+						beforeKnowledgeRevisionId: null,
+					}),
+				}),
+			);
+			expect(queryMocks.createCapabilityKnowledgeUnits).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.arrayContaining([
+						expect.objectContaining({ knowledgeUnitRevisionId: "platform-revision" }),
+						expect.objectContaining({ knowledgeUnitRevisionId: "result-supplement-revision" }),
+					]),
+				}),
+			);
+			expect(queryMocks.upsertCapabilityBinding).toHaveBeenCalledWith(
+				expect.objectContaining({ update: { testCapabilityVersionId: "result-version" } }),
+			);
+		},
+	);
 
 	it("returns only an exact normalized retry and rejects a different correction", async () => {
 		const source = {

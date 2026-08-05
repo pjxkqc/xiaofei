@@ -684,13 +684,13 @@ model XiaofeiResponseIntervention {
   afterResponse             Json?
   beforeCapabilityVersionId String
   resultCapabilityVersionId String
-  beforeKnowledgeRevisionScopeKey String
-  beforeKnowledgeRevisionId String
+  beforeKnowledgeRevisionScopeKey String?
+  beforeKnowledgeRevisionId String?
   resultKnowledgeRevisionScopeKey String
   resultKnowledgeRevisionId String
   beforeCapabilityVersion   XiaofeiCapabilityVersion @relation("InterventionBeforeCapabilityVersion", fields: [organizationId, beforeCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
   resultCapabilityVersion   XiaofeiCapabilityVersion @relation("InterventionResultCapabilityVersion", fields: [organizationId, resultCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
-  beforeKnowledgeRevision   XiaofeiKnowledgeUnitRevision @relation("InterventionBeforeRevision", fields: [beforeKnowledgeRevisionScopeKey, beforeKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
+  beforeKnowledgeRevision   XiaofeiKnowledgeUnitRevision? @relation("InterventionBeforeRevision", fields: [beforeKnowledgeRevisionScopeKey, beforeKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
   resultKnowledgeRevision   XiaofeiKnowledgeUnitRevision @relation("InterventionResultRevision", fields: [resultKnowledgeRevisionScopeKey, resultKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
   sourceTestTurnId          String?
   sourceTestTurn            XiaofeiTestTurn?             @relation("TestTurnFeedbackIntervention", fields: [organizationId, sourceTestTurnId], references: [organizationId, id], onDelete: Restrict)

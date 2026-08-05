@@ -2427,11 +2427,16 @@ export async function getXiaofeiTestSession(organizationId: string, testSessionI
 	};
 }
 
-/** Feedback derives before facts exclusively from the persisted source turn. */
+/**
+ * Feedback derives before facts exclusively from the persisted source turn.
+ * Merchant-grounded answers revise their selected KU. Platform/no-hit answers
+ * create a new Organization-owned KU so the global baseline stays read-only.
+ */
 export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedbackInput) {
 	return db.$transaction(
 		async (transaction) => {
 			const correction = normalizeXiaofeiTestTurnCorrection(input.correction);
+			if (!correction) throw new TypeError("TestTurn correction cannot be empty.");
 			await lockXiaofeiVersioningScope(
 				transaction,
 				`test-turn-feedback:${input.organizationId}:${input.sourceTestTurnId}`,
@@ -2445,24 +2450,19 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 					capabilityVersion: { include: { knowledgeUnits: true } },
 				},
 			});
-			if (
-				!source?.evidenceRevision ||
-				!source.evidenceRevisionId ||
-				source.evidenceRevision.origin !== "merchant"
-			)
+			if (!source)
 				throw new XiaofeiVersioningNotFoundError(input.organizationId, input.sourceTestTurnId);
 			if (
 				source.capabilityVersion.capabilityKey !== "xiaofei-hosting" ||
-				!source.capabilityVersion.knowledgeUnits.some(
-					(member) => member.knowledgeUnitRevisionId === source.evidenceRevisionId,
-				)
+				(source.evidenceRevisionId !== null &&
+					!source.capabilityVersion.knowledgeUnits.some(
+						(member) => member.knowledgeUnitRevisionId === source.evidenceRevisionId,
+					))
 			)
-				throw new XiaofeiVersioningNotFoundError(input.organizationId, source.evidenceRevisionId);
-			const correctedKnowledgeUnit = KnowledgeUnitSchema.parse(source.evidenceRevision.content);
-			const correctedContent = KnowledgeUnitSchema.parse({
-				...correctedKnowledgeUnit,
-				standardReplyPolicy: correction,
-			});
+				throw new XiaofeiVersioningNotFoundError(
+					input.organizationId,
+					source.evidenceRevisionId ?? source.id,
+				);
 			const existing = await transaction.xiaofeiResponseIntervention.findUnique({
 				where: {
 					organizationId_sourceTestTurnId: {
@@ -2482,19 +2482,25 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 					sourceTestTurn: source,
 				};
 			}
-			const applied = await applyXiaofeiResponseInterventionInTransaction(transaction, {
-				organizationId: input.organizationId,
-				capabilityKey: "xiaofei-hosting",
-				beforeCapabilityVersionId: source.capabilityVersionId,
-				beforeKnowledgeRevisionId: source.evidenceRevisionId,
-				correction,
-				correctedContent,
-				beforeResponse: {
-					question: source.question,
-					answer: source.answer,
-					runtimeMetadata: source.runtimeMetadata,
-				},
-			});
+			const applied =
+				source.evidenceRevision?.origin === "merchant" && source.evidenceRevisionId
+					? await applyXiaofeiResponseInterventionInTransaction(transaction, {
+							organizationId: input.organizationId,
+							capabilityKey: "xiaofei-hosting",
+							beforeCapabilityVersionId: source.capabilityVersionId,
+							beforeKnowledgeRevisionId: source.evidenceRevisionId,
+							correction,
+							correctedContent: KnowledgeUnitSchema.parse({
+								...KnowledgeUnitSchema.parse(source.evidenceRevision.content),
+								standardReplyPolicy: correction,
+							}),
+							beforeResponse: testTurnBeforeResponse(source),
+						})
+					: await createXiaofeiTestTurnSupplementInTransaction(transaction, {
+							organizationId: input.organizationId,
+							correction,
+							source,
+						});
 			await transaction.xiaofeiResponseIntervention.update({
 				where: {
 					organizationId_id: { organizationId: input.organizationId, id: applied.intervention.id },
@@ -2515,6 +2521,112 @@ export function applyXiaofeiTestTurnFeedback(input: ApplyXiaofeiTestTurnFeedback
 			timeout: 15_000,
 		},
 	);
+}
+
+async function createXiaofeiTestTurnSupplementInTransaction(
+	transaction: Prisma.TransactionClient,
+	input: {
+		organizationId: string;
+		correction: string;
+		source: {
+			id: string;
+			question: string;
+			answer: string;
+			capabilityVersionId: string;
+			runtimeMetadata: Prisma.JsonValue;
+			capabilityVersion: {
+				knowledgeUnits: Array<{ knowledgeUnitRevisionId: string; role: string; priority: number }>;
+			};
+		};
+	},
+) {
+	const logicalKnowledgeUnitId = `merchant:test-turn:${input.source.id}`;
+	const resultRevision = await createXiaofeiKnowledgeUnitRevisionInTransaction(transaction, {
+		organizationId: input.organizationId,
+		logicalKnowledgeUnitId,
+		origin: "merchant",
+		content: testTurnSupplementKnowledge(input.source, input.correction),
+	});
+	const nextPriority =
+		Math.max(-1, ...input.source.capabilityVersion.knowledgeUnits.map((unit) => unit.priority)) + 1;
+	const resultVersion = await createXiaofeiCapabilityVersionInTransaction(transaction, {
+		organizationId: input.organizationId,
+		capabilityKey: "xiaofei-hosting",
+		knowledgeUnits: [
+			...input.source.capabilityVersion.knowledgeUnits.map((unit) => ({
+				knowledgeUnitRevisionId: unit.knowledgeUnitRevisionId,
+				role: unit.role,
+				priority: unit.priority,
+			})),
+			{
+				knowledgeUnitRevisionId: resultRevision.id,
+				role: "primary",
+				priority: nextPriority,
+			},
+		],
+	});
+	const intervention = await transaction.xiaofeiResponseIntervention.create({
+		data: {
+			organizationId: input.organizationId,
+			correction: input.correction,
+			beforeResponse: testTurnBeforeResponse(input.source),
+			beforeCapabilityVersionId: input.source.capabilityVersionId,
+			resultCapabilityVersionId: resultVersion.id,
+			beforeKnowledgeRevisionScopeKey: null,
+			beforeKnowledgeRevisionId: null,
+			resultKnowledgeRevisionScopeKey: resultRevision.scopeKey,
+			resultKnowledgeRevisionId: resultRevision.id,
+		},
+	});
+	await transaction.xiaofeiCapabilityBinding.upsert({
+		where: {
+			organizationId_capabilityKey: {
+				organizationId: input.organizationId,
+				capabilityKey: "xiaofei-hosting",
+			},
+		},
+		create: {
+			organizationId: input.organizationId,
+			capabilityKey: "xiaofei-hosting",
+			testCapabilityVersionId: resultVersion.id,
+		},
+		update: { testCapabilityVersionId: resultVersion.id },
+	});
+	return { intervention, resultRevision, resultVersion };
+}
+
+function testTurnSupplementKnowledge(
+	source: { id: string; question: string },
+	standardReplyPolicy: string,
+) {
+	return KnowledgeUnitSchema.parse({
+		id: `test-turn:${source.id}`,
+		title: source.question.trim().slice(0, 500),
+		status: "released",
+		scenarioKeywords: [source.question.trim()],
+		applicableScenarios: [source.question.trim()],
+		inapplicableScenarios: ["问题语义不一致或需要个案核实的情况。"],
+		requiredSlots: [],
+		forbiddenOutputs: ["不得扩展修正口径之外的业务事实或处理承诺。"],
+		handoffRules: ["修正口径不足以回答或需要个案处理时转人工。"],
+		standardReplyPolicy,
+		fallbackReply: "该问题超出已审核口径时，请转人工客服核实。",
+		sourceSection: `测试会话反馈：${source.question.trim().slice(0, 500)}`,
+		quality: { status: "passed", blockers: [], warnings: [] },
+		eligibility: "eligible",
+	});
+}
+
+function testTurnBeforeResponse(source: {
+	question: string;
+	answer: string;
+	runtimeMetadata: Prisma.JsonValue;
+}): Prisma.InputJsonValue {
+	return {
+		question: source.question,
+		answer: source.answer,
+		runtimeMetadata: source.runtimeMetadata,
+	};
 }
 
 /** Persists a real rerun before filling the intervention's previously-null after response. */

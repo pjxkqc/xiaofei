@@ -34,9 +34,10 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("人工验收 Test CA");
 	});
 
-	it("makes no-hit and platform answers visibly non-correctable", () => {
+	it("offers a merchant supplement action for no-hit and platform answers", () => {
 		expect(panel).toContain("turn.feedbackAllowed ?");
-		expect(panel).toContain("平台兜底或未命中");
+		expect(panel).toContain("补充为商户知识并修正");
+		expect(panel).toContain("生成商户 KU 并同题复测");
 	});
 
 	it("reuses an opaque Test session for consecutive turns and resets after correction", () => {
@@ -49,10 +50,10 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("后续测试已切换为新会话");
 	});
 
-	it("lets every merchant-grounded turn select one correction editor", () => {
+	it("lets every saved turn select one correction editor", () => {
 		expect(panel).toContain("选择并修正这条回答");
 		expect(panel).toContain("setSelectedTurnId(turn.turn.id)");
-		expect(panel).toContain("正在修正第");
+		expect(panel).toContain('selected.feedbackMode === "revise" ? "正在修正" : "正在补充"');
 	});
 
 	it("calculates Test-versus-Active membership by revision-set difference and locks actions", () => {

@@ -39,9 +39,13 @@ describe("Xiaofei versioned test-turn API contract", () => {
 		expect(source).toContain("This test session changed; reload and try again.");
 	});
 
-	it("maps no-hit, platform, foreign, and conflicting feedback to fail-closed errors", () => {
+	it("lets no-hit/platform answers supplement merchant knowledge and keeps invalid evidence fail-closed", () => {
+		expect(source).toContain("feedbackAllowed: true");
+		expect(source).toContain('("supplement" as const)');
 		expect(source).toContain("XiaofeiVersioningNotFoundError");
 		expect(source).toContain("XiaofeiTestTurnFeedbackConflictError");
-		expect(source).toContain("This answer has no correctable merchant knowledge evidence.");
+		expect(source).toContain(
+			"This saved answer can no longer be corrected from the current Test CA.",
+		);
 	});
 });

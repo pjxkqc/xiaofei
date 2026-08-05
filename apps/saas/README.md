@@ -141,7 +141,9 @@ Test CA conversation
     → same-origin /api/rpc `runVersionedTest`
     → saved testSessionId and TestTurn history
     → immutable Test CA manifest and guarded runtime
-    → answer-bound merchant correction → new Test CA / new session
+    → merchant hit: answer-bound KU Revision correction
+    → platform/no-hit: new merchant-owned KU supplement
+    → new Test CA / same-question rerun / new session
 
 public support loop
   PublicSupportChat (/support)
