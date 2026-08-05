@@ -56,6 +56,40 @@ are not retained; `bodyText` is the durable extracted content.
 - scoped conversation reset;
 - document create, list, get, update, and delete by workspace.
 - inbound event acceptance, workspace-scoped metadata lists, and full detail reads.
+- Organization-scoped Active/Test hosting bindings, exact runtime materialization,
+  immutable feedback interventions, and durable TestTurn records.
+
+### Governed answer-feedback-rerun bridge
+
+`getXiaofeiOrganizationHostingBinding` and
+`loadXiaofeiRuntimeHostingCapability` are the only persistence boundary for
+the App's governed hosting snapshot. They return exact ordered M:N revision
+members and rebuild the `@repo/xiaofei` domain hashes from persisted content;
+the persistence `contentHash` and `manifestHash` are never passed through as
+domain hashes. Active and Test are selected only from their respective
+Organization-local hosting pointers.
+
+`XiaofeiTestTurn` retains one actual test answer, optional immutable `ConversationState`
+snapshot, runtime metadata, and optional normalized evidence revision. The optional
+column preserves pre-session records during lossless Preview schema pushes; only a
+non-null, schema-valid snapshot can resume a session. A session loads its newest
+snapshot only through the compound Organization + session query and is pinned to
+its initial Test CA; a CA switch requires a new session rather than mixing evidence.
+Each new turn uses a session advisory lock and compares the previously loaded turn
+ID before writing, so concurrent stale turns fail closed instead of overwriting the
+latest state. Writes prove the referenced CA is that
+Organization's current Active/Test hosting pointer and that evidence is an
+exact member; no-hit evidence remains null. Feedback derives all before facts
+from the saved source turn. Merchant-grounded feedback replaces only that
+merchant KU Revision. Platform-grounded or no-hit feedback leaves the global
+baseline unchanged and creates a new Organization-owned KU Revision appended to
+a new Test CA. Both paths write only the Test pointer, and a real rerun may fill
+an intervention's initially-null after response only after it is saved against
+the intervention result CA. These records are additive and do not migrate
+conversation history. The multi-record feedback transaction keeps its atomic
+scope and explicitly uses a 5-second acquisition wait and 15-second execution
+timeout for cold Neon Preview paths; this override is local to that operation
+and does not change global Prisma defaults.
 
 ### Email mirror ledger
 
