@@ -30,6 +30,9 @@ An importer must read these files before creating or updating anything:
 6. [`skills/xiaofei-pr-delivery/SKILL.md`](./skills/xiaofei-pr-delivery/SKILL.md)
    — reusable UAT branch, Draft PR, exact-head, Preview, cleanup, and promotion
    workflow.
+7. [`skills/xiaofei-feature-orchestration/SKILL.md`](./skills/xiaofei-feature-orchestration/SKILL.md)
+   — cross-machine Feature intake, ownership routing, one shared branch and
+   one Draft PR to `uat`.
 
 The importer should reconcile by project title, Agent slug, and squad name. It
 must update matching objects instead of creating duplicates.
