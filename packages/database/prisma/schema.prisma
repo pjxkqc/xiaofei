@@ -147,6 +147,11 @@ model Organization {
   xiaofeiConfig      XiaofeiOrganizationConfig?
   xiaofeiCustomers   XiaofeiCustomer[]
   xiaofeiChannelBindings XiaofeiChannelBinding[]
+  xiaofeiTestTurns   XiaofeiTestTurn[]
+  knowledgeUnitRevisions XiaofeiKnowledgeUnitRevision[]
+  capabilityVersions XiaofeiCapabilityVersion[]
+  capabilityBindings XiaofeiCapabilityBinding[]
+  responseInterventions XiaofeiResponseIntervention[]
 
   @@unique([slug])
   @@map("organization")
@@ -576,4 +581,161 @@ model XiaofeiKnowledgeUnit {
   @@index([workspaceId, sourceId])
   @@index([workspaceId, entryId])
   @@map("xiaofei_knowledge_unit")
+}
+
+/// An immutable, content-addressed snapshot of a logical knowledge unit.
+/// Merchant revisions are Organization-scoped; platform baseline revisions are
+/// global (`organizationId = null`) and may only be referenced after an
+/// Organization-scoped query has selected them explicitly.
+model XiaofeiKnowledgeUnitRevision {
+  id                     String        @id @default(cuid())
+  organizationId         String?
+  organization           Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scopeKey               String
+  logicalKnowledgeUnitId String
+  knowledgeUnitId        String?
+  origin                 String
+  revision               Int
+  content                Json
+  contentHash            String
+  createdAt              DateTime      @default(now())
+
+  capabilityKnowledgeUnits XiaofeiCapabilityVersionKnowledgeUnit[]
+  beforeInterventions     XiaofeiResponseIntervention[] @relation("InterventionBeforeRevision")
+  resultInterventions     XiaofeiResponseIntervention[] @relation("InterventionResultRevision")
+  testTurnEvidence        XiaofeiTestTurn[] @relation("TestTurnEvidenceRevision")
+
+  @@unique([scopeKey, id])
+  @@unique([scopeKey, logicalKnowledgeUnitId, revision], map: "xiaofei_ku_revision_scope_logical_revision_key")
+  @@unique([scopeKey, logicalKnowledgeUnitId, contentHash], map: "xiaofei_ku_revision_scope_logical_hash_key")
+  @@index([scopeKey, logicalKnowledgeUnitId, createdAt])
+  @@map("xiaofei_knowledge_unit_revision")
+}
+
+/// A frozen CA manifest. Its membership and lifecycle are never updated;
+/// activation is represented only by XiaofeiCapabilityBinding.
+model XiaofeiCapabilityVersion {
+  id           String       @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capabilityKey String
+  status        String       @default("test")
+  manifestHash  String
+  createdAt     DateTime     @default(now())
+
+  knowledgeUnits       XiaofeiCapabilityVersionKnowledgeUnit[]
+  activeBindings       XiaofeiCapabilityBinding[] @relation("ActiveCapabilityVersion")
+  testBindings         XiaofeiCapabilityBinding[] @relation("TestCapabilityVersion")
+  beforeInterventions  XiaofeiResponseIntervention[] @relation("InterventionBeforeCapabilityVersion")
+  resultInterventions  XiaofeiResponseIntervention[] @relation("InterventionResultCapabilityVersion")
+  testTurns            XiaofeiTestTurn[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, capabilityKey, manifestHash])
+  @@index([organizationId, capabilityKey, createdAt])
+  @@map("xiaofei_capability_version")
+}
+
+/// One Organization-local pointer per capability. Switching `active` is the
+/// only mutable version lifecycle operation and is performed transactionally.
+model XiaofeiCapabilityBinding {
+  id                        String       @id @default(cuid())
+  organizationId            String
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capabilityKey             String
+  activeCapabilityVersionId String?
+  testCapabilityVersionId   String?
+  activeCapabilityVersion   XiaofeiCapabilityVersion? @relation("ActiveCapabilityVersion", fields: [organizationId, activeCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  testCapabilityVersion     XiaofeiCapabilityVersion? @relation("TestCapabilityVersion", fields: [organizationId, testCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+
+  @@unique([organizationId, capabilityKey])
+  @@map("xiaofei_capability_binding")
+}
+
+/// Membership has a required revision scope key. This makes global platform rows
+/// first-class foreign-key targets instead of nullable-FK exceptions.
+model XiaofeiCapabilityVersionKnowledgeUnit {
+  id                      String                       @id @default(cuid())
+  organizationId          String
+  capabilityVersionId     String
+  knowledgeUnitRevisionScopeKey String
+  knowledgeUnitRevisionId String
+  role                    String                       @default("primary")
+  priority                Int                          @default(0)
+  capabilityVersion       XiaofeiCapabilityVersion     @relation(fields: [organizationId, capabilityVersionId], references: [organizationId, id], onDelete: Cascade)
+  knowledgeUnitRevision   XiaofeiKnowledgeUnitRevision @relation(fields: [knowledgeUnitRevisionScopeKey, knowledgeUnitRevisionId], references: [scopeKey, id], onDelete: Restrict)
+  createdAt               DateTime                     @default(now())
+
+  @@unique([organizationId, capabilityVersionId, knowledgeUnitRevisionId])
+  @@index([organizationId, knowledgeUnitRevisionId])
+  @@map("xiaofei_capability_version_knowledge_unit")
+}
+
+/// Durable before/after record for one applied correction. It never replaces a
+/// response, active CA version, or earlier immutable knowledge snapshot.
+model XiaofeiResponseIntervention {
+  id                        String       @id @default(cuid())
+  organizationId            String
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  correction                String       @db.Text
+  beforeResponse            Json?
+  afterResponse             Json?
+  beforeCapabilityVersionId String
+  resultCapabilityVersionId String
+  beforeKnowledgeRevisionScopeKey String?
+  beforeKnowledgeRevisionId String?
+  resultKnowledgeRevisionScopeKey String
+  resultKnowledgeRevisionId String
+  beforeCapabilityVersion   XiaofeiCapabilityVersion @relation("InterventionBeforeCapabilityVersion", fields: [organizationId, beforeCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  resultCapabilityVersion   XiaofeiCapabilityVersion @relation("InterventionResultCapabilityVersion", fields: [organizationId, resultCapabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  beforeKnowledgeRevision   XiaofeiKnowledgeUnitRevision? @relation("InterventionBeforeRevision", fields: [beforeKnowledgeRevisionScopeKey, beforeKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
+  resultKnowledgeRevision   XiaofeiKnowledgeUnitRevision @relation("InterventionResultRevision", fields: [resultKnowledgeRevisionScopeKey, resultKnowledgeRevisionId], references: [scopeKey, id], onDelete: Restrict)
+  sourceTestTurnId          String?
+  sourceTestTurn            XiaofeiTestTurn?             @relation("TestTurnFeedbackIntervention", fields: [organizationId, sourceTestTurnId], references: [organizationId, id], onDelete: Restrict)
+  testTurns                 XiaofeiTestTurn[]
+  createdAt                 DateTime     @default(now())
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, sourceTestTurnId])
+  @@index([organizationId, createdAt])
+  @@map("xiaofei_response_intervention")
+}
+
+/// One immutable answer and ConversationState snapshot from the Organization's
+/// governed Active or Test hosting CA. The latest snapshot for a session is
+/// loaded only through the Organization-scoped persistence boundary.
+model XiaofeiTestTurn {
+  id                       String                       @id @default(cuid())
+  organizationId           String
+  organization             Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  testSessionId            String
+  question                 String                       @db.Text
+  answer                   String                       @db.Text
+  capabilityVersionId      String
+  capabilityVersion        XiaofeiCapabilityVersion     @relation(fields: [organizationId, capabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  conversationState        Json?
+  runtimeMetadata          Json
+  evidenceRevisionScopeKey String?
+  evidenceRevisionId       String?
+  evidenceRevision         XiaofeiKnowledgeUnitRevision? @relation("TestTurnEvidenceRevision", fields: [evidenceRevisionScopeKey, evidenceRevisionId], references: [scopeKey, id], onDelete: Restrict)
+  sourceTestTurnId         String?
+  sourceTestTurn           XiaofeiTestTurn?             @relation("TestTurnSource", fields: [organizationId, sourceTestTurnId], references: [organizationId, id], onDelete: Restrict)
+  feedbackTurns            XiaofeiTestTurn[]            @relation("TestTurnSource")
+  rerunOfTestTurnId        String?
+  rerunOfTestTurn          XiaofeiTestTurn?             @relation("TestTurnRerun", fields: [organizationId, rerunOfTestTurnId], references: [organizationId, id], onDelete: Restrict)
+  rerunTurns               XiaofeiTestTurn[]            @relation("TestTurnRerun")
+  interventionId           String?
+  intervention             XiaofeiResponseIntervention? @relation(fields: [organizationId, interventionId], references: [organizationId, id], onDelete: Restrict)
+  feedbackIntervention     XiaofeiResponseIntervention? @relation("TestTurnFeedbackIntervention")
+  requestedAt              DateTime
+  completedAt              DateTime
+  createdAt                DateTime                     @default(now())
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, rerunOfTestTurnId, interventionId])
+  @@index([organizationId, testSessionId, createdAt])
+  @@index([organizationId, capabilityVersionId])
+  @@map("xiaofei_test_turn")
 }

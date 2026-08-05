@@ -60,7 +60,9 @@ vi.mock("./knowledge-content-parser", () => ({
 	KnowledgeContentParserError: class KnowledgeContentParserError extends Error {},
 }));
 
+import { generateKnowledgeUnitDrafts } from "@repo/ai";
 import {
+	createXiaofeiKnowledgeUnit,
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
@@ -84,6 +86,7 @@ import {
 	createKnowledgeWeb,
 	createManualKnowledgeEntries,
 	deleteKnowledgeDocumentForTenant,
+	generateKnowledgeUnitsForTenant,
 	getKnowledgeDocument,
 	getKnowledgeTenantKey,
 	listKnowledgeDocuments,
@@ -134,6 +137,40 @@ function knowledgeUnit(status: string, eligibility = "ineligible") {
 			},
 			eligibility,
 		},
+	};
+}
+
+function currentEntry(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "entry-1",
+		workspaceId: "workspace-public",
+		sourceId: "source-1",
+		sourceContentHash: "source-hash-1",
+		sourceVersion: 3,
+		entryVersion: 2,
+		question: "退换货政策是什么？",
+		answer: "请根据已审核政策提交订单信息，由人工客服核实。",
+		similarQueries: ["如何退货"],
+		category: "POSTSALES",
+		tags: ["退换货"],
+		status: "active",
+		eligible: true,
+		...overrides,
+	};
+}
+
+function modelCandidate(entryId = "entry-1") {
+	return {
+		entryId,
+		title: "退换货政策",
+		scenarioKeywords: ["退换货"],
+		applicableScenarios: ["退换货咨询"],
+		inapplicableScenarios: ["订单信息不完整"],
+		requiredSlots: [],
+		forbiddenOutputs: ["不得承诺退款"],
+		handoffRules: ["争议转人工"],
+		standardReplyPolicy: "仅依据审核政策说明。",
+		fallbackReply: "请由人工客服核实。",
 	};
 }
 
@@ -657,6 +694,89 @@ describe("knowledge document application boundary", () => {
 			code: "BAD_REQUEST",
 			message: expect.stringContaining("current draft knowledge entries"),
 		});
+	});
+
+	it("keeps model generation primary and persists its validated draft with exact lineage", async () => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(currentEntry() as never);
+		vi.mocked(createXiaofeiKnowledgeUnit).mockImplementation(async (input) => input as never);
+		const primary = vi.fn((input) =>
+			generateKnowledgeUnitDrafts(input, async () => [modelCandidate()]),
+		);
+
+		const units = await generateKnowledgeUnitsForTenant(USER_CONTEXT, ["entry-1"], primary);
+
+		expect(primary).toHaveBeenCalledTimes(1);
+		expect(units).toHaveLength(1);
+		expect(createXiaofeiKnowledgeUnit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				workspaceId: "workspace-public",
+				entryId: "entry-1",
+				status: "draft",
+				eligibility: "ineligible",
+				content: expect.objectContaining({
+					lineage: expect.objectContaining({
+						workspaceId: "workspace-public",
+						sourceId: "source-1",
+						sourceContentHash: "source-hash-1",
+						sourceVersion: 3,
+						entryId: "entry-1",
+						entryVersion: 2,
+					}),
+				}),
+			}),
+		);
+	});
+
+	it("uses a conservative domain-validated draft when the injected model generator fails", async () => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(currentEntry() as never);
+		vi.mocked(createXiaofeiKnowledgeUnit).mockImplementation(async (input) => input as never);
+		const failingGenerator = vi.fn((input, fallback) => {
+			if (!fallback) throw new Error("provider unavailable");
+			return generateKnowledgeUnitDrafts(input, fallback);
+		});
+
+		await generateKnowledgeUnitsForTenant(USER_CONTEXT, ["entry-1"], failingGenerator);
+
+		expect(failingGenerator).toHaveBeenCalledTimes(2);
+		expect(createXiaofeiKnowledgeUnit).toHaveBeenCalledWith(
+			expect.objectContaining({
+				workspaceId: "workspace-public",
+				entryId: "entry-1",
+				status: "draft",
+				eligibility: "ineligible",
+				content: expect.objectContaining({
+					title: "退换货政策是什么？",
+					requiredSlots: [],
+					forbiddenOutputs: ["不得承诺退款、补偿、时效或已执行的业务动作。"],
+					handoffRules: ["来源事实不足、存在争议或需要个案处理时转人工。"],
+					standardReplyPolicy: expect.stringContaining("请根据已审核政策提交订单信息"),
+					lineage: expect.objectContaining({
+						workspaceId: "workspace-public",
+						sourceId: "source-1",
+						entryId: "entry-1",
+					}),
+				}),
+			}),
+		);
+	});
+
+	it.each([
+		["inactive", currentEntry({ status: "draft" })],
+		["stale", currentEntry({ eligible: false })],
+		["foreign", null],
+	])("fails closed without a fallback for %s entries", async (_case, entry) => {
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(entry as never);
+		const generator = vi.fn();
+
+		await expect(
+			generateKnowledgeUnitsForTenant(USER_CONTEXT, ["foreign-or-invalid-entry"], generator),
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+		expect(generator).not.toHaveBeenCalled();
+		expect(createXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
+		expect(getXiaofeiKnowledgeEntry).toHaveBeenCalledWith(
+			"workspace-public",
+			"foreign-or-invalid-entry",
+		);
 	});
 
 	it("rebuilds the runtime snapshot after a publish so only current eligible KUs are admitted", async () => {

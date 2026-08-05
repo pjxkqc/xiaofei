@@ -14,6 +14,7 @@ import {
 } from "./contracts";
 import { acquireAiRunLease, authorizeAiReply, requestHumanHandoff } from "./conversation";
 import { isKnowledgeUnitEligible } from "./knowledge";
+import { resolveRuntimeKnowledgeEvidence } from "./versioning";
 
 export interface ReplyGenerationInput {
 	message: string;
@@ -419,6 +420,10 @@ export async function finalizeTurn(input: {
 		state,
 		metadata: {
 			knowledgeTitle: input.prepared.knowledge?.title ?? null,
+			knowledgeEvidence: resolveRuntimeKnowledgeEvidence(
+				input.snapshot.knowledgeVersioning,
+				input.prepared.knowledge?.id ?? null,
+			),
 			nextAction: state.nextAction,
 			riskLevel: state.riskLevel,
 			ownerType: state.ownerType,
@@ -567,7 +572,7 @@ function bestKnowledgeTermMatch(
 		}
 		if (exact) acceptedExactMatches += 1;
 		const candidate = exact
-			? { score: 100 + Math.min(term.length, 30), reason: "exact" as const }
+			? { score: 100 + Math.min(term.length * 4, 80), reason: "exact" as const }
 			: relatedTextScore(normalizedMessage, term);
 		if (candidate && (!best || candidate.score > best.score)) best = candidate;
 	}

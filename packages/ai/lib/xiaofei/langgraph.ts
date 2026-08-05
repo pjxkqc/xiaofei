@@ -2,9 +2,11 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import {
 	finalizeTurn,
 	prepareTurn,
+	prepareEvalTurn,
 	type ConversationState,
 	type KnowledgeWorkspaceBinding,
 	type PreparedTurn,
+	type ReplyGenerator,
 	type RuntimeTurnResult,
 	type TraceEvent,
 	type XiaofeiWorkspaceSnapshot,
@@ -17,6 +19,11 @@ const GraphState = Annotation.Root({
 	conversation: Annotation<ConversationState>(),
 	snapshot: Annotation<XiaofeiWorkspaceSnapshot>(),
 	knowledgeWorkspaceBinding: Annotation<KnowledgeWorkspaceBinding>(),
+	testMode: Annotation<boolean>({ reducer: (_previous, next) => next, default: () => false }),
+	replyGenerator: Annotation<ReplyGenerator | null>({
+		reducer: (_previous, next) => next ?? null,
+		default: () => null,
+	}),
 	prepared: Annotation<PreparedTurn | null>({
 		reducer: (_previous, next) => next ?? null,
 		default: () => null,
@@ -31,7 +38,8 @@ type GraphStateValue = typeof GraphState.State;
 
 const graph = new StateGraph(GraphState)
 	.addNode("admission_knowledge_slots", (state: GraphStateValue) => {
-		const prepared = prepareTurn({
+		const prepare = state.testMode ? prepareEvalTurn : prepareTurn;
+		const prepared = prepare({
 			message: state.message,
 			state: state.conversation,
 			snapshot: state.snapshot,
@@ -74,7 +82,7 @@ const graph = new StateGraph(GraphState)
 				prepared,
 				snapshot: state.snapshot,
 				message: state.message,
-				replyGenerator: createMastraReplyGenerator(),
+				replyGenerator: state.replyGenerator ?? createMastraReplyGenerator(),
 			}),
 		};
 	})
@@ -88,12 +96,16 @@ export async function runLangGraphTurn(input: {
 	state: ConversationState;
 	snapshot: XiaofeiWorkspaceSnapshot;
 	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
+	testMode?: boolean;
+	replyGenerator?: ReplyGenerator;
 }): Promise<RuntimeTurnResult> {
 	const output = await graph.invoke({
 		message: input.message,
 		conversation: input.state,
 		snapshot: input.snapshot,
 		knowledgeWorkspaceBinding: input.knowledgeWorkspaceBinding,
+		testMode: input.testMode ?? false,
+		replyGenerator: input.replyGenerator ?? null,
 	});
 	if (!output.result) throw new Error("LangGraph did not produce a runtime result.");
 	return output.result;

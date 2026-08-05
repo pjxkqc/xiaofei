@@ -48,6 +48,27 @@ Changing a source or normalized entry deterministically revokes KU eligibility,
 capability review, and Eval evidence. This does not replace the final Guardrail
 or `ownerEpoch` lease check; those remain the customer-visible send authority.
 
+Knowledge feedback is revision-bound. A logical KU and an immutable KU Revision
+are distinct identities; a KU Revision hash covers immutable KU content—not its
+revision identity or provenance. KU origin is platform or merchant, while a
+content-hashed Capability Version Manifest independently names its capability
+(`platform-fallback`, `merchant-knowledge`, or `xiaofei-hosting`) and explicitly
+references KU Revisions. The runtime returns the selected logical KU, KU Revision,
+CA Version, CA capability, and KU origin as answer evidence only from a validated
+active manifest. Validation rejects dangling or ambiguous versions, duplicate
+logical KUs in a manifest, and foreign merchant revisions. The domain only admits
+corrections to an owning organization's merchant knowledge; platform and
+cross-organization targets are rejected before persistence. An authenticated
+merchant administrator may instead turn a saved platform/no-hit TestTurn into a
+new merchant-owned logical KU and Test CA. This supplementation never revises
+the platform KU or changes Active before human acceptance.
+
+The three capability layers are origin-safe: platform-fallback manifests contain
+platform-origin KUs only, merchant-knowledge manifests contain merchant-origin
+KUs only, and xiaofei-hosting may combine both. Because it drives runtime
+evidence, the active version pointer must resolve to an active xiaofei-hosting
+manifest.
+
 Knowledge absence is fail-safe without being an automatic ownership transfer.
 The kernel may send only a configured, deterministic clarification reply while
 keeping AI ownership; it never asks a model to invent missing facts. Every miss

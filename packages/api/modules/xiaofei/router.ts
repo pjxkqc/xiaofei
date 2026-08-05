@@ -64,6 +64,15 @@ import {
 	setAgentConversationOwner,
 	startSupportConversation,
 } from "./procedures/support-conversations";
+import {
+	activateXiaofeiHostingVersion,
+	applyXiaofeiTestTurnCorrection,
+	getXiaofeiVersioningOverview,
+	initializeXiaofeiVersioning,
+	resetXiaofeiTestSession,
+	runXiaofeiVersionedTest,
+	setXiaofeiHostingEnabled,
+} from "./procedures/versioning";
 
 export const xiaofeiRouter = {
 	listCustomers,
@@ -96,6 +105,13 @@ export const xiaofeiRouter = {
 	saveConfig: saveXiaofeiConfig,
 	reviewCapability: reviewXiaofeiCapability,
 	resetConversation: resetXiaofeiConversation,
+	getVersioningOverview: getXiaofeiVersioningOverview,
+	initializeVersioning: initializeXiaofeiVersioning,
+	runVersionedTest: runXiaofeiVersionedTest,
+	resetTestSession: resetXiaofeiTestSession,
+	applyTestTurnCorrection: applyXiaofeiTestTurnCorrection,
+	activateHostingVersion: activateXiaofeiHostingVersion,
+	setHostingEnabled: setXiaofeiHostingEnabled,
 	runEval: runXiaofeiEval,
 	startSupportConversation,
 	getPublicConversation,

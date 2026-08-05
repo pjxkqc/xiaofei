@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	ConversationStateSchema,
 	XiaofeiWorkspaceSnapshotSchema,
+	createCapabilityVersionManifest,
 	createConversationState,
 	createDefaultWorkspaceSnapshot,
+	createKnowledgeUnitRevision,
 	finalizeTurn,
 	prepareTurn,
 	runP0EvalSuite,
@@ -29,6 +31,51 @@ async function setup() {
 }
 
 describe("P0 runtime kernel", () => {
+	it("returns active KU revision and CA version evidence with a generated answer", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const message = "你们的商品价格和库存怎么确认？";
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		expect(prepared.knowledge).not.toBeNull();
+		const revision = createKnowledgeUnitRevision({
+			id: "ku-revision-price-1",
+			logicalKnowledgeUnitId: "logical-ku-price",
+			organizationId: "tenant-1",
+			revision: 1,
+			origin: "merchant",
+			knowledgeUnit: prepared.knowledge!,
+			createdAt: NOW,
+		});
+		const capabilityVersion = createCapabilityVersionManifest({
+			id: "ca-active-1",
+			organizationId: "tenant-1",
+			capabilityKey: "xiaofei-hosting",
+			status: "active",
+			knowledgeUnitRevisionIds: [revision.id],
+			createdAt: NOW,
+		});
+		snapshot.knowledgeVersioning = {
+			knowledgeUnitRevisions: [revision],
+			capabilityVersionManifests: [capabilityVersion],
+			activeCapabilityVersionId: capabilityVersion.id,
+		};
+
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message,
+			replyGenerator: { generate: async () => "这是经过审核的商品说明。" },
+			now,
+		});
+
+		expect(result.metadata.knowledgeEvidence).toEqual({
+			logicalKnowledgeUnitId: "logical-ku-price",
+			knowledgeUnitRevisionId: revision.id,
+			capabilityVersionId: capabilityVersion.id,
+			capabilityKey: "xiaofei-hosting",
+			knowledgeUnitOrigin: "merchant",
+		});
+	});
+
 	it("blocks automatic handling until the KU capability plan is reviewed", async () => {
 		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
 		const state = createConversationState({
@@ -194,6 +241,41 @@ describe("P0 runtime kernel", () => {
 				]),
 			);
 		}
+	});
+
+	it("prefers a specific merchant scenario over a broad platform keyword", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const broadPlatformUnit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "platform-product-guidance",
+			title: "商品、价格与库存咨询",
+			scenarioKeywords: ["适合", "推荐"],
+			applicableScenarios: ["客户在购买前询问商品特点或适用范围"],
+			requiredSlots: [],
+		};
+		const specificMerchantUnit = {
+			...snapshot.knowledgeUnits[1]!,
+			id: "merchant-nebula-room-size",
+			title: "星云灯适用房间面积",
+			scenarioKeywords: ["星云灯房间面积"],
+			applicableScenarios: ["用户询问星云灯适合多大房间"],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [broadPlatformUnit, specificMerchantUnit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [broadPlatformUnit.id, specificMerchantUnit.id];
+
+		const prepared = prepareTurn({
+			message: "星云灯适合多大房间？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(prepared).toMatchObject({
+			knowledge: { id: specificMerchantUnit.id },
+			action: "reply",
+		});
 	});
 
 	it("prefers a product-specific KU over the generic presales KU", async () => {

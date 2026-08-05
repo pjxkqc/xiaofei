@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 
 import { AiChat, type KnowledgeProvenance } from "./AiChat";
 import { isAdmitted } from "./KnowledgeCapabilities";
+import { KnowledgeVersioningPanel } from "./KnowledgeVersioningPanel";
 
 export function XiaofeiChatConsole() {
 	const [conversationId, setConversationId] = useState(() => globalThis.crypto.randomUUID());
@@ -70,46 +71,49 @@ export function XiaofeiChatConsole() {
 	};
 
 	return (
-		<Card className="min-w-0 overflow-hidden">
-			<CardHeader className="gap-4 border-b">
-				<div className="gap-3 sm:flex-row sm:items-start sm:justify-between flex flex-col">
-					<div>
-						<CardTitle>P0 Chatbot 运行验证</CardTitle>
-						<CardDescription className="mt-1.5">
-							LangGraph 管理会话状态，Mastra Agent 按需生成；回复通过 Guardrail 后才展示。
-						</CardDescription>
+		<div className="gap-6 flex flex-col">
+			<Card className="min-w-0 overflow-hidden">
+				<CardHeader className="gap-4 border-b">
+					<div className="gap-3 sm:flex-row sm:items-start sm:justify-between flex flex-col">
+						<div>
+							<CardTitle>P0 Chatbot 运行验证</CardTitle>
+							<CardDescription className="mt-1.5">
+								LangGraph 管理会话状态，Mastra Agent 按需生成；回复通过 Guardrail 后才展示。
+							</CardDescription>
+						</div>
+						<div className="gap-2 flex shrink-0">
+							<Button variant="outline" size="sm" asChild>
+								<Link href="/agent-settings">
+									<Settings2Icon className="mr-2 size-4" />
+									Agent 设置
+								</Link>
+							</Button>
+							<Button variant="outline" size="sm" onClick={resetChat}>
+								<RefreshCcwIcon className="mr-2 size-4" />
+								重置会话
+							</Button>
+						</div>
 					</div>
-					<div className="gap-2 flex shrink-0">
-						<Button variant="outline" size="sm" asChild>
-							<Link href="/agent-settings">
-								<Settings2Icon className="mr-2 size-4" />
-								Agent 设置
-							</Link>
-						</Button>
-						<Button variant="outline" size="sm" onClick={resetChat}>
-							<RefreshCcwIcon className="mr-2 size-4" />
-							重置会话
-						</Button>
+					<div className="gap-2 flex flex-wrap">
+						<Capability icon={NetworkIcon} label="LangGraph StateGraph" />
+						<Capability icon={SparklesIcon} label="Mastra Agent" />
+						<Capability icon={DatabaseIcon} label="Neon State" />
+						<Capability icon={ShieldCheckIcon} label="Guardrail" />
 					</div>
-				</div>
-				<div className="gap-2 flex flex-wrap">
-					<Capability icon={NetworkIcon} label="LangGraph StateGraph" />
-					<Capability icon={SparklesIcon} label="Mastra Agent" />
-					<Capability icon={DatabaseIcon} label="Neon State" />
-					<Capability icon={ShieldCheckIcon} label="Guardrail" />
-				</div>
-				{!admitted && (
-					<p className="text-sm text-amber-700 dark:text-amber-400">
-						当前能力方案未完成审核与 Eval；自动回复会被安全准入门禁阻止。
-					</p>
-				)}
-			</CardHeader>
-			<AiChat
-				key={conversationId}
-				conversationId={conversationId}
-				provenanceByTitle={provenanceByTitle}
-			/>
-		</Card>
+					{!admitted && (
+						<p className="text-sm text-amber-700 dark:text-amber-400">
+							当前能力方案未完成审核与 Eval；自动回复会被安全准入门禁阻止。
+						</p>
+					)}
+				</CardHeader>
+				<AiChat
+					key={conversationId}
+					conversationId={conversationId}
+					provenanceByTitle={provenanceByTitle}
+				/>
+			</Card>
+			<KnowledgeVersioningPanel />
+		</div>
 	);
 }
 
