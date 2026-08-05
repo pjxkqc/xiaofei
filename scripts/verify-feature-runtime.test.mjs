@@ -6,6 +6,7 @@ import {
 	parseFeatureRuntimeArguments,
 	runFeatureRuntimePreflight,
 	resolveFeatureRuntimeExecutable,
+	resolveFeatureRuntimeInvocation,
 } from "./verify-feature-runtime.mjs";
 
 void test("defines every documented capability profile", () => {
@@ -49,6 +50,36 @@ void test("resolves npm shims on Windows", () => {
 	assert.equal(resolveFeatureRuntimeExecutable("vercel", "win32"), "vercel.cmd");
 	assert.equal(resolveFeatureRuntimeExecutable("neonctl", "win32"), "neonctl.cmd");
 	assert.equal(resolveFeatureRuntimeExecutable("git", "win32"), "git");
+});
+
+void test("invokes Windows command shims through cmd.exe with static arguments", () => {
+	assert.deepEqual(
+		resolveFeatureRuntimeInvocation(
+			"pnpm",
+			["--version"],
+			"win32",
+			"C:\\Windows\\System32\\cmd.exe",
+		),
+		{
+			executable: "C:\\Windows\\System32\\cmd.exe",
+			arguments: ["/d", "/s", "/c", "pnpm.cmd", "--version"],
+		},
+	);
+	assert.deepEqual(
+		resolveFeatureRuntimeInvocation("vercel", ["whoami"], "win32", "cmd.exe").arguments,
+		["/d", "/s", "/c", "vercel.cmd", "whoami"],
+	);
+});
+
+void test("keeps direct invocation unchanged outside Windows shims", () => {
+	assert.deepEqual(resolveFeatureRuntimeInvocation("pnpm", ["--version"], "darwin"), {
+		executable: "pnpm",
+		arguments: ["--version"],
+	});
+	assert.deepEqual(resolveFeatureRuntimeInvocation("git", ["--version"], "win32", "cmd.exe"), {
+		executable: "git",
+		arguments: ["--version"],
+	});
 });
 
 void test("dry-run plans repository and profile checks without executing commands", () => {

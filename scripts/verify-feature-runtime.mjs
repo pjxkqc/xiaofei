@@ -253,9 +253,25 @@ export function resolveFeatureRuntimeExecutable(command, platform = process.plat
 		: command;
 }
 
+export function resolveFeatureRuntimeInvocation(
+	command,
+	arguments_,
+	platform = process.platform,
+	commandProcessor = process.env.ComSpec ?? "cmd.exe",
+) {
+	if (platform === "win32" && ["pnpm", "vercel", "neonctl"].includes(command)) {
+		return {
+			executable: commandProcessor,
+			arguments: ["/d", "/s", "/c", `${command}.cmd`, ...arguments_],
+		};
+	}
+
+	return { executable: command, arguments: arguments_ };
+}
+
 function runCommandWithHiddenOutput(command, arguments_, { cwd } = {}) {
-	const executable = resolveFeatureRuntimeExecutable(command);
-	return execFileSync(executable, arguments_, {
+	const invocation = resolveFeatureRuntimeInvocation(command, arguments_);
+	return execFileSync(invocation.executable, invocation.arguments, {
 		cwd,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "pipe"],
