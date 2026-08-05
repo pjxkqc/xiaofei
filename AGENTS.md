@@ -20,11 +20,18 @@ Read these sources in order before making a change:
 For work routed through Multica, also follow
 [`docs/multica/collaboration.md`](./docs/multica/collaboration.md) and the
 assigned role in [`docs/multica/agents.md`](./docs/multica/agents.md).
+Cross-machine Feature controllers and implementers must also follow the
+canonical
+[`docs/multica/cross-machine-feature-operations.md`](./docs/multica/cross-machine-feature-operations.md)
+startup, capability, conflict, and handoff contract.
 
 ## Repository working contract
 
 - One issue has one implementation owner. Other agents review or receive an
   explicit child issue instead of editing the same boundary concurrently.
+- Multiple machines may work only on non-overlapping boundaries or read-only
+  validation. Audit the shared branch head and protected paths at every
+  handoff; stop writing on any unexpected head or path overlap.
 - Every independently coordinating Codex conversation records its immutable
   origin thread and current managing thread on the parent Multica issue and in
   the PR body. A session handoff changes only the manager and requires explicit

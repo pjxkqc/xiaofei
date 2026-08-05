@@ -4,10 +4,12 @@ This directory is the repository-owned input for creating the Xiaofei project,
 Agents, and squad in Multica.
 
 For a second Codex conversation that will coordinate an independent Feature,
-start with [`codex-parallel-handoff.md`](./codex-parallel-handoff.md). It records
-the handoff snapshot, session-isolation rules, Issue-to-UAT flow, and a
-ready-to-paste starter prompt. Reuse the existing `xiaofei-pr-delivery` Skill;
-do not create a duplicate delivery Skill for each conversation.
+start with the canonical
+[`cross-machine-feature-operations.md`](./cross-machine-feature-operations.md),
+then use [`codex-parallel-handoff.md`](./codex-parallel-handoff.md) for the
+current project snapshot and ready-to-paste starter prompt. Reuse the existing
+`xiaofei-pr-delivery` Skill; do not create a duplicate delivery Skill for each
+conversation.
 
 It is intentionally **not** stored under `.multica/`. Multica does not document
 a repository-native Agent manifest that it automatically applies. The
@@ -27,10 +29,12 @@ An importer must read these files before creating or updating anything:
 4. [`agents.md`](./agents.md) — exact role instructions;
 5. [`collaboration.md`](./collaboration.md) — issue routing, handoff, PR, and
    Preview protocol;
-6. [`skills/xiaofei-pr-delivery/SKILL.md`](./skills/xiaofei-pr-delivery/SKILL.md)
+6. [`cross-machine-feature-operations.md`](./cross-machine-feature-operations.md)
+   — Mac/Windows startup, capability, conflict, and cross-host audit contract;
+7. [`skills/xiaofei-pr-delivery/SKILL.md`](./skills/xiaofei-pr-delivery/SKILL.md)
    — reusable UAT branch, Draft PR, exact-head, Preview, cleanup, and promotion
    workflow.
-7. [`skills/xiaofei-feature-orchestration/SKILL.md`](./skills/xiaofei-feature-orchestration/SKILL.md)
+8. [`skills/xiaofei-feature-orchestration/SKILL.md`](./skills/xiaofei-feature-orchestration/SKILL.md)
    — cross-machine Feature intake, ownership routing, one shared branch and
    one Draft PR to `uat`.
 

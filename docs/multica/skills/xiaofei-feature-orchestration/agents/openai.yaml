@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaofei Feature Orchestration"
+  short_description: "Coordinate cross-machine Xiaofei feature delivery"
+  default_prompt: "Use $xiaofei-feature-orchestration to audit conflicts and coordinate one Xiaofei Feature across machines."

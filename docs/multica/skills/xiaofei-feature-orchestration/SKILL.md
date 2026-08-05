@@ -7,6 +7,11 @@ description: Govern a cross-machine Xiaofei Feature from conflict audit through 
 
 Use this Skill for a new cross-machine Feature. The managing Codex session is
 the coordinator; repository Agents implement only their assigned boundary.
+Read [`../../cross-machine-feature-operations.md`](../../cross-machine-feature-operations.md)
+for the canonical Mac/Windows preparation, capability matrix, daily prompt,
+state machine, protected-path audit, and host-to-host handoff contract. Use
+`xiaofei-pr-delivery` for PR, Preview, UAT, cleanup, and promotion mechanics;
+do not duplicate them here.
 
 ## Immutable ownership
 
@@ -20,7 +25,8 @@ the manager fields and adds an audit comment.
 ## Ordered flow
 
 1. Read the parent, metadata and bounded comment threads. Inspect open PRs and
-   related Issues for ownership/path overlap before editing.
+   related Issues for ownership/path overlap before editing. Declare the exact
+   `CODEX_THREAD_ID`, `CX-xxxxxxxx` tag, and current host capability profile.
 2. From the exact accepted `uat` baseline, create the planned shared branch.
    Lead owns `AGENTS.md` and `docs/multica/**` and writes the contract first.
 3. Split cross-boundary work into ordered child Issues. Platform waits for the
@@ -35,6 +41,11 @@ the manager fields and adds an audit comment.
 6. Run focused checks, `pnpm delivery:check`, then `pnpm delivery:head` after
    the final commit. Open or update the single Draft PR to `uat`; do not merge,
    promote to `main`, or touch unrelated PRs.
+
+At each new day, machine, or Owner handoff, rerun the read-only audit. Stop
+writing if the remote shared-branch SHA differs from the accepted handoff SHA,
+the worktree is unexpectedly dirty, or changed paths overlap another Owner's
+protected boundary. Ask Lead to sequence or split the boundary.
 
 ## Handoff record
 
