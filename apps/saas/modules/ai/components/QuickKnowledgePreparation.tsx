@@ -17,18 +17,20 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
-const TEST_SESSION_STORAGE_KEY = "xiaofei.test-session-id";
 type Entry = Awaited<ReturnType<typeof orpcClient.xiaofei.listKnowledgeEntries>>["items"][number];
 type Document = Awaited<ReturnType<typeof orpcClient.xiaofei.createKnowledgeDocument>>;
+type Preparation = Awaited<ReturnType<typeof orpcClient.xiaofei.prepareKnowledge>>;
 
 export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => void }) {
 	const [document, setDocument] = useState<Document | null>(null);
 	const [entries, setEntries] = useState<Entry[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [prepared, setPrepared] = useState(false);
+	const [preparation, setPreparation] = useState<Preparation | null>(null);
 	const refresh = useCallback(async (sourceId?: string) => {
 		const result = await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 });
-		setEntries(sourceId ? result.items.filter((entry) => entry.sourceId === sourceId) : []);
+		const items = result.items as Entry[];
+		setEntries(sourceId ? items.filter((entry) => entry.sourceId === sourceId) : []);
 	}, []);
 
 	useEffect(() => {
@@ -51,6 +53,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 			});
 			setDocument(created);
 			setPrepared(false);
+			setPreparation(null);
 			event.currentTarget.reset();
 			toastSuccess("资料已解析", "已生成可用于 Test CA 的候选条目。");
 		} catch (error) {
@@ -65,55 +68,31 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 		setBusy(true);
 		try {
 			const sourceEntries = (
-				await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 })
-			).items.filter((entry) => entry.sourceId === document.id && entry.eligible);
+				(await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 })).items as Entry[]
+			).filter((entry) => entry.sourceId === document.id && entry.eligible);
 			if (!sourceEntries.length)
 				throw new Error("这份资料没有可用于 Test CA 的当前条目，请先在高级治理中检查解析结果。");
-			let currentEntries = sourceEntries;
-			for (const entry of currentEntries.filter((item) => item.eligible && item.status === "draft"))
-				await orpcClient.xiaofei.updateKnowledgeEntry({ id: entry.id, status: "active" });
-			const [allEntries, initialUnits] = await Promise.all([
-				orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 }),
-				orpcClient.xiaofei.listKnowledgeUnits(),
-			]);
-			currentEntries = allEntries.items.filter(
+			await Promise.all(
+				sourceEntries
+					.filter((entry) => entry.status === "draft")
+					.map((entry) =>
+						orpcClient.xiaofei.updateKnowledgeEntry({ id: entry.id, status: "active" }),
+					),
+			);
+			const allEntries = (await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 }))
+				.items as Entry[];
+			const currentEntries = allEntries.filter(
 				(entry) => entry.sourceId === document.id && entry.eligible && entry.status === "active",
 			);
 			if (!currentEntries.length) throw new Error("这份资料没有可用的当前条目，无法准备 Test CA。");
-			const unitEntryIds = new Set(
-				initialUnits.filter((unit) => unit.eligibility !== "stale").map((unit) => unit.entryId),
-			);
-			const missingEntryIds = currentEntries
-				.filter((entry) => !unitEntryIds.has(entry.id))
-				.map((entry) => entry.id);
-			if (missingEntryIds.length)
-				await orpcClient.xiaofei.generateKnowledgeUnits({ entryIds: missingEntryIds });
-			const units = await orpcClient.xiaofei.listKnowledgeUnits();
-			const sourceUnits = units.filter(
-				(item) =>
-					currentEntries.some((entry) => entry.id === item.entryId) && item.eligibility !== "stale",
-			);
-			for (const unit of sourceUnits) {
-				if (unit.status === "draft") {
-					await orpcClient.xiaofei.transitionKnowledgeUnit({ id: unit.id, action: "review" });
-					await orpcClient.xiaofei.transitionKnowledgeUnit({ id: unit.id, action: "publish" });
-				} else if (unit.status === "review_ready")
-					await orpcClient.xiaofei.transitionKnowledgeUnit({ id: unit.id, action: "publish" });
-			}
-			const releasedUnits = (await orpcClient.xiaofei.listKnowledgeUnits()).filter(
-				(unit) =>
-					currentEntries.some((entry) => entry.id === unit.entryId) &&
-					unit.eligibility === "eligible" &&
-					unit.status === "released",
-			);
-			if (!releasedUnits.length) throw new Error("这份资料没有已发布的可用 KU，无法准备 Test CA。");
-			await orpcClient.xiaofei.initializeVersioning();
-			const session = await orpcClient.xiaofei.resetTestSession();
-			sessionStorage.setItem(TEST_SESSION_STORAGE_KEY, session.testSessionId);
+			const result = await orpcClient.xiaofei.prepareKnowledge({
+				entryIds: currentEntries.map((entry) => entry.id),
+			});
+			setPreparation(result);
 			setPrepared(true);
 			onPrepared?.();
 			await refresh(document.id);
-			toastSuccess("Test CA 已准备", "资料、KU 和新测试会话已就绪；Active 没有改变。");
+			toastSuccess("Test CA 已准备", "资料、KU 和服务端测试会话已就绪；Active 没有改变。");
 		} catch (error) {
 			toastError("无法准备 Test CA", message(error));
 		} finally {
@@ -164,7 +143,25 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 						{prepared ? (
 							<div className="gap-3 p-4 flex flex-col rounded-lg border border-primary bg-primary/5">
 								<p className="font-medium">Test CA 已准备</p>
-								<p className="text-sm text-muted-foreground">已为新的 Test CA 开始独立测试会话。</p>
+								<p className="text-sm text-muted-foreground">
+									已为新的 Test CA 创建可恢复的服务端测试会话。
+								</p>
+								{preparation ? (
+									<ul className="text-xs text-muted-foreground">
+										{(
+											preparation.stages as Array<{
+												name: string;
+												count: number;
+												elapsedMs: number;
+											}>
+										).map((stage) => (
+											<li key={stage.name}>
+												{stage.name}：完成 · {stage.count} 项 ·{" "}
+												{(stage.elapsedMs / 1000).toFixed(1)} 秒
+											</li>
+										))}
+									</ul>
+								) : null}
 								<Button asChild>
 									<Link href="/knowledge?stage=test">进入测试与修正</Link>
 								</Button>

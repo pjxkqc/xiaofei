@@ -40,14 +40,22 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("生成商户 KU 并同题复测");
 	});
 
-	it("reuses an opaque Test session for consecutive turns and resets after correction", () => {
-		expect(panel).toContain("TEST_SESSION_STORAGE_KEY");
-		expect(panel).toContain("sessionStorage.getItem");
-		expect(panel).toContain("sessionStorage.setItem");
+	it("uses durable Test sessions for consecutive turns and resets after correction", () => {
+		expect(panel).not.toContain("sessionStorage");
+		expect(panel).toContain("listTestSessions");
+		expect(panel).toContain("getTestSession");
+		expect(panel).toContain("旧 CA（只读）");
 		expect(panel).toContain("testSessionId,");
 		expect(panel).toContain("setTurns((history) => [...history, result])");
-		expect(panel).toContain("orpcClient.xiaofei.resetTestSession()");
+		expect(panel).toContain("orpcClient.xiaofei.newTestSession()");
 		expect(panel).toContain("后续测试已切换为新会话");
+	});
+
+	it("offers both Test CA and Organization-scoped Support acceptance", () => {
+		expect(panel).toContain("继续 Test CA 沙盒");
+		expect(panel).toContain("sendSyntheticSupportMessage");
+		expect(panel).toContain("Support 验收会话");
+		expect(panel).toContain("/inbox?conversationId=");
 	});
 
 	it("lets every saved turn select one correction editor", () => {

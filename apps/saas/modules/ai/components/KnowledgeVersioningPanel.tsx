@@ -18,12 +18,16 @@ import { RefreshCcwIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-const TEST_SESSION_STORAGE_KEY = "xiaofei.test-session-id";
 type Overview = Awaited<ReturnType<typeof orpcClient.xiaofei.getVersioningOverview>>;
 type CapabilityVersion = NonNullable<NonNullable<Overview["binding"]>["activeCapabilityVersion"]>;
 type MembershipRow = CapabilityVersion["knowledgeUnits"][number];
 type TestTurn = Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>;
 type Correction = Awaited<ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>>;
+interface TestSessionSummary {
+	id: string;
+	turnCount: number;
+	writable: boolean;
+}
 
 export function KnowledgeVersioningPanel({
 	section = "all",
@@ -37,6 +41,7 @@ export function KnowledgeVersioningPanel({
 	const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
 	const [correction, setCorrection] = useState("");
 	const [rerun, setRerun] = useState<Correction | null>(null);
+	const [sessions, setSessions] = useState<TestSessionSummary[]>([]);
 	const [busy, setBusy] = useState(false);
 	const refresh = useCallback(
 		async () => setOverview(await orpcClient.xiaofei.getVersioningOverview()),
@@ -46,22 +51,54 @@ export function KnowledgeVersioningPanel({
 	useEffect(() => {
 		void refresh().catch(() => toastError("无法读取版本状态"));
 	}, [refresh]);
-	useEffect(() => {
-		const saved = sessionStorage.getItem(TEST_SESSION_STORAGE_KEY);
-		const next = saved ?? globalThis.crypto.randomUUID();
-		sessionStorage.setItem(TEST_SESSION_STORAGE_KEY, next);
+	const loadSession = useCallback(async (next: string) => {
+		const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
 		setTestSessionId(next);
+		setTurns(
+			detail.turns
+				.slice()
+				.reverse()
+				.map((turn) => ({
+					turn: {
+						id: turn.id,
+						question: turn.question,
+						capabilityVersionId: turn.capabilityVersionId,
+					},
+					testSessionId: next,
+					answer: turn.answer,
+					metadata: turn.runtimeMetadata,
+					feedbackAllowed: detail.writable && !turn.interventionId,
+					feedbackMode:
+						turn.runtimeMetadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
+							? ("revise" as const)
+							: ("supplement" as const),
+				})),
+		);
 	}, []);
+	const refreshSessions = useCallback(async () => {
+		const result = await orpcClient.xiaofei.listTestSessions({ limit: 20 });
+		const items = result.items as TestSessionSummary[];
+		setSessions(items);
+		return { ...result, items };
+	}, []);
+	useEffect(() => {
+		void refreshSessions()
+			.then((result) => {
+				const current = result.items.find((session) => session.writable);
+				if (current) return loadSession(current.id);
+			})
+			.catch(() => toastError("无法读取 Test CA 历史"));
+	}, [loadSession, refreshSessions]);
 
 	function storeSession(next: string) {
-		sessionStorage.setItem(TEST_SESSION_STORAGE_KEY, next);
 		setTestSessionId(next);
 	}
 	async function resetSession() {
 		setBusy(true);
 		try {
-			const next = await orpcClient.xiaofei.resetTestSession();
+			const next = await orpcClient.xiaofei.newTestSession();
 			storeSession(next.testSessionId);
+			await refreshSessions();
 			setTurns([]);
 			setSelectedTurnId(null);
 			setRerun(null);
@@ -82,6 +119,7 @@ export function KnowledgeVersioningPanel({
 				testSessionId,
 			});
 			storeSession(result.testSessionId);
+			await refreshSessions();
 			setTurns((history) => [...history, result]);
 			setQuestion("");
 		} catch (error) {
@@ -102,9 +140,10 @@ export function KnowledgeVersioningPanel({
 			setCorrection("");
 			setSelectedTurnId(null);
 			await refresh();
-			const next = await orpcClient.xiaofei.resetTestSession();
+			const next = await orpcClient.xiaofei.newTestSession();
 			storeSession(next.testSessionId);
 			setTurns([]);
+			await refreshSessions();
 			toastSuccess("已生成 Test CA 并完成同题复测；后续测试已切换为新会话");
 		} catch (error) {
 			toastError("修正失败", message(error));
@@ -138,11 +177,19 @@ export function KnowledgeVersioningPanel({
 					setCorrection={setCorrection}
 					rerun={rerun}
 					busy={busy}
-					ready={testSessionId !== null && testVersion !== null}
+					ready={
+						testSessionId !== null &&
+						testVersion !== null &&
+						sessions.some((session) => session.id === testSessionId && session.writable)
+					}
 					hasTestVersion={testVersion !== null}
 					onTest={test}
 					onCorrect={correct}
 					onReset={resetSession}
+					sessions={sessions}
+					testSessionId={testSessionId}
+					onSelectSession={loadSession}
+					onRefreshSessions={refreshSessions}
 				/>
 			)}
 		</div>
@@ -211,6 +258,7 @@ function VersionOverview({
 					</Button>
 				)}
 				<MembershipSummary active={active} testVersion={testVersion} />
+				{!isPrepare ? <SupportAcceptance /> : null}
 				{!isPrepare && (
 					<Button
 						variant="outline"
@@ -230,6 +278,60 @@ function VersionOverview({
 	);
 }
 
+function SupportAcceptance() {
+	const [text, setText] = useState("请用这份知识回答一个客户问题。");
+	const [conversationId, setConversationId] = useState<string | null>(null);
+	const [busy, setBusy] = useState(false);
+	async function create() {
+		if (!text.trim()) return;
+		setBusy(true);
+		try {
+			const result = await orpcClient.xiaofei.sendSyntheticSupportMessage({
+				externalId: globalThis.crypto.randomUUID(),
+				text: text.trim(),
+			});
+			setConversationId(result.conversationId);
+			toastSuccess(
+				"已创建 Support 验收会话",
+				"这是当前 Organization 的合成客户消息，不会被标记为 Email。",
+			);
+		} catch (error) {
+			toastError("无法创建 Support 验收会话", message(error));
+		} finally {
+			setBusy(false);
+		}
+	}
+	return (
+		<div className="gap-3 p-4 flex flex-col rounded-lg border border-dashed">
+			<div>
+				<p className="font-medium">选择验收入口</p>
+				<p className="text-sm text-muted-foreground">
+					可继续 Test CA 沙盒，或创建当前 Organization 的 Support/Inbox 验收会话。
+				</p>
+			</div>
+			<Button variant="outline" className="w-fit" asChild>
+				<Link href="/knowledge?stage=test">继续 Test CA 沙盒</Link>
+			</Button>
+			<Label>
+				合成客户消息
+				<Textarea value={text} onChange={(event) => setText(event.target.value)} disabled={busy} />
+			</Label>
+			<div className="gap-2 flex flex-wrap">
+				<Button disabled={busy || !text.trim()} onClick={() => void create()}>
+					{busy ? "正在创建验收会话…" : "创建 Support 验收会话"}
+				</Button>
+				{conversationId ? (
+					<Button variant="outline" asChild>
+						<Link href={`/inbox?conversationId=${encodeURIComponent(conversationId)}`}>
+							在 Inbox 打开并接管
+						</Link>
+					</Button>
+				) : null}
+			</div>
+		</div>
+	);
+}
+
 function TestConversation({
 	question,
 	setQuestion,
@@ -245,6 +347,10 @@ function TestConversation({
 	onTest,
 	onCorrect,
 	onReset,
+	sessions,
+	testSessionId,
+	onSelectSession,
+	onRefreshSessions,
 }: {
 	question: string;
 	setQuestion: (value: string) => void;
@@ -260,6 +366,10 @@ function TestConversation({
 	onTest: () => Promise<void>;
 	onCorrect: (turn: TestTurn) => Promise<void>;
 	onReset: () => Promise<void>;
+	sessions: TestSessionSummary[];
+	testSessionId: string | null;
+	onSelectSession: (id: string) => Promise<void>;
+	onRefreshSessions: () => Promise<unknown>;
 }) {
 	const selected = turns.find((turn) => turn.turn.id === selectedTurnId) ?? null;
 	return (
@@ -275,7 +385,7 @@ function TestConversation({
 					<Button
 						variant="outline"
 						size="sm"
-						disabled={busy || !ready}
+						disabled={busy || !hasTestVersion}
 						onClick={() => void onReset()}
 					>
 						<RefreshCcwIcon className="mr-2 size-4" />
@@ -284,6 +394,28 @@ function TestConversation({
 				</div>
 			</CardHeader>
 			<CardContent className="gap-4 flex flex-col">
+				{hasTestVersion ? (
+					<div className="gap-2 sm:flex-row flex flex-col">
+						<select
+							aria-label="选择 Test CA 会话"
+							className="px-3 py-2 min-w-0 text-sm flex-1 rounded-md border bg-background"
+							value={testSessionId ?? ""}
+							onChange={(event) => void onSelectSession(event.target.value)}
+						>
+							<option value="" disabled>
+								选择服务端会话
+							</option>
+							{sessions.map((session) => (
+								<option key={session.id} value={session.id}>
+									{session.writable ? "可继续" : "旧 CA（只读）"} · {session.turnCount} 轮
+								</option>
+							))}
+						</select>
+						<Button variant="outline" disabled={busy} onClick={() => void onRefreshSessions()}>
+							刷新历史
+						</Button>
+					</div>
+				) : null}
 				{!hasTestVersion ? (
 					<div className="gap-3 p-4 flex flex-col rounded-lg border border-dashed">
 						<p className="font-medium">还没有 Test CA</p>
@@ -391,7 +523,7 @@ function MembershipSummary({
 	const activeRows = active?.knowledgeUnits ?? [];
 	const testRows = testVersion?.knowledgeUnits ?? [];
 	const count = (rows: MembershipRow[], origin: "platform" | "merchant") =>
-		rows.filter((row) => row.knowledgeUnitRevision.origin === origin).length;
+		rows.filter((row: MembershipRow) => row.knowledgeUnitRevision.origin === origin).length;
 	const changed = symmetricDifferenceSize(
 		new Set(activeRows.map((row) => row.knowledgeUnitRevisionId)),
 		new Set(testRows.map((row) => row.knowledgeUnitRevisionId)),
@@ -442,7 +574,7 @@ function MembershipCard({
 				<summary className="cursor-pointer">查看成员与技术 ID</summary>
 				<p className="mt-2">多个 KU revision 共同组成一个 CA；同一 revision 可被多个版本复用。</p>
 				<p className="mt-2">CA 版本：{rows[0]?.capabilityVersionId ?? "暂无成员"}</p>
-				{rows.map((row) => (
+				{rows.map((row: MembershipRow) => (
 					<p key={row.id} className="mt-1">
 						{row.knowledgeUnitRevision.origin === "merchant" ? "商户资料" : "平台兜底"} · 逻辑 KU：
 						{row.knowledgeUnitRevision.logicalKnowledgeUnitId} · KU revision：

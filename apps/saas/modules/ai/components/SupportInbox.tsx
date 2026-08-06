@@ -32,6 +32,7 @@ import {
 	UsersRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import "streamdown/styles.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,6 +45,8 @@ import {
 } from "../lib/support-inbox-state";
 
 export function SupportInbox() {
+	const searchParams = useSearchParams();
+	const requestedConversationId = searchParams.get("conversationId");
 	const { activeOrganization, loaded: activeOrganizationLoaded } = useActiveOrganization();
 	const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -209,6 +212,14 @@ export function SupportInbox() {
 		setSelectedId((current) => nextSelectedConversationId(filteredConversations, current));
 	}, [filteredConversations]);
 
+	useEffect(() => {
+		if (
+			requestedConversationId &&
+			conversations.some((item) => item.id === requestedConversationId)
+		)
+			setSelectedId(requestedConversationId);
+	}, [conversations, requestedConversationId]);
+
 	return (
 		<div className="gap-6 flex flex-col">
 			<Card>
@@ -334,6 +345,9 @@ export function SupportInbox() {
 											{visibleConversation.online ? "在线" : "离线"}
 										</Badge>
 										<OwnerBadge conversation={visibleConversation} />
+										{visibleConversation.channel === "synthetic_support" ? (
+											<Badge status="info">Support 验收 · 非 Email</Badge>
+										) : null}
 										{visibleConversation.attentionRequired && (
 											<Badge status="warning">
 												<BellRingIcon className="mr-1 size-3" />
@@ -479,7 +493,11 @@ function ConversationItem({
 					aria-label={conversation.online ? "在线" : "离线"}
 				/>
 			</div>
-			<p className="mt-1 text-[11px] text-muted-foreground">{conversation.channel}</p>
+			<p className="mt-1 text-[11px] text-muted-foreground">
+				{conversation.channel === "synthetic_support"
+					? "Support 验收 · 非 Email"
+					: conversation.channel}
+			</p>
 			<p className="mt-1 text-xs truncate text-muted-foreground">
 				{conversation.lastMessage ? plainTextMessagePreview(conversation.lastMessage) : "新会话"}
 			</p>

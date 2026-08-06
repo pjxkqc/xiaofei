@@ -29,16 +29,12 @@ describe("knowledge workspace information architecture", () => {
 		expect(workspace).toContain("<XiaofeiFallbackSettings />");
 	});
 
-	it("prepares the uploaded source through existing authorized endpoints without duplicate KU generation", () => {
-		for (const call of [
-			"updateKnowledgeEntry",
-			"generateKnowledgeUnits",
-			"transitionKnowledgeUnit",
-			"initializeVersioning",
-		])
-			expect(quickPreparation).toContain(call);
-		expect(quickPreparation).toContain('unit.eligibility !== "stale"');
-		expect(quickPreparation).toContain("!unitEntryIds.has(entry.id)");
+	it("prepares the uploaded source through the authorized atomic preparation endpoint", () => {
+		expect(quickPreparation).toContain("updateKnowledgeEntry");
+		expect(quickPreparation).toContain("prepareKnowledge");
+		expect(quickPreparation).not.toContain("generateKnowledgeUnits");
+		expect(quickPreparation).not.toContain("transitionKnowledgeUnit");
+		expect(quickPreparation).toContain("elapsedMs");
 	});
 
 	it("keeps the two knowledge inputs visible and moves a prepared source to one test action", () => {
@@ -47,10 +43,10 @@ describe("knowledge workspace information architecture", () => {
 			'<KnowledgeVersioningPanel key={versioningKey} section="prepare" />',
 		);
 		expect(quickPreparation).toContain("这份资料没有可用于 Test CA 的当前条目");
-		expect(quickPreparation).toContain("这份资料没有已发布的可用 KU");
+		expect(quickPreparation).toContain("服务端测试会话");
 		expect(quickPreparation).toContain("Test CA 已准备");
 		expect(quickPreparation).toContain('href="/knowledge?stage=test"');
-		expect(quickPreparation).toContain("resetTestSession");
+		expect(quickPreparation).not.toContain("sessionStorage");
 		expect(quickPreparation).toContain("onPrepared?.()");
 		expect(workspace).toContain("onPrepared={() => setVersioningKey");
 	});
