@@ -465,6 +465,18 @@ export class XiaofeiSyntheticSupportConversationConflictError extends Error {
 	}
 }
 
+/** A serialized synthetic state must belong to the Organization being projected. */
+export class XiaofeiSyntheticSupportTenantConflictError extends Error {
+	constructor(
+		readonly organizationId: string,
+		readonly externalId: string,
+		readonly tenantId: string,
+	) {
+		super("The synthetic support conversation state belongs to another Organization.");
+		this.name = "XiaofeiSyntheticSupportTenantConflictError";
+	}
+}
+
 /** A lease, Inbox takeover, or another AI turn invalidated a synthetic commit. */
 export class XiaofeiSyntheticSupportCommitConflictError extends Error {
 	readonly code = "SYNTHETIC_SUPPORT_COMMIT_CONFLICT";
@@ -1062,6 +1074,7 @@ export function upsertXiaofeiSyntheticSupportConversation(
 ) {
 	return db.$transaction(async (transaction) => {
 		const state = ConversationStateSchema.parse(input.state);
+		assertSyntheticStateTenant(state.tenantId, input.organizationId, input.externalId);
 		const workspace = await transaction.xiaofeiWorkspace.findUnique({
 			where: { tenantKey: organizationTenantKey(input.organizationId) },
 		});
@@ -1107,6 +1120,7 @@ export function commitXiaofeiSyntheticSupportConversation(
 ) {
 	return db.$transaction(async (transaction) => {
 		const state = ConversationStateSchema.parse(input.state);
+		assertSyntheticStateTenant(state.tenantId, input.organizationId, input.externalId);
 		const workspace = await transaction.xiaofeiWorkspace.findUnique({
 			where: { tenantKey: organizationTenantKey(input.organizationId) },
 		});
@@ -3410,6 +3424,11 @@ function hashContent(bodyText: string) {
 }
 function organizationTenantKey(organizationId: string) {
 	return `organization:${organizationId}`;
+}
+
+function assertSyntheticStateTenant(tenantId: string, organizationId: string, externalId: string) {
+	if (tenantId !== organizationTenantKey(organizationId))
+		throw new XiaofeiSyntheticSupportTenantConflictError(organizationId, externalId, tenantId);
 }
 async function getRequiredXiaofeiOrganizationWorkspace(organizationId: string) {
 	const workspace = await getXiaofeiOrganizationWorkspace(organizationId);

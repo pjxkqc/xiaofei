@@ -1,4 +1,4 @@
-import { createConversationState } from "@repo/xiaofei";
+import { createConversationState, transferConversationOwner } from "@repo/xiaofei";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryMocks = vi.hoisted(() => {
@@ -546,12 +546,19 @@ import {
 	XiaofeiTestSessionConflictError,
 	XiaofeiSyntheticSupportConversationConflictError,
 	XiaofeiSyntheticSupportCommitConflictError,
+	XiaofeiSyntheticSupportTenantConflictError,
 } from "./xiaofei";
 
 const conversationState = createConversationState({
 	id: "session-a",
 	tenantId: "organization:organization-a",
 	agentId: "agent-a",
+	maxFollowUps: 3,
+});
+const organizationBConversationState = createConversationState({
+	id: "session-b",
+	tenantId: "organization:organization-b",
+	agentId: "agent-b",
 	maxFollowUps: 3,
 });
 
@@ -1083,19 +1090,25 @@ describe("Xiaofei Organization queries", () => {
 	});
 
 	it("invalidates a captured AI lease after the actual Inbox update primitive advances revision", async () => {
+		const takeoverState = transferConversationOwner(
+			conversationState,
+			0,
+			"human",
+			() => "2026-08-05T00:00:00.000Z",
+		);
 		queryMocks.findConversationOrThrowInTransaction.mockResolvedValueOnce({
 			state: conversationState,
 		});
 		queryMocks.updateConversationInTransaction.mockResolvedValueOnce({ revision: 2 });
 		await updateXiaofeiSupportConversation("workspace-a", "synthetic-ai", {
-			state: conversationState,
+			state: takeoverState,
 		});
 		expect(queryMocks.updateConversationInTransaction).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
 					revision: { increment: 1 },
-					ownerType: "ai",
-					ownerEpoch: 0,
+					ownerType: "human",
+					ownerEpoch: 1,
 				}),
 			}),
 		);
@@ -1161,6 +1174,27 @@ describe("Xiaofei Organization queries", () => {
 			.mockResolvedValueOnce({ id: "workspace-b" });
 		queryMocks.findConversationInTransaction.mockResolvedValue(null);
 		queryMocks.createConversation.mockResolvedValue({ id: "conversation" });
+		await expect(
+			upsertXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-b",
+				externalId: "wrong-tenant",
+				state: conversationState,
+				messages: [],
+				traceEvents: [],
+			}),
+		).rejects.toBeInstanceOf(XiaofeiSyntheticSupportTenantConflictError);
+		await expect(
+			commitXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-b",
+				externalId: "wrong-tenant",
+				expectedRevision: 0,
+				expectedOwnerType: "ai",
+				expectedOwnerEpoch: 0,
+				state: conversationState,
+				messages: [],
+				traceEvents: [],
+			}),
+		).rejects.toBeInstanceOf(XiaofeiSyntheticSupportTenantConflictError);
 		await upsertXiaofeiSyntheticSupportConversation({
 			organizationId: "organization-a",
 			externalId: "same-id",
@@ -1171,7 +1205,7 @@ describe("Xiaofei Organization queries", () => {
 		await upsertXiaofeiSyntheticSupportConversation({
 			organizationId: "organization-b",
 			externalId: "same-id",
-			state: conversationState,
+			state: organizationBConversationState,
 			messages: [],
 			traceEvents: [],
 		});
@@ -1183,6 +1217,62 @@ describe("Xiaofei Organization queries", () => {
 			2,
 			expect.objectContaining({ data: expect.objectContaining({ workspaceId: "workspace-b" }) }),
 		);
+	});
+
+	it("lists a zero-turn Organization-local session with empty evidence and writability", async () => {
+		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "test-ca" });
+		queryMocks.queryRaw
+			.mockResolvedValueOnce([
+				{
+					id: "session-zero",
+					testSessionId: "session-zero",
+					capabilityVersionId: "test-ca",
+					completedAt: new Date("2026-08-05T00:00:00.000Z"),
+					firstQuestion: "",
+				},
+			])
+			.mockResolvedValueOnce([]);
+		queryMocks.groupTestTurns.mockResolvedValueOnce([]);
+
+		await expect(listXiaofeiTestSessions("organization-a")).resolves.toEqual({
+			items: [
+				{
+					id: "session-zero",
+					capabilityVersionId: "test-ca",
+					firstQuestion: "",
+					latestAt: new Date("2026-08-05T00:00:00.000Z"),
+					turnCount: 0,
+					beforeInterventionCount: 0,
+					afterInterventionCount: 0,
+					isCurrent: true,
+					writable: true,
+				},
+			],
+			nextCursor: null,
+		});
+		expect(queryMocks.groupTestTurns).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { organizationId: "organization-a", testSessionId: { in: ["session-zero"] } },
+			}),
+		);
+
+		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "new-test-ca" });
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{
+				id: "session-zero",
+				testSessionId: "session-zero",
+				capabilityVersionId: "test-ca",
+				completedAt: new Date("2026-08-05T00:00:00.000Z"),
+				firstQuestion: "",
+			},
+		]);
+		queryMocks.queryRaw.mockResolvedValueOnce([]);
+		queryMocks.groupTestTurns.mockResolvedValueOnce([]);
+		await expect(listXiaofeiTestSessions("organization-a")).resolves.toMatchObject({
+			items: [
+				{ id: "session-zero", firstQuestion: "", turnCount: 0, isCurrent: false, writable: false },
+			],
+		});
 	});
 
 	it("creates a zero-turn Test session only for the current Test capability", async () => {
