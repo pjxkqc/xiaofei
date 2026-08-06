@@ -107,6 +107,9 @@ const processingContext = {
 	conversation: {
 		id: "conversation-a",
 		externalId: inbound.conversation.externalId,
+		revision: 3,
+		ownerType: state.ownerType,
+		ownerEpoch: state.ownerEpoch,
 		state,
 		messages: [
 			{
@@ -156,6 +159,10 @@ describe("Email callback delivery", () => {
 		expect(mocks.complete).toHaveBeenCalledWith(
 			expect.objectContaining({
 				jobId: "job-a",
+				externalId: inbound.conversation.externalId,
+				expectedRevision: 3,
+				expectedOwnerType: "ai",
+				expectedOwnerEpoch: 0,
 				delivery: expect.objectContaining({
 					destinationMode: "mock",
 					payload: expect.objectContaining({

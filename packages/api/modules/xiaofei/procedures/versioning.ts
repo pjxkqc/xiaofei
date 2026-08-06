@@ -6,6 +6,7 @@ import {
 	createXiaofeiTestTurn,
 	createXiaofeiTestTurnRerun,
 	createXiaofeiTestSession,
+	getXiaofeiTestSessionRuntimeState,
 	getXiaofeiOrganizationConfig,
 	getXiaofeiOrganizationHostingBinding,
 	getXiaofeiVersioningOverviewData,
@@ -14,6 +15,7 @@ import {
 	getXiaofeiTestSessionDetail,
 	upsertXiaofeiOrganizationConfig,
 	XiaofeiTestTurnFeedbackConflictError,
+	XiaofeiTestCapabilityConflictError,
 	XiaofeiTestSessionCapabilityConflictError,
 	XiaofeiTestSessionConflictError,
 	XiaofeiVersioningNotFoundError,
@@ -33,7 +35,7 @@ import {
 	requireXiaofeiOrganizationAdmin,
 } from "../service";
 import {
-	getXiaofeiTestAdmissionSnapshot,
+	getXiaofeiTestAdmissionTarget,
 	initializeXiaofeiTestHostingForTenant,
 } from "../versioning-service";
 
@@ -50,26 +52,46 @@ export const getXiaofeiVersioningOverview = supportProcedure.handler(async ({ co
 });
 
 export const initializeXiaofeiVersioning = supportProcedure.handler(async ({ context }) => {
-	return await initializeXiaofeiTestHostingForTenant(context);
+	try {
+		return await initializeXiaofeiTestHostingForTenant(context);
+	} catch (error) {
+		if (error instanceof XiaofeiTestCapabilityConflictError)
+			throw new ORPCError("CONFLICT", {
+				message: "The Test version changed during preparation; reload before retrying.",
+				data: testCapabilityConflictData(error),
+			});
+		throw error;
+	}
 });
 
 export const runXiaofeiVersionedTest = supportProcedure
-	.input(z.object({ question: questionSchema, testSessionId: z.string().min(1).max(128) }))
+	.input(
+		z.object({
+			question: questionSchema,
+			testSessionId: z.string().min(1).max(128),
+			capabilityVersionId: z.string().min(1).max(128),
+		}),
+	)
 	.handler(async ({ context, input }) => {
 		const organizationId = await getXiaofeiOrganizationId(context);
-		const [{ workspace, snapshot }, capability] = await Promise.all([
+		const [{ workspace, snapshot }, capability, session] = await Promise.all([
 			getOrCreateXiaofeiWorkspace(context),
 			loadXiaofeiRuntimeHostingCapability(organizationId, "test"),
+			getXiaofeiTestSessionRuntimeState(organizationId, input.testSessionId),
 		]);
 		const testSessionId = input.testSessionId;
-		const detail = await getXiaofeiTestSessionDetail(organizationId, testSessionId);
-		if (!detail || !detail.writable || detail.capabilityVersionId !== capability.manifest.id)
-			throw new ORPCError("CONFLICT", {
-				message: "The Test version changed; start a new test session.",
-			});
-		const latestTurn = detail.turns[detail.turns.length - 1];
+		if (!session) throw new ORPCError("NOT_FOUND", { message: "Test session not found." });
+		if (
+			session.capabilityVersionId !== input.capabilityVersionId ||
+			capability.manifest.id !== input.capabilityVersionId
+		)
+			throw testCapabilityConflict(
+				input.capabilityVersionId,
+				capability.manifest.id,
+				"The Test version changed; start a new test session.",
+			);
 		const state =
-			latestTurn?.conversationState ??
+			session.conversationState ??
 			createConversationState({
 				id: testSessionId,
 				tenantId: snapshot.agent.tenantId,
@@ -94,25 +116,33 @@ export const runXiaofeiVersionedTest = supportProcedure
 		try {
 			turn = await createXiaofeiTestTurn(organizationId, {
 				testSessionId,
-				expectedPreviousTestTurnId: latestTurn?.id ?? null,
+				expectedPreviousTestTurnId: session.latestTestTurnId,
 				question: input.question,
 				answer: result.reply,
-				capabilityVersionId: capability.manifest.id,
+				capabilityVersionId: input.capabilityVersionId,
 				conversationState: result.state,
 				runtimeMetadata: result.metadata,
 				requestedAt,
 				completedAt: new Date(),
 			});
 		} catch (error) {
-			if (
-				error instanceof XiaofeiTestSessionCapabilityConflictError ||
-				error instanceof XiaofeiTestSessionConflictError
-			)
+			if (error instanceof XiaofeiTestSessionCapabilityConflictError) {
+				const binding = await getXiaofeiOrganizationHostingBinding(organizationId);
+				throw testCapabilityConflict(
+					input.capabilityVersionId,
+					binding?.testCapabilityVersionId ?? null,
+					"The Test version changed; start a new test session.",
+				);
+			}
+			if (error instanceof XiaofeiTestSessionConflictError)
 				throw new ORPCError("CONFLICT", {
-					message:
-						error instanceof XiaofeiTestSessionCapabilityConflictError
-							? "The Test version changed; start a new test session."
-							: "This test session changed; reload and try again.",
+					message: "This test session changed; reload and try again.",
+					data: testSessionConflictData(input.capabilityVersionId, capability.manifest.id),
+				});
+			if (error instanceof XiaofeiTestCapabilityConflictError)
+				throw new ORPCError("CONFLICT", {
+					message: "The Test version changed; start a new test session.",
+					data: testCapabilityConflictData(error),
 				});
 			throw error;
 		}
@@ -212,37 +242,59 @@ export const newXiaofeiTestSession = resetXiaofeiTestSession;
 export const resumeXiaofeiTestSession = supportProcedure
 	.input(z.object({ testSessionId: z.string().trim().min(1).max(128) }))
 	.handler(async ({ context, input }) => {
-		const detail = await getXiaofeiTestSessionDetail(
-			await getXiaofeiOrganizationId(context),
-			input.testSessionId,
-		);
+		const organizationId = await getXiaofeiOrganizationId(context);
+		const [detail, binding] = await Promise.all([
+			getXiaofeiTestSessionDetail(organizationId, input.testSessionId),
+			getXiaofeiOrganizationHostingBinding(organizationId),
+		]);
 		if (!detail) throw new ORPCError("NOT_FOUND", { message: "Test session not found." });
 		if (!detail.writable)
-			throw new ORPCError("CONFLICT", {
-				message: "The Test version changed; start a new test session.",
-			});
+			throw testCapabilityConflict(
+				detail.capabilityVersionId,
+				binding?.testCapabilityVersionId ?? null,
+				"The Test version changed; start a new test session.",
+			);
 		return detail;
 	});
 
 export const applyXiaofeiTestTurnCorrection = supportProcedure
-	.input(z.object({ sourceTestTurnId: z.string().cuid(), correction: questionSchema }))
+	.input(
+		z.object({
+			sourceTestTurnId: z.string().cuid(),
+			testSessionId: z.string().trim().min(1).max(128),
+			capabilityVersionId: z.string().cuid(),
+			correction: questionSchema,
+		}),
+	)
 	.handler(async ({ context, input }) => {
 		await requireXiaofeiOrganizationAdmin(context);
 		const organizationId = await getXiaofeiOrganizationId(context);
+		let expectedResultCapabilityVersionId = input.capabilityVersionId;
 		try {
 			const feedback = await applyXiaofeiTestTurnFeedback({
 				organizationId,
 				sourceTestTurnId: input.sourceTestTurnId,
+				testSessionId: input.testSessionId,
+				expectedCapabilityVersionId: input.capabilityVersionId,
 				correction: input.correction,
 			});
+			if (feedback.existingRerun)
+				return {
+					source: feedback.sourceTestTurn,
+					rerun: feedback.existingRerun,
+					...persistedCorrectionResult(feedback.existingRerun),
+				};
+			expectedResultCapabilityVersionId = feedback.resultVersion.id;
 			const [{ workspace, snapshot }, capability] = await Promise.all([
 				getOrCreateXiaofeiWorkspace(context),
 				loadXiaofeiRuntimeHostingCapability(organizationId, "test"),
 			]);
 			if (capability.manifest.id !== feedback.resultVersion.id)
-				throw new ORPCError("CONFLICT", {
-					message: "The Test version changed; start a new correction.",
-				});
+				throw testCapabilityConflict(
+					feedback.resultVersion.id,
+					capability.manifest.id,
+					"The Test version changed; start a new correction.",
+				);
 			const testSessionId = globalThis.crypto.randomUUID();
 			await createXiaofeiTestSession(organizationId, {
 				id: testSessionId,
@@ -285,6 +337,29 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 				...persistedCorrectionResult(rerun),
 			};
 		} catch (error) {
+			if (error instanceof XiaofeiTestCapabilityConflictError)
+				throw new ORPCError("CONFLICT", {
+					message: "The Test version changed; reload before applying this correction.",
+					data: testCapabilityConflictData(error),
+				});
+			if (error instanceof XiaofeiTestSessionCapabilityConflictError) {
+				const binding = await getXiaofeiOrganizationHostingBinding(organizationId);
+				throw testCapabilityConflict(
+					expectedResultCapabilityVersionId,
+					binding?.testCapabilityVersionId ?? null,
+					"The Test version changed during rerun; reload before retrying.",
+				);
+			}
+			if (error instanceof XiaofeiTestSessionConflictError) {
+				const binding = await getXiaofeiOrganizationHostingBinding(organizationId);
+				throw new ORPCError("CONFLICT", {
+					message: "The Test version changed during rerun; reload before retrying.",
+					data: testSessionConflictData(
+						expectedResultCapabilityVersionId,
+						binding?.testCapabilityVersionId ?? null,
+					),
+				});
+			}
 			if (error instanceof XiaofeiTestTurnFeedbackConflictError)
 				throw new ORPCError("CONFLICT", {
 					message: "A different correction is already applied to this answer.",
@@ -296,6 +371,40 @@ export const applyXiaofeiTestTurnCorrection = supportProcedure
 			throw error;
 		}
 	});
+
+function testCapabilityConflictData(error: XiaofeiTestCapabilityConflictError) {
+	return {
+		code: error.code,
+		expectedCapabilityVersionId: error.expectedCapabilityVersionId,
+		currentCapabilityVersionId: error.currentCapabilityVersionId,
+	};
+}
+
+function testCapabilityConflict(
+	expectedCapabilityVersionId: string,
+	currentCapabilityVersionId: string | null,
+	message: string,
+) {
+	return new ORPCError("CONFLICT", {
+		message,
+		data: {
+			code: "TEST_CA_VERSION_CONFLICT",
+			expectedCapabilityVersionId,
+			currentCapabilityVersionId,
+		},
+	});
+}
+
+function testSessionConflictData(
+	expectedCapabilityVersionId: string,
+	currentCapabilityVersionId: string | null,
+) {
+	return {
+		code: "TEST_SESSION_STATE_CONFLICT",
+		expectedCapabilityVersionId,
+		currentCapabilityVersionId,
+	};
+}
 
 /** Return the database record, including an idempotently reused rerun, as the UI evidence. */
 export function persistedCorrectionResult(rerun: {
@@ -313,21 +422,29 @@ export function persistedCorrectionResult(rerun: {
 export const activateXiaofeiHostingVersion = supportProcedure.handler(async ({ context }) => {
 	await requireXiaofeiOrganizationAdmin(context);
 	const organizationId = await getXiaofeiOrganizationId(context);
-	const admissionSnapshot = await getXiaofeiTestAdmissionSnapshot(context);
-	if (!isCapabilityAdmitted(admissionSnapshot))
+	const admissionTarget = await getXiaofeiTestAdmissionTarget(context);
+	if (!isCapabilityAdmitted(admissionTarget.snapshot))
 		throw new ORPCError("BAD_REQUEST", {
 			message: "Review and run the current Test CA Eval before activation.",
 		});
-	const binding = await getXiaofeiOrganizationHostingBinding(organizationId);
-	if (!binding?.testCapabilityVersionId)
+	if (!admissionTarget.capabilityVersionId)
 		throw new ORPCError("BAD_REQUEST", {
 			message: "No Test hosting version is ready for activation.",
 		});
-	return await activateXiaofeiCapabilityVersion(
-		organizationId,
-		hostingKey,
-		binding.testCapabilityVersionId,
-	);
+	try {
+		return await activateXiaofeiCapabilityVersion(
+			organizationId,
+			hostingKey,
+			admissionTarget.capabilityVersionId,
+		);
+	} catch (error) {
+		if (error instanceof XiaofeiTestCapabilityConflictError)
+			throw new ORPCError("CONFLICT", {
+				message: "The Test version changed after admission; review the current version first.",
+				data: testCapabilityConflictData(error),
+			});
+		throw error;
+	}
 });
 
 export const setXiaofeiHostingEnabled = supportProcedure

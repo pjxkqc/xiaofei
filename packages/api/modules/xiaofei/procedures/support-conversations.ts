@@ -14,6 +14,11 @@ import {
 export const publicConversationIdSchema = z.string().uuid();
 export const agentConversationIdSchema = z.string().trim().min(1).max(200);
 const messageSchema = z.string().trim().min(1).max(2_000);
+const supportExpectationSchema = z.object({
+	expectedRevision: z.number().int().positive(),
+	expectedOwnerType: z.enum(["ai", "human", "workflow", "closed"]),
+	expectedOwnerEpoch: z.number().int().nonnegative(),
+});
 
 export const startSupportConversation = publicProcedure
 	.route({
@@ -42,8 +47,19 @@ export const sendPublicMessage = publicProcedure
 		tags: ["Xiaofei Support"],
 		summary: "Send a customer message to Xiaofei or the assigned human agent",
 	})
-	.input(z.object({ conversationId: publicConversationIdSchema, text: messageSchema }))
-	.handler(async ({ input }) => await sendPublicSupportMessage(input.conversationId, input.text));
+	.input(
+		z
+			.object({ conversationId: publicConversationIdSchema, text: messageSchema })
+			.extend(supportExpectationSchema.shape),
+	)
+	.handler(
+		async ({ input }) =>
+			await sendPublicSupportMessage(input.conversationId, input.text, {
+				expectedRevision: input.expectedRevision,
+				expectedOwnerType: input.expectedOwnerType,
+				expectedOwnerEpoch: input.expectedOwnerEpoch,
+			}),
+	);
 
 export const listAgentConversations = supportProcedure
 	.route({
@@ -74,10 +90,12 @@ export const setAgentConversationOwner = supportProcedure
 		summary: "Transfer a support conversation between Xiaofei and a human agent",
 	})
 	.input(
-		z.object({
-			conversationId: agentConversationIdSchema,
-			owner: z.enum(["ai", "human"]),
-		}),
+		z
+			.object({
+				conversationId: agentConversationIdSchema,
+				owner: z.enum(["ai", "human"]),
+			})
+			.extend(supportExpectationSchema.shape),
 	)
 	.handler(
 		async ({ context, input }) =>
@@ -86,6 +104,11 @@ export const setAgentConversationOwner = supportProcedure
 				externalId: input.conversationId,
 				owner: input.owner,
 				user: { id: context.user.id, name: context.user.name },
+				expectation: {
+					expectedRevision: input.expectedRevision,
+					expectedOwnerType: input.expectedOwnerType,
+					expectedOwnerEpoch: input.expectedOwnerEpoch,
+				},
 			}),
 	);
 
@@ -96,7 +119,11 @@ export const sendAgentMessage = supportProcedure
 		tags: ["Xiaofei Support"],
 		summary: "Send a human support reply",
 	})
-	.input(z.object({ conversationId: agentConversationIdSchema, text: messageSchema }))
+	.input(
+		z
+			.object({ conversationId: agentConversationIdSchema, text: messageSchema })
+			.extend(supportExpectationSchema.shape),
+	)
 	.handler(
 		async ({ context, input }) =>
 			await sendHumanSupportMessage({
@@ -104,5 +131,10 @@ export const sendAgentMessage = supportProcedure
 				externalId: input.conversationId,
 				text: input.text,
 				user: { id: context.user.id, name: context.user.name },
+				expectation: {
+					expectedRevision: input.expectedRevision,
+					expectedOwnerType: input.expectedOwnerType,
+					expectedOwnerEpoch: input.expectedOwnerEpoch,
+				},
 			}),
 	);

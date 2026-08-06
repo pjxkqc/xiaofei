@@ -1,5 +1,5 @@
 import { call } from "@orpc/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	commit: vi.fn(),
@@ -54,6 +54,7 @@ interface SyntheticRow {
 	revision: number;
 	ownerType: ConversationState["ownerType"];
 	ownerEpoch: number;
+	syntheticAcceptance?: unknown;
 }
 
 const ORGANIZATION_A = "organization-a";
@@ -66,6 +67,8 @@ describe("synthetic support acceptance procedure", () => {
 
 	beforeEach(() => {
 		vi.resetAllMocks();
+		vi.stubEnv("VERCEL_ENV", "preview");
+		vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "a".repeat(40));
 		rows = new Map();
 		committedStates = [];
 		selectedOrganizationId = ORGANIZATION_A;
@@ -117,6 +120,7 @@ describe("synthetic support acceptance procedure", () => {
 					revision: 0,
 					ownerType: state.ownerType,
 					ownerEpoch: state.ownerEpoch,
+					syntheticAcceptance: input.syntheticAcceptance,
 				};
 				rows.set(rowKey(input.organizationId, input.externalId), row);
 				return snapshot(row);
@@ -161,10 +165,37 @@ describe("synthetic support acceptance procedure", () => {
 		}));
 	});
 
+	afterEach(() => vi.unstubAllEnvs());
+
 	it("uses one stable, opaque Inbox identity for every turn", () => {
 		expect(syntheticSupportConversationId("acceptance-42")).toBe("synthetic:acceptance-42");
 		expect(syntheticSupportConversationId("acceptance-42")).toBe(
 			syntheticSupportConversationId("acceptance-42"),
+		);
+	});
+
+	it("fails closed without an exact Preview head before creating a conversation", async () => {
+		vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "not-a-head");
+		await expect(send("missing-head", "hello", ORGANIZATION_A)).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+		});
+		expect(mocks.upsert).not.toHaveBeenCalled();
+		expect(mocks.runTurn).not.toHaveBeenCalled();
+	});
+
+	it("server-authors non-deliverable audit metadata for the selected Organization", async () => {
+		await send("audited", "hello", ORGANIZATION_A);
+		expect(mocks.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				organizationId: ORGANIZATION_A,
+				syntheticAcceptance: expect.objectContaining({
+					organizationId: ORGANIZATION_A,
+					createdByUserId: "support-user",
+					deploymentEnvironment: "preview",
+					previewHeadSha: "a".repeat(40),
+					allowExternalDelivery: false,
+				}),
+			}),
 		);
 	});
 

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	getBinding: vi.fn(),
 	getConfig: vi.fn(),
 	getSession: vi.fn(),
+	getRuntimeState: vi.fn(),
 	getWorkspace: vi.fn(),
 	listKnowledge: vi.fn(),
 	listSessions: vi.fn(),
@@ -26,6 +27,16 @@ vi.mock("@repo/auth", () => ({ auth: { api: { getSession: mocks.getSession } } }
 vi.mock("@repo/database", () => ({
 	XiaofeiTestSessionCapabilityConflictError: class extends Error {},
 	XiaofeiTestSessionConflictError: class extends Error {},
+	XiaofeiTestCapabilityConflictError: class extends Error {
+		readonly code = "TEST_CA_VERSION_CONFLICT";
+		constructor(
+			readonly organizationId: string,
+			readonly expectedCapabilityVersionId: string,
+			readonly currentCapabilityVersionId: string | null = null,
+		) {
+			super("Test capability changed.");
+		}
+	},
 	XiaofeiTestTurnFeedbackConflictError: class extends Error {},
 	XiaofeiVersioningNotFoundError: class extends Error {},
 	applyXiaofeiTestTurnFeedback: mocks.applyFeedback,
@@ -38,6 +49,7 @@ vi.mock("@repo/database", () => ({
 	getXiaofeiOrganizationHostingBinding: mocks.getBinding,
 	getXiaofeiVersioningOverviewData: vi.fn(),
 	getXiaofeiTestSessionDetail: mocks.getDetail,
+	getXiaofeiTestSessionRuntimeState: mocks.getRuntimeState,
 	getXiaofeiWorkspace: mocks.getWorkspace,
 	listXiaofeiKnowledgeUnits: mocks.listKnowledge,
 	listXiaofeiKnowledgeUnitRevisions: vi.fn(),
@@ -50,7 +62,11 @@ vi.mock("../../organizations/lib/membership", () => ({
 	verifyOrganizationMembership: mocks.verifyMembership,
 }));
 
-import { createDefaultWorkspaceSnapshot } from "@repo/xiaofei";
+import {
+	XiaofeiTestCapabilityConflictError,
+	XiaofeiTestSessionCapabilityConflictError,
+} from "@repo/database";
+import { createConversationState, createDefaultWorkspaceSnapshot } from "@repo/xiaofei";
 
 import {
 	applyXiaofeiTestTurnCorrection,
@@ -85,6 +101,11 @@ describe("Xiaofei Test CA persistent-session procedures", () => {
 		}));
 		mocks.getBinding.mockResolvedValue({ testCapabilityVersionId: TEST_VERSION });
 		mocks.getConfig.mockResolvedValue(null);
+		mocks.getRuntimeState.mockResolvedValue({
+			capabilityVersionId: TEST_VERSION,
+			latestTestTurnId: null,
+			conversationState: null,
+		});
 	});
 
 	it("creates a zero-turn session through the exported procedure and reads it back without duplicates", async () => {
@@ -166,20 +187,19 @@ describe("Xiaofei Test CA persistent-session procedures", () => {
 			}),
 		);
 		mocks.getBinding.mockResolvedValue({ testCapabilityVersionId: TEST_VERSION });
-		const detail = () => ({
-			id: sessionId,
+		const runtimeState = () => ({
 			capabilityVersionId: TEST_VERSION,
-			writable: true,
-			turns: savedTurns,
+			latestTestTurnId: savedTurns[savedTurns.length - 1]?.id ?? null,
+			conversationState: savedTurns[savedTurns.length - 1]?.conversationState ?? null,
 		});
-		mocks.getDetail.mockImplementation(async (organizationId: string, id: string) =>
-			organizationId === ORGANIZATION_A && id === sessionId ? detail() : null,
+		mocks.getRuntimeState.mockImplementation(async (organizationId: string, id: string) =>
+			organizationId === ORGANIZATION_A && id === sessionId ? runtimeState() : null,
 		);
 
 		for (const question of ["one", "two", "three"])
 			await call(
 				runXiaofeiVersionedTest,
-				{ testSessionId: sessionId, question },
+				{ testSessionId: sessionId, capabilityVersionId: TEST_VERSION, question },
 				request(ORGANIZATION_A),
 			);
 
@@ -190,6 +210,77 @@ describe("Xiaofei Test CA persistent-session procedures", () => {
 		await expect(
 			call(getXiaofeiTestSessionProcedure, { testSessionId: sessionId }, request(ORGANIZATION_B)),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+
+	it("returns a stable typed conflict before running a stale Test CA session", async () => {
+		mocks.getRuntimeState.mockResolvedValueOnce({
+			capabilityVersionId: "old-test-ca",
+			latestTestTurnId: null,
+			conversationState: null,
+		});
+		mocks.loadCapability.mockResolvedValueOnce({
+			manifest: { id: "current-test-ca" },
+			revisions: [],
+		});
+
+		await expect(
+			call(
+				runXiaofeiVersionedTest,
+				{
+					testSessionId: "historic-session",
+					capabilityVersionId: "old-test-ca",
+					question: "Can this old session continue?",
+				},
+				request(ORGANIZATION_A),
+			),
+		).rejects.toMatchObject({
+			code: "CONFLICT",
+			data: {
+				code: "TEST_CA_VERSION_CONFLICT",
+				expectedCapabilityVersionId: "old-test-ca",
+				currentCapabilityVersionId: "current-test-ca",
+			},
+		});
+		expect(mocks.runTurn).not.toHaveBeenCalled();
+		expect(mocks.createTurn).not.toHaveBeenCalled();
+	});
+
+	it("reports the current Test CA when the pointer moves during the model run", async () => {
+		mocks.runTurn.mockResolvedValueOnce({
+			state: createConversationState({
+				id: "session-a",
+				tenantId: "organization:organization-a",
+				agentId: "agent-a",
+				maxFollowUps: 5,
+			}),
+			reply: "stale answer",
+			metadata: { knowledgeEvidence: null, traces: [] },
+		});
+		mocks.createTurn.mockRejectedValueOnce(
+			new XiaofeiTestSessionCapabilityConflictError(ORGANIZATION_A, "session-a"),
+		);
+		mocks.getBinding.mockResolvedValueOnce({ testCapabilityVersionId: "current-test-ca" });
+
+		await expect(
+			call(
+				runXiaofeiVersionedTest,
+				{
+					testSessionId: "session-a",
+					capabilityVersionId: TEST_VERSION,
+					question: "Did the pointer move while the model was running?",
+				},
+				request(ORGANIZATION_A),
+			),
+		).rejects.toMatchObject({
+			code: "CONFLICT",
+			data: {
+				code: "TEST_CA_VERSION_CONFLICT",
+				expectedCapabilityVersionId: TEST_VERSION,
+				currentCapabilityVersionId: "current-test-ca",
+			},
+		});
+		expect(mocks.runTurn).toHaveBeenCalledTimes(1);
+		expect(mocks.getBinding).toHaveBeenCalledWith(ORGANIZATION_A);
 	});
 
 	it("keeps Active unchanged while a new Test CA makes old sessions read-only", async () => {
@@ -227,9 +318,16 @@ describe("Xiaofei Test CA persistent-session procedures", () => {
 				{ testSessionId: "historic-session" },
 				request(ORGANIZATION_A),
 			),
-		).rejects.toMatchObject({ code: "CONFLICT" });
+		).rejects.toMatchObject({
+			code: "CONFLICT",
+			data: {
+				code: "TEST_CA_VERSION_CONFLICT",
+				expectedCapabilityVersionId: "old-test-ca",
+				currentCapabilityVersionId: TEST_VERSION,
+			},
+		});
 
-		expect(mocks.setTestVersion).toHaveBeenCalledWith(ORGANIZATION_A, "new-test-ca");
+		expect(mocks.setTestVersion).toHaveBeenCalledWith(ORGANIZATION_A, "new-test-ca", TEST_VERSION);
 		expect(mocks.setTestVersion).not.toHaveBeenCalledWith(ORGANIZATION_A, "active-ca");
 	});
 
@@ -241,12 +339,91 @@ describe("Xiaofei Test CA persistent-session procedures", () => {
 				applyXiaofeiTestTurnCorrection,
 				{
 					sourceTestTurnId: "clx9xow740000qwerty123456",
+					testSessionId: "session-a",
+					capabilityVersionId: "clx9xow740001qwerty123456",
 					correction: "Use the corrected policy.",
 				},
 				request(ORGANIZATION_A),
 			),
 		).rejects.toMatchObject({ code: "FORBIDDEN" });
 		expect(mocks.applyFeedback).not.toHaveBeenCalled();
+	});
+
+	it("returns a safe conflict before any rerun work when the Test pointer moved", async () => {
+		mocks.applyFeedback.mockRejectedValueOnce(
+			new XiaofeiTestCapabilityConflictError(ORGANIZATION_A, TEST_VERSION, "current-test-ca"),
+		);
+
+		await expect(
+			call(
+				applyXiaofeiTestTurnCorrection,
+				{
+					sourceTestTurnId: "clx9xow740000qwerty123456",
+					testSessionId: "session-a",
+					capabilityVersionId: "clx9xow740001qwerty123456",
+					correction: "Use the corrected policy.",
+				},
+				request(ORGANIZATION_A),
+			),
+		).rejects.toMatchObject({
+			code: "CONFLICT",
+			data: {
+				code: "TEST_CA_VERSION_CONFLICT",
+				expectedCapabilityVersionId: TEST_VERSION,
+				currentCapabilityVersionId: "current-test-ca",
+			},
+		});
+
+		expect(mocks.loadCapability).not.toHaveBeenCalled();
+		expect(mocks.createSession).not.toHaveBeenCalled();
+		expect(mocks.runTurn).not.toHaveBeenCalled();
+		expect(mocks.createRerun).not.toHaveBeenCalled();
+	});
+
+	it("returns a completed identical correction without another session or model run", async () => {
+		const runtimeMetadata = {
+			knowledgeTitle: null,
+			knowledgeEvidence: null,
+			knowledgeEvidenceSet: [],
+			knowledgeRecall: { candidateCount: 0, aggregationMs: 0 },
+			nextAction: "reply" as const,
+			riskLevel: "low" as const,
+			ownerType: "ai" as const,
+			stage: "admission" as const,
+			missingSlots: [],
+			traces: [],
+		};
+		mocks.applyFeedback.mockResolvedValueOnce({
+			sourceTestTurn: { id: "clx9xow740000qwerty123456" },
+			existingRerun: {
+				id: "rerun-a",
+				testSessionId: "rerun-session-a",
+				answer: "Persisted corrected answer.",
+				capabilityVersionId: TEST_VERSION,
+				runtimeMetadata,
+			},
+		});
+
+		await expect(
+			call(
+				applyXiaofeiTestTurnCorrection,
+				{
+					sourceTestTurnId: "clx9xow740000qwerty123456",
+					testSessionId: "session-a",
+					capabilityVersionId: "clx9xow740001qwerty123456",
+					correction: "Use the corrected policy.",
+				},
+				request(ORGANIZATION_A),
+			),
+		).resolves.toMatchObject({
+			rerun: { id: "rerun-a", testSessionId: "rerun-session-a" },
+			answer: "Persisted corrected answer.",
+		});
+
+		expect(mocks.loadCapability).not.toHaveBeenCalled();
+		expect(mocks.createSession).not.toHaveBeenCalled();
+		expect(mocks.runTurn).not.toHaveBeenCalled();
+		expect(mocks.createRerun).not.toHaveBeenCalled();
 	});
 
 	it("projects intervention pairs once into a browser-safe bounded DTO", async () => {

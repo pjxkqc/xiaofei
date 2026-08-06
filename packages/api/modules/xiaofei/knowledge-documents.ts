@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+
 import { ORPCError } from "@orpc/server";
 import { generateKnowledgeUnitDrafts, type StructuredKnowledgeUnitGenerator } from "@repo/ai";
 import {
+	activateXiaofeiKnowledgeEntries,
 	createXiaofeiKnowledgeUnit,
 	createOrReturnXiaofeiKnowledgeUnit,
 	createXiaofeiTestSession,
@@ -374,54 +377,63 @@ export async function prepareKnowledgeForTenant(
 	if (!hasUniqueKnowledgeEntryIds(entryIds))
 		throw new ORPCError("BAD_REQUEST", { message: "Knowledge entries must be unique." });
 	const { workspace } = await getKnowledgeWorkspace(context);
-	const entries = await Promise.all(
-		entryIds.map((id) => getXiaofeiKnowledgeEntry(workspace.id, id)),
-	);
-	if (entries.some((entry) => !entry || !entry.eligible || entry.status !== "active"))
-		throw new ORPCError("BAD_REQUEST", { message: "Select current, active knowledge entries." });
-	const existing = await listXiaofeiKnowledgeUnits(workspace.id);
-	const resumable = existing.filter(
-		(unit) =>
-			entryIds.includes(unit.entryId) &&
-			unit.eligibility !== "stale" &&
-			["draft", "review_ready", "released"].includes(unit.status),
-	);
-	const covered = new Set(resumable.map((unit) => unit.entryId));
-	const missingEntryIds = entryIds.filter((id) => !covered.has(id));
-	const generatedStarted = Date.now();
-	const generatedResults = missingEntryIds.length
-		? await generateKnowledgeUnitsForTenant(context, missingEntryIds, generateDrafts, true)
-		: [];
-	const generated = generatedResults.map((result) =>
-		"knowledgeUnit" in result ? result.knowledgeUnit : result,
-	);
-	const generatedCount = generatedResults.filter(
-		(result) => !("created" in result) || result.created,
-	).length;
-	const reusedCount =
-		resumable.length +
-		generatedResults.filter((result) => "created" in result && !result.created).length;
-	const generatedElapsedMs = Date.now() - generatedStarted;
-	const lifecycleStarted = Date.now();
-	const candidates = [...resumable, ...generated];
-	const published: string[] = [];
-	for (const candidate of candidates) {
-		const unit = await advancePreparationKnowledgeUnit(context, candidate);
-		published.push(unit.id);
-	}
-	const lifecycleElapsedMs = Date.now() - lifecycleStarted;
-	const testCaStarted = Date.now();
-	const testCa = await initializeXiaofeiTestHostingForTenant(context);
-	const testCaElapsedMs = Date.now() - testCaStarted;
-	const sessionStarted = Date.now();
-	const testSessionId = globalThis.crypto.randomUUID();
-	await createXiaofeiTestSession(await getXiaofeiOrganizationId(context), {
-		id: testSessionId,
-		capabilityVersionId: testCa.versionId,
-	});
-	const sessionElapsedMs = Date.now() - sessionStarted;
-	return {
-		stages: [
+	const retryKey = knowledgePreparationRetryKey(workspace.id, entryIds);
+	const committedStages: Array<{
+		name: "activated" | "generated" | "reused" | "published" | "test_ca" | "session";
+		status: "completed";
+		elapsedMs: number;
+		count: number;
+	}> = [];
+	let failedStage: (typeof committedStages)[number]["name"] = "activated";
+	let partialCount = 0;
+	try {
+		const activationStarted = Date.now();
+		let activatedCount: number;
+		try {
+			({ activatedCount } = await activateXiaofeiKnowledgeEntries(workspace.id, entryIds));
+		} catch (error) {
+			if (error instanceof XiaofeiKnowledgeEntryEligibilityError)
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Select current draft or active knowledge entries.",
+				});
+			throw error;
+		}
+		const activationElapsedMs = Date.now() - activationStarted;
+		committedStages.push({
+			name: "activated",
+			status: "completed",
+			elapsedMs: activationElapsedMs,
+			count: activatedCount,
+		});
+		if (activatedCount > 0) {
+			await clearKnowledgeAdmission(context);
+			await synchronizeKnowledgeSnapshot(context, workspace.id);
+		}
+		failedStage = "generated";
+		const existing = await listXiaofeiKnowledgeUnits(workspace.id);
+		const resumable = existing.filter(
+			(unit) =>
+				entryIds.includes(unit.entryId) &&
+				unit.eligibility !== "stale" &&
+				["draft", "review_ready", "released"].includes(unit.status),
+		);
+		const covered = new Set(resumable.map((unit) => unit.entryId));
+		const missingEntryIds = entryIds.filter((id) => !covered.has(id));
+		const generatedStarted = Date.now();
+		const generatedResults = missingEntryIds.length
+			? await generateKnowledgeUnitsForTenant(context, missingEntryIds, generateDrafts, true)
+			: [];
+		const generated = generatedResults.map((result) =>
+			"knowledgeUnit" in result ? result.knowledgeUnit : result,
+		);
+		const generatedCount = generatedResults.filter(
+			(result) => !("created" in result) || result.created,
+		).length;
+		const reusedCount =
+			resumable.length +
+			generatedResults.filter((result) => "created" in result && !result.created).length;
+		const generatedElapsedMs = Date.now() - generatedStarted;
+		committedStages.push(
 			{
 				name: "generated",
 				status: "completed",
@@ -434,29 +446,74 @@ export async function prepareKnowledgeForTenant(
 				elapsedMs: 0,
 				count: reusedCount,
 			},
-			{
-				name: "published",
-				status: "completed",
-				elapsedMs: lifecycleElapsedMs,
-				count: published.length,
+		);
+		failedStage = "published";
+		const lifecycleStarted = Date.now();
+		const candidates = [...resumable, ...generated];
+		const published: string[] = [];
+		for (const candidate of candidates) {
+			const unit = await advancePreparationKnowledgeUnit(context, candidate);
+			published.push(unit.id);
+			partialCount = published.length;
+		}
+		const lifecycleElapsedMs = Date.now() - lifecycleStarted;
+		committedStages.push({
+			name: "published",
+			status: "completed",
+			elapsedMs: lifecycleElapsedMs,
+			count: published.length,
+		});
+		partialCount = 0;
+		failedStage = "test_ca";
+		const testCaStarted = Date.now();
+		const testCa = await initializeXiaofeiTestHostingForTenant(context);
+		const testCaElapsedMs = Date.now() - testCaStarted;
+		committedStages.push({
+			name: "test_ca",
+			status: "completed",
+			elapsedMs: testCaElapsedMs,
+			count: 1,
+		});
+		failedStage = "session";
+		const sessionStarted = Date.now();
+		const testSessionId = `prepare:${retryKey}:${testCa.versionId}`;
+		await createXiaofeiTestSession(await getXiaofeiOrganizationId(context), {
+			id: testSessionId,
+			capabilityVersionId: testCa.versionId,
+		});
+		const sessionElapsedMs = Date.now() - sessionStarted;
+		committedStages.push({
+			name: "session",
+			status: "completed",
+			elapsedMs: sessionElapsedMs,
+			count: 1,
+		});
+		return {
+			stages: committedStages,
+			knowledgeUnitIds: published,
+			testCapabilityVersionId: testCa.versionId,
+			testSessionId,
+		};
+	} catch (error) {
+		if (committedStages.length === 0 && error instanceof ORPCError) throw error;
+		throw new ORPCError("CONFLICT", {
+			message: "Knowledge preparation stopped after durable progress; retry the same request.",
+			data: {
+				code: "KNOWLEDGE_PREPARATION_INCOMPLETE",
+				retryKey,
+				failedStage,
+				partialCount,
+				committedStages,
 			},
-			{
-				name: "test_ca",
-				status: "completed",
-				elapsedMs: testCaElapsedMs,
-				count: 1,
-			},
-			{
-				name: "session",
-				status: "completed",
-				elapsedMs: sessionElapsedMs,
-				count: 1,
-			},
-		],
-		knowledgeUnitIds: published,
-		testCapabilityVersionId: testCa.versionId,
-		testSessionId,
-	};
+		});
+	}
+}
+
+function knowledgePreparationRetryKey(workspaceId: string, entryIds: string[]) {
+	return createHash("sha256")
+		.update(JSON.stringify({ workspaceId, entryIds: [...entryIds].sort() }))
+		.digest("hex")
+		.slice(0, 16);
 }
 
 const MAX_PREPARATION_LIFECYCLE_ATTEMPTS = 4;

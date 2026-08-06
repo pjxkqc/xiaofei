@@ -887,7 +887,7 @@ function detectRisk(
 				"为保护账户安全，请不要发送支付密码、验证码、完整银行卡号或其他凭据。我会将问题安全转交人工客服核实。",
 		};
 	}
-	const physicalSafety = /(冒烟|起火|触电|漏液|强烈异味|异常高温)/iu;
+	const physicalSafety = /(冒烟|起火|触电|漏电|漏液|强烈异味|异常高温)/iu;
 	if (physicalSafety.test(message)) {
 		return {
 			level: "high",

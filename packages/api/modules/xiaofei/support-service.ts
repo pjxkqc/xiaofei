@@ -4,6 +4,9 @@ import {
 	getXiaofeiConversation,
 	listXiaofeiConversations,
 	type Prisma,
+	touchXiaofeiSupportConversation,
+	type XiaofeiSupportConversationExpectation,
+	XiaofeiSupportConversationConflictError,
 	updateXiaofeiSupportConversation,
 	upsertXiaofeiSupportConversation,
 } from "@repo/database";
@@ -12,6 +15,7 @@ import {
 	SupportConversationSchema,
 	SupportConversationSummarySchema,
 	SupportMessageSchema,
+	SyntheticAcceptanceMetadataSchema,
 	TraceEventSchema,
 	createConversationState,
 	transferConversationOwner,
@@ -80,15 +84,18 @@ export async function getPublicSupportConversation(externalId: string) {
 	const existing = await getRequiredConversation(workspace.id, externalId);
 	if (existing.status === "closed") return toConversation(existing);
 
-	const touched = await updateXiaofeiSupportConversation(workspace.id, externalId, {
-		lastCustomerSeenAt: new Date(),
-	});
+	const touched = await touchXiaofeiSupportConversation(workspace.id, externalId, new Date());
 	return toConversation(touched);
 }
 
-export async function sendPublicSupportMessage(externalId: string, text: string) {
+export async function sendPublicSupportMessage(
+	externalId: string,
+	text: string,
+	expectation: XiaofeiSupportConversationExpectation,
+) {
 	const { workspace, snapshot } = await getOrCreatePublicXiaofeiWorkspace();
 	const existing = await getRequiredConversation(workspace.id, externalId);
+	assertSupportExpectation(existing, expectation);
 	if (existing.status === "closed") {
 		throw new ORPCError("BAD_REQUEST", { message: "This conversation is closed." });
 	}
@@ -119,13 +126,18 @@ export async function sendPublicSupportMessage(externalId: string, text: string)
 	}
 
 	messages = messages.slice(-MAX_MESSAGES);
-	const updated = await updateXiaofeiSupportConversation(workspace.id, externalId, {
-		state: toJson(nextState),
-		traceEvents: toJson(traces),
-		messages: toJson(messages),
-		lastCustomerSeenAt: now,
-		lastMessageAt: now,
-	});
+	const updated = await commitSupportConversation(
+		workspace.id,
+		externalId,
+		persistenceExpectation(existing),
+		{
+			state: toJson(nextState),
+			traceEvents: toJson(traces),
+			messages: toJson(messages),
+			lastCustomerSeenAt: now,
+			lastMessageAt: now,
+		},
+	);
 
 	return toConversation(updated);
 }
@@ -150,20 +162,27 @@ export async function setSupportConversationOwner(input: {
 	externalId: string;
 	owner: "ai" | "human";
 	user: { id: string; name: string };
+	expectation: XiaofeiSupportConversationExpectation;
 }) {
 	const { workspace } = await getOrCreateXiaofeiWorkspace(input.context);
 	const existing = await getRequiredConversation(workspace.id, input.externalId);
+	assertSupportExpectation(existing, input.expectation);
 	if (existing.status === "closed") {
 		throw new ORPCError("BAD_REQUEST", { message: "This conversation is closed." });
 	}
 
 	const state = ConversationStateSchema.parse(existing.state);
 	const nextState = transferConversationOwner(state, state.ownerEpoch, input.owner);
-	const updated = await updateXiaofeiSupportConversation(workspace.id, input.externalId, {
-		state: toJson(nextState),
-		assignedUserId: input.owner === "human" ? input.user.id : null,
-		assignedUserName: input.owner === "human" ? input.user.name : null,
-	});
+	const updated = await commitSupportConversation(
+		workspace.id,
+		input.externalId,
+		persistenceExpectation(existing),
+		{
+			state: toJson(nextState),
+			assignedUserId: input.owner === "human" ? input.user.id : null,
+			assignedUserName: input.owner === "human" ? input.user.name : null,
+		},
+	);
 	return toConversation(updated);
 }
 
@@ -172,9 +191,11 @@ export async function sendHumanSupportMessage(input: {
 	externalId: string;
 	text: string;
 	user: { id: string; name: string };
+	expectation: XiaofeiSupportConversationExpectation;
 }) {
 	const { workspace } = await getOrCreateXiaofeiWorkspace(input.context);
 	const existing = await getRequiredConversation(workspace.id, input.externalId);
+	assertSupportExpectation(existing, input.expectation);
 	const state = ConversationStateSchema.parse(existing.state);
 	if (existing.status === "closed" || state.ownerType !== "human") {
 		throw new ORPCError("BAD_REQUEST", {
@@ -187,12 +208,18 @@ export async function sendHumanSupportMessage(input: {
 		...parseMessages(existing),
 		createMessage("human", input.user.name, input.text, now),
 	].slice(-MAX_MESSAGES);
-	const updated = await updateXiaofeiSupportConversation(workspace.id, input.externalId, {
-		assignedUserId: input.user.id,
-		assignedUserName: input.user.name,
-		messages: toJson(messages),
-		lastMessageAt: now,
-	});
+	const updated = await commitSupportConversation(
+		workspace.id,
+		input.externalId,
+		persistenceExpectation(existing),
+		{
+			state: toJson(state),
+			assignedUserId: input.user.id,
+			assignedUserName: input.user.name,
+			messages: toJson(messages),
+			lastMessageAt: now,
+		},
+	);
 	return toConversation(updated);
 }
 
@@ -222,6 +249,8 @@ function toSummary(record: SupportConversationRecord): SupportConversationSummar
 		channel: record.channel,
 		status: record.status,
 		ownerType: state.ownerType,
+		ownerEpoch: record.ownerEpoch ?? state.ownerEpoch,
+		revision: record.revision,
 		stage: state.stage,
 		attentionRequired: state.operatorAttention !== null,
 		attentionReason: state.operatorAttention?.reason ?? null,
@@ -235,6 +264,10 @@ function toSummary(record: SupportConversationRecord): SupportConversationSummar
 			: null,
 		processingStatus: record.processingJobs?.[0]?.status ?? null,
 		deliveryStatus: record.outboundDeliveries?.[0]?.status ?? null,
+		syntheticAcceptance:
+			record.syntheticAcceptance === null
+				? null
+				: SyntheticAcceptanceMetadataSchema.parse(record.syntheticAcceptance),
 		lastMessage: lastMessage?.text ?? "",
 		lastMessageAt: record.lastMessageAt?.toISOString() ?? null,
 		updatedAt: record.updatedAt.toISOString(),
@@ -262,6 +295,48 @@ function createMessage(
 
 function normalizeCustomerName(value: string): string {
 	return value.trim() || "访客";
+}
+
+function assertSupportExpectation(
+	record: Pick<SupportConversationRecord, "revision" | "state">,
+	expectation: XiaofeiSupportConversationExpectation,
+) {
+	const state = ConversationStateSchema.parse(record.state);
+	if (
+		record.revision !== expectation.expectedRevision ||
+		state.ownerType !== expectation.expectedOwnerType ||
+		state.ownerEpoch !== expectation.expectedOwnerEpoch
+	)
+		throw new ORPCError("CONFLICT", {
+			message: "This support conversation changed; the latest state has been preserved.",
+		});
+}
+
+function persistenceExpectation(
+	record: Pick<SupportConversationRecord, "revision" | "ownerType" | "ownerEpoch">,
+): XiaofeiSupportConversationExpectation {
+	return {
+		expectedRevision: record.revision,
+		expectedOwnerType: record.ownerType,
+		expectedOwnerEpoch: record.ownerEpoch,
+	};
+}
+
+async function commitSupportConversation(
+	workspaceId: string,
+	externalId: string,
+	expectation: XiaofeiSupportConversationExpectation,
+	data: Parameters<typeof updateXiaofeiSupportConversation>[3],
+) {
+	try {
+		return await updateXiaofeiSupportConversation(workspaceId, externalId, expectation, data);
+	} catch (error) {
+		if (error instanceof XiaofeiSupportConversationConflictError)
+			throw new ORPCError("CONFLICT", {
+				message: "This support conversation changed; the latest state has been preserved.",
+			});
+		throw error;
+	}
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue {

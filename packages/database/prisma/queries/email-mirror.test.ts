@@ -123,6 +123,13 @@ const activeBinding = {
 	status: "active",
 };
 
+const emailConversationState = createConversationState({
+	id: email.conversation.externalId,
+	tenantId: `organization:${activeBinding.organizationId}`,
+	agentId: "email-mirror",
+	maxFollowUps: 0,
+});
+
 const p2002 = Object.assign(new Error("unique constraint"), { code: "P2002" });
 
 describe("email mirror persistence", () => {
@@ -137,6 +144,7 @@ describe("email mirror persistence", () => {
 		mocks.xiaofeiConversation.findUnique.mockResolvedValue(null);
 		mocks.xiaofeiConversation.create.mockResolvedValue({ id: "conversation-a" });
 		mocks.xiaofeiConversation.update.mockResolvedValue({ id: "conversation-a" });
+		mocks.xiaofeiConversation.updateMany.mockResolvedValue({ count: 1 });
 		mocks.$executeRaw.mockResolvedValue(0);
 		mocks.xiaofeiInboundEvent.create.mockResolvedValue({ id: "event-a" });
 		mocks.xiaofeiConversationMessage.create.mockResolvedValue({ id: "message-a" });
@@ -305,6 +313,10 @@ describe("email mirror persistence", () => {
 			id: "conversation-a",
 			customerId: "customer-a",
 			channel: "email",
+			state: emailConversationState,
+			revision: 4,
+			ownerType: "ai",
+			ownerEpoch: 0,
 			messages: [
 				{
 					id: `email-source:${outboundEmail.message.sourceMessageId}`,
@@ -319,10 +331,17 @@ describe("email mirror persistence", () => {
 			...outboundEmail,
 			message: { ...outboundEmail.message, senderType: "xiaofei" },
 		});
-		expect(mocks.xiaofeiConversation.update).toHaveBeenCalledWith(
+		expect(mocks.xiaofeiConversation.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
+				where: expect.objectContaining({
+					id: "conversation-a",
+					revision: 4,
+					ownerType: "ai",
+					ownerEpoch: 0,
+				}),
 				data: expect.objectContaining({
 					messages: [expect.objectContaining({ text: "Already visible reply", role: "ai" })],
+					revision: { increment: 1 },
 				}),
 			}),
 		);
@@ -381,6 +400,11 @@ describe("email mirror persistence", () => {
 			id: "conversation-a",
 			customerId: "customer-a",
 			channel: "email",
+			state: emailConversationState,
+			revision: 7,
+			ownerType: "ai",
+			ownerEpoch: 0,
+			messages: [],
 		});
 		await acceptMirroredEmailMessage(email);
 		const occurredAt = new Date(email.occurredAt);
@@ -394,6 +418,18 @@ describe("email mirror persistence", () => {
 		expect(mocks.xiaofeiConversation.updateMany).toHaveBeenNthCalledWith(2, {
 			where: {
 				id: "conversation-a",
+				revision: 7,
+				ownerType: "ai",
+				ownerEpoch: 0,
+			},
+			data: expect.objectContaining({
+				messages: [expect.objectContaining({ role: "customer", text: "body" })],
+				revision: { increment: 1 },
+			}),
+		});
+		expect(mocks.xiaofeiConversation.updateMany).toHaveBeenNthCalledWith(3, {
+			where: {
+				id: "conversation-a",
 				OR: [{ lastCustomerSeenAt: null }, { lastCustomerSeenAt: { lte: occurredAt } }],
 			},
 			data: { lastCustomerSeenAt: occurredAt },
@@ -405,13 +441,6 @@ describe("email mirror persistence", () => {
 			},
 			data: { lastSeenAt: occurredAt },
 		});
-		expect(mocks.xiaofeiConversation.update).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: expect.objectContaining({
-					messages: [expect.objectContaining({ role: "customer", text: "body" })],
-				}),
-			}),
-		);
 	});
 
 	it("increments receipt metadata for an in-transaction duplicate without another message or job", async () => {
@@ -544,6 +573,9 @@ describe("email mirror persistence", () => {
 				workspaceId: "workspace-a",
 				jobId: "job-a",
 				conversationId: "conversation-a",
+				externalId: email.conversation.externalId,
+				expectedRevision: 4,
+				expectedOwnerType: "ai",
 				expectedOwnerEpoch: state.ownerEpoch,
 				state,
 				messages: [],
@@ -562,6 +594,23 @@ describe("email mirror persistence", () => {
 			}),
 		).resolves.toEqual({ id: "delivery:job-a" });
 		expect(mocks.xiaofeiOutboundDelivery.create).toHaveBeenCalledTimes(1);
+		expect(mocks.xiaofeiConversation.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					workspaceId: "workspace-a",
+					id: "conversation-a",
+					externalId: email.conversation.externalId,
+					revision: 4,
+					ownerType: "ai",
+					ownerEpoch: 0,
+				},
+				data: expect.objectContaining({
+					revision: { increment: 1 },
+					ownerType: "ai",
+					ownerEpoch: 0,
+				}),
+			}),
+		);
 		expect(mocks.xiaofeiProcessingJob.update).toHaveBeenCalledWith(
 			expect.objectContaining({ data: { status: "delivery_pending", lastError: null } }),
 		);
@@ -569,14 +618,16 @@ describe("email mirror persistence", () => {
 		vi.clearAllMocks();
 		mocks.transaction.mockImplementation(async (callback) => callback(mocks));
 		mocks.xiaofeiProcessingJob.findFirst.mockResolvedValue({ id: "job-a" });
-		mocks.xiaofeiConversation.findUnique.mockResolvedValue({
-			state: { ...state, ownerType: "human", ownerEpoch: state.ownerEpoch + 1 },
-		});
+		mocks.xiaofeiConversation.findUnique.mockResolvedValue({ state });
+		mocks.xiaofeiConversation.updateMany.mockResolvedValue({ count: 0 });
 		await expect(
 			completeXiaofeiEmailReplyProcessing({
 				workspaceId: "workspace-a",
 				jobId: "job-a",
 				conversationId: "conversation-a",
+				externalId: email.conversation.externalId,
+				expectedRevision: 4,
+				expectedOwnerType: "ai",
 				expectedOwnerEpoch: state.ownerEpoch,
 				state,
 				messages: [],

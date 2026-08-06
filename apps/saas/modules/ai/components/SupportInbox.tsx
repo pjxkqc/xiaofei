@@ -136,12 +136,17 @@ export function SupportInbox() {
 			const updated = await orpcClient.xiaofei.setAgentConversationOwner({
 				conversationId: conversation.id,
 				owner,
+				expectedRevision: conversation.revision,
+				expectedOwnerType: conversation.ownerType,
+				expectedOwnerEpoch: conversation.ownerEpoch,
 			});
 			setConversation(updated);
 			await refreshList();
 			toastSuccess(owner === "human" ? "已由真人客服接管" : "已交还小飞");
 		} catch {
-			toastError("更新接管状态失败");
+			await refreshSelected(conversation.id).catch(() => undefined);
+			await refreshList().catch(() => undefined);
+			toastError("会话已变化，已刷新最新接管状态");
 		} finally {
 			setBusy(false);
 		}
@@ -157,12 +162,17 @@ export function SupportInbox() {
 			const updated = await orpcClient.xiaofei.sendAgentMessage({
 				conversationId: conversation.id,
 				text,
+				expectedRevision: conversation.revision,
+				expectedOwnerType: conversation.ownerType,
+				expectedOwnerEpoch: conversation.ownerEpoch,
 			});
 			setConversation(updated);
 			await refreshList();
 		} catch {
 			setInput(text);
-			toastError("客服回复发送失败");
+			await refreshSelected(conversation.id).catch(() => undefined);
+			await refreshList().catch(() => undefined);
+			toastError("会话已变化，已刷新；请确认后重新发送");
 		} finally {
 			setBusy(false);
 		}
@@ -375,6 +385,16 @@ export function SupportInbox() {
 												? `转人工原因：${visibleConversation.handoffReason}`
 												: "Organization 消息接入"}
 									</CardDescription>
+									{visibleConversation.syntheticAcceptance ? (
+										<p className="mt-1 text-xs text-muted-foreground">
+											Preview {visibleConversation.syntheticAcceptance.previewHeadSha.slice(0, 8)} ·
+											不可外发 · 创建者 {visibleConversation.syntheticAcceptance.createdByUserId}
+										</p>
+									) : visibleConversation.channel === "synthetic_support" ? (
+										<p className="mt-1 text-xs text-warning">
+											遗留 Synthetic Support · 未核验 · 不可作为当前验收证据
+										</p>
+									) : null}
 								</div>
 								<div className="gap-2 flex flex-wrap">
 									{visibleConversation.channel === "email" &&

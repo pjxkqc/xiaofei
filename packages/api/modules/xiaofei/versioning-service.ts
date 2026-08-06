@@ -25,25 +25,38 @@ const hostingKey = "xiaofei-hosting" as const;
  * Test turns and Active runtime materialization use.
  */
 export async function getXiaofeiTestAdmissionSnapshot(context: XiaofeiAuthContext) {
+	return (await getXiaofeiTestAdmissionTarget(context)).snapshot;
+}
+
+/** Carries the exact Test CA identity alongside the admission projection. */
+export async function getXiaofeiTestAdmissionTarget(context: XiaofeiAuthContext) {
 	const organizationId = await getXiaofeiOrganizationId(context);
 	const [{ snapshot }, binding] = await Promise.all([
 		getOrCreateXiaofeiWorkspace(context),
 		getXiaofeiOrganizationHostingBinding(organizationId),
 	]);
-	if (!binding?.testCapabilityVersionId) return snapshot;
+	if (!binding?.testCapabilityVersionId)
+		return { snapshot, capabilityVersionId: null as string | null };
 	const capability = await loadXiaofeiRuntimeHostingCapability(organizationId, "test");
-	return materializeTestCapabilityReviewSnapshot({
-		base: snapshot,
-		manifest: capability.manifest,
-		revisions: capability.revisions,
-	});
+	return {
+		snapshot: materializeTestCapabilityReviewSnapshot({
+			base: snapshot,
+			manifest: capability.manifest,
+			revisions: capability.revisions,
+		}),
+		capabilityVersionId: capability.manifest.id,
+	};
 }
 
 /** Materializes a new immutable Test CA; it intentionally never changes Active. */
 export async function initializeXiaofeiTestHostingForTenant(context: XiaofeiAuthContext) {
 	await requireXiaofeiOrganizationAdmin(context);
 	const organizationId = await getXiaofeiOrganizationId(context);
-	const { workspace, snapshot } = await getOrCreateXiaofeiWorkspace(context);
+	const [{ workspace, snapshot }, startingBinding] = await Promise.all([
+		getOrCreateXiaofeiWorkspace(context),
+		getXiaofeiOrganizationHostingBinding(organizationId),
+	]);
+	const expectedTestCapabilityVersionId = startingBinding?.testCapabilityVersionId ?? null;
 	const units = await listXiaofeiKnowledgeUnits(workspace.id);
 	const platform = snapshot.knowledgeUnits.filter(
 		(unit) =>
@@ -113,6 +126,10 @@ export async function initializeXiaofeiTestHostingForTenant(context: XiaofeiAuth
 			})),
 		],
 	});
-	await setXiaofeiOrganizationTestHostingVersion(organizationId, hosting.id);
+	await setXiaofeiOrganizationTestHostingVersion(
+		organizationId,
+		hosting.id,
+		expectedTestCapabilityVersionId,
+	);
 	return { versionId: hosting.id };
 }

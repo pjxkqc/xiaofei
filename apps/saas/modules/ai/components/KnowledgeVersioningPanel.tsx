@@ -122,7 +122,7 @@ export function KnowledgeVersioningPanel({
 	const loadSession = useCallback(
 		async (next: string) => {
 			const request = ++recoveryRequest.current;
-			beginOperation("会话列表已恢复；正在读取历史轮次与干预证据…");
+			beginOperation("读取 Test CA 历史轮次与干预证据");
 			setTestSessionId(next);
 			setTurns([]);
 			setInterventionEvidence([]);
@@ -161,7 +161,7 @@ export function KnowledgeVersioningPanel({
 	}, []);
 	const recoverSessionHistory = useCallback(async () => {
 		const request = ++recoveryRequest.current;
-		beginOperation("正在恢复 Test CA 会话列表…");
+		beginOperation("恢复 Test CA 会话列表");
 		try {
 			const result = await recoverTestSession({
 				list: refreshSessions,
@@ -207,7 +207,7 @@ export function KnowledgeVersioningPanel({
 		setTestSessionId(next);
 	}
 	async function resetSession() {
-		beginOperation("正在创建新的 Test CA 会话…");
+		beginOperation("创建新的 Test CA 会话");
 		setBusy(true);
 		try {
 			const next = await orpcClient.xiaofei.newTestSession();
@@ -242,13 +242,15 @@ export function KnowledgeVersioningPanel({
 		}
 	}
 	async function test() {
-		if (!question.trim() || !testSessionId || !testVersion) return;
-		beginOperation("排队 → 选择知识 → 生成候选 → Guardrail → 保存测试轮次…");
+		if (!question.trim() || !testSessionId || !testVersion || !selectedSession) return;
+		++recoveryRequest.current;
+		beginOperation("运行并保存 Test CA 轮次");
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.runVersionedTest({
 				question: question.trim(),
 				testSessionId,
+				capabilityVersionId: selectedSession.capabilityVersionId,
 			});
 			storeSession(result.testSessionId);
 			setSessions((current) =>
@@ -275,12 +277,14 @@ export function KnowledgeVersioningPanel({
 		}
 	}
 	async function correct(turn: TestTurnView) {
-		if (!correction.trim()) return;
-		beginOperation("校验权限 → 保存不可变干预 → 生成新 CA → 同题复测…");
+		if (!correction.trim() || !testSessionId) return;
+		beginOperation("保存不可变干预并完成同题复测");
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.applyTestTurnCorrection({
 				sourceTestTurnId: turn.turn.id,
+				testSessionId,
+				capabilityVersionId: turn.turn.capabilityVersionId,
 				correction: correction.trim(),
 			});
 			setRerun(result);
@@ -305,7 +309,7 @@ export function KnowledgeVersioningPanel({
 		testSessionId !== null &&
 		testVersion !== null &&
 		selectedSession?.writable === true &&
-		sessionDetailState !== "error";
+		sessionDetailState === "ready";
 	return (
 		<div className="gap-6 flex flex-col">
 			<OperationFeedback operation={operation} />
@@ -401,7 +405,7 @@ function VersionOverview({
 			})
 		: null;
 	async function act(action: () => Promise<unknown>, success: string) {
-		onStart("校验版本 → 更新托管指针/状态 → 确认生效…");
+		onStart("更新验收与托管状态");
 		setBusy(true);
 		try {
 			await action();
@@ -530,7 +534,7 @@ function SupportAcceptance({
 	}
 	async function create() {
 		if (!canCreateSupportAcceptance({ canCreate, text, conversationId })) return;
-		onStart("校验 Active CA → 创建合成会话 → 投影首条消息…");
+		onStart("创建并持久化 Support 验收会话");
 		setBusyAction("support");
 		try {
 			const result = await orpcClient.xiaofei.sendSyntheticSupportMessage({
@@ -580,7 +584,7 @@ function SupportAcceptance({
 						void capabilityAction(
 							() => orpcClient.xiaofei.reviewCapability({ reviewed: true }),
 							"能力方案已审核",
-							"校验能力方案 → 保存审核状态 → 确认生效…",
+							"审核并保存当前能力方案",
 							"review",
 						)
 					}
@@ -596,7 +600,7 @@ function SupportAcceptance({
 						void capabilityAction(
 							() => orpcClient.xiaofei.runEval(),
 							"当前版本 Eval 已通过",
-							"校验审核状态 → 运行当前版本 Eval → 保存结果…",
+							"运行并保存当前版本 Eval",
 							"eval",
 						)
 					}
@@ -642,9 +646,11 @@ function SupportAcceptance({
 				) : null}
 			</div>
 			{busyAction === "support" ? (
-				<output className="text-sm block text-muted-foreground" aria-live="polite">
-					正在校验 Active CA、创建合成会话并准备 Inbox 定位…
-				</output>
+				<ol className="gap-1 text-xs flex flex-col text-muted-foreground" aria-live="polite">
+					<li>创建请求已提交 · 已完成</li>
+					<li>服务端校验 Active CA 并持久化合成会话 · 进行中</li>
+					<li>返回 Inbox 定位符 · 待处理</li>
+				</ol>
 			) : null}
 		</div>
 	);
@@ -669,41 +675,21 @@ function OperationFeedback({
 }) {
 	const elapsedSeconds = useElapsedSeconds(operation.startedAt);
 	if (!operation.label && !operation.error) return null;
-	const steps = operation.label
-		? operation.label
-				.replace(/…$/u, "")
-				.split("→")
-				.map((step) => step.trim())
-				.filter(Boolean)
-		: [];
 	return (
 		<div className="gap-2 p-3 text-sm rounded-lg border bg-muted/30" aria-live="polite">
 			{operation.label ? (
 				<div className="gap-2 flex flex-col">
-					<p className="font-medium">服务端处理链路</p>
-					{steps.length > 1 ? (
-						<ol
-							className="gap-1 sm:gap-2 sm:flex-row sm:flex-wrap flex flex-col"
-							aria-label="服务端按顺序执行的操作阶段"
-						>
-							{steps.map((step, index) => (
-								<li
-									key={`${step}-${index}`}
-									className="gap-1.5 text-xs flex items-center text-muted-foreground"
-									aria-current={index === 0 ? "step" : undefined}
-								>
-									<span
-										className={`size-5 flex items-center justify-center rounded-full border text-[11px] ${index === 0 ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}
-									>
-										{index === 0 ? "…" : index + 1}
-									</span>
-									<span>{step}</span>
-								</li>
-							))}
-						</ol>
-					) : (
-						<p>{operation.label}</p>
-					)}
+					<p className="font-medium">{operation.label}</p>
+					<ol
+						className="gap-1 sm:gap-2 sm:flex-row sm:flex-wrap flex flex-col"
+						aria-label="请求处理状态"
+					>
+						<li className="text-xs text-muted-foreground">请求已提交 · 已完成</li>
+						<li className="text-xs text-foreground" aria-current="step">
+							服务端处理中 · 进行中
+						</li>
+						<li className="text-xs text-muted-foreground">等待持久化结果 · 待处理</li>
+					</ol>
 				</div>
 			) : null}
 			{operation.label && elapsedSeconds >= 2 ? (
@@ -822,7 +808,7 @@ function TestConversation({
 					<>
 						{sessionDetailState === "loading" && testSessionId ? (
 							<output className="text-sm block text-muted-foreground">
-								服务端会话已恢复；历史轮次仍在加载（后台加载）。当前可写会话现在即可安全追加新问题。
+								服务端会话已恢复；历史轮次与最新写入位置仍在加载。完成后即可安全追加新问题。
 							</output>
 						) : null}
 						{sessionDetailState === "error" && testSessionId ? (

@@ -3,8 +3,9 @@ import { timingSafeEqual } from "node:crypto";
 import { runXiaofeiTurn } from "@repo/ai";
 import {
 	acceptInboundEvent,
+	appendXiaofeiSupportInboundMessage,
+	claimXiaofeiInboundEventProcessing,
 	createXiaofeiCustomer,
-	getXiaofeiConversation,
 	getXiaofeiCustomer,
 	getXiaofeiOrganizationConfigByExternalMerchantId,
 	getInboundEvent,
@@ -12,8 +13,8 @@ import {
 	updateXiaofeiInboundEventStatus,
 	updateXiaofeiCustomer,
 	updateXiaofeiSupportConversation,
-	upsertXiaofeiSupportConversation,
 	XiaofeiInboundEventConflictError,
+	XiaofeiSupportConversationConflictError,
 	listXiaofeiOrganizationEmailMirrorMetadata,
 	getXiaofeiOrganizationEmailMirrorDetail,
 	acceptMirroredEmailMessage,
@@ -136,8 +137,9 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 		eventType: "message.received",
 		payload,
 	});
-	if (accepted.kind === "duplicate") return { ...accepted, outcome: "duplicate" as const };
 	const event = accepted.event;
+	if (!(await claimXiaofeiInboundEventProcessing(workspace.id, event.id)))
+		return { ...accepted, outcome: "duplicate" as const };
 	try {
 		const config = await getXiaofeiOrganizationConfigByExternalMerchantId(
 			payload.externalMerchantId,
@@ -173,27 +175,15 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			return { ...accepted, outcome: "echo_ignored" as const };
 		}
 		const loaded = await getOrCreateXiaofeiWorkspaceByTenantKey(workspace.tenantKey);
-		const current = await getXiaofeiConversation(workspace.id, payload.externalConversationId);
-		if (current && (current.customerId !== customer.id || current.channel !== payload.channel)) {
-			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
-				status: "conversation_conflict",
-				processedAt: new Date(),
-				lastError: "Conversation customer or channel binding mismatch.",
-			});
-			return { ...accepted, outcome: "conversation_conflict" as const };
-		}
 		const now = new Date();
 		const inboundText = normalizeInboundText(payload.title, payload.text);
-		const state = current
-			? ConversationStateSchema.parse(current.state)
-			: createConversationState({
-					id: payload.externalConversationId,
-					tenantId: workspace.tenantKey,
-					agentId: loaded.snapshot.agent.id,
-					maxFollowUps: loaded.snapshot.agent.maxFollowUps,
-					now: () => now.toISOString(),
-				});
-		const messages = current ? z.array(SupportMessageSchema).parse(current.messages) : [];
+		const initialState = createConversationState({
+			id: payload.externalConversationId,
+			tenantId: workspace.tenantKey,
+			agentId: loaded.snapshot.agent.id,
+			maxFollowUps: loaded.snapshot.agent.maxFollowUps,
+			now: () => now.toISOString(),
+		});
 		const inbound = SupportMessageSchema.parse({
 			id: payload.externalMessageId,
 			role: "customer",
@@ -201,28 +191,17 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			text: inboundText,
 			createdAt: now.toISOString(),
 		});
-		const traces = current ? z.array(TraceEventSchema).parse(current.traceEvents) : [];
-		if (!current)
-			await upsertXiaofeiSupportConversation({
-				workspaceId: workspace.id,
-				externalId: payload.externalConversationId,
-				customerId: customer.id,
-				channel: payload.channel,
-				customerName: customer.name ?? payload.externalCustomerId,
-				state: toJson(state),
-				traceEvents: toJson(traces),
-				messages: toJson([...messages, inbound]),
-				lastCustomerSeenAt: now,
-				lastMessageAt: now,
-			});
-		else
-			await updateXiaofeiSupportConversation(workspace.id, payload.externalConversationId, {
-				customerName: customer.name ?? payload.externalCustomerId,
-				state: toJson(state),
-				messages: toJson([...messages, inbound].slice(-160)),
-				lastCustomerSeenAt: now,
-				lastMessageAt: now,
-			});
+		const persisted = await appendXiaofeiSupportInboundMessage({
+			workspaceId: workspace.id,
+			externalId: payload.externalConversationId,
+			customerId: customer.id,
+			channel: payload.channel,
+			customerName: customer.name ?? payload.externalCustomerId,
+			initialState: toJson(initialState),
+			message: toJson(inbound),
+			lastCustomerSeenAt: now,
+			lastMessageAt: now,
+		});
 		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
 			status: "conversation_updated",
 		});
@@ -233,36 +212,58 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			});
 			return { ...accepted, outcome: "ai_disabled" as const };
 		}
-		const result = await runXiaofeiTurn({
-			message: inboundText,
-			state,
-			snapshot: loaded.snapshot,
-			knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
-				workspace: loaded.workspace,
+		const persistedState = ConversationStateSchema.parse(persisted.state);
+		if (persistedState.ownerType !== "ai") {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "conversation_updated",
+				processedAt: new Date(),
+			});
+			return { ...accepted, outcome: "human_owned" as const };
+		}
+		const persistedMessages = z.array(SupportMessageSchema).parse(persisted.messages);
+		const replyId = `xiaofei:${payload.externalMessageId}`;
+		if (!persistedMessages.some((message) => message.id === replyId)) {
+			const result = await runXiaofeiTurn({
+				message: inboundText,
+				state: persistedState,
 				snapshot: loaded.snapshot,
-				conversationId: state.id,
-				channelId: `mock:${payload.channel}`,
-			}),
-		});
-		const reply = SupportMessageSchema.parse({
-			id: `xiaofei:${payload.externalMessageId}`,
-			role: "ai",
-			authorName: loaded.snapshot.agent.name,
-			text: result.reply,
-			createdAt: new Date().toISOString(),
-		});
-		await updateXiaofeiSupportConversation(workspace.id, payload.externalConversationId, {
-			state: toJson(result.state),
-			traceEvents: toJson([...traces, ...result.metadata.traces].slice(-80)),
-			messages: toJson([...messages, inbound, reply].slice(-160)),
-			lastMessageAt: new Date(),
-		});
+				knowledgeWorkspaceBinding: createKnowledgeWorkspaceBinding({
+					workspace: loaded.workspace,
+					snapshot: loaded.snapshot,
+					conversationId: persistedState.id,
+					channelId: `mock:${payload.channel}`,
+				}),
+			});
+			const reply = SupportMessageSchema.parse({
+				id: replyId,
+				role: "ai",
+				authorName: loaded.snapshot.agent.name,
+				text: result.reply,
+				createdAt: new Date().toISOString(),
+			});
+			await updateXiaofeiSupportConversation(
+				workspace.id,
+				payload.externalConversationId,
+				{
+					expectedRevision: persisted.revision,
+					expectedOwnerType: persisted.ownerType,
+					expectedOwnerEpoch: persisted.ownerEpoch,
+				},
+				{
+					state: toJson(result.state),
+					traceEvents: toJson(
+						[
+							...z.array(TraceEventSchema).parse(persisted.traceEvents),
+							...result.metadata.traces,
+						].slice(-80),
+					),
+					messages: toJson([...persistedMessages, reply].slice(-160)),
+					lastMessageAt: new Date(),
+				},
+			);
+		}
 		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
 			status: "ai_replied",
-		});
-		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
-			status: "mock_delivered",
-			processedAt: new Date(),
 		});
 		const echoPayload = {
 			...payload,
@@ -281,8 +282,20 @@ export async function runMockWorker(context: XiaofeiAuthContext, input: unknown)
 			status: "echo_ignored",
 			processedAt: new Date(),
 		});
+		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+			status: "mock_delivered",
+			processedAt: new Date(),
+		});
 		return { ...accepted, outcome: "mock_delivered" as const, echo: echo.event };
 	} catch (error) {
+		if (error instanceof XiaofeiSupportConversationConflictError) {
+			await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
+				status: "conversation_conflict",
+				processedAt: new Date(),
+				lastError: "Conversation changed during processing.",
+			});
+			return { ...accepted, outcome: "conversation_conflict" as const };
+		}
 		await updateXiaofeiInboundEventStatus(workspace.id, event.id, {
 			status: "failed",
 			processedAt: new Date(),

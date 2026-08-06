@@ -115,13 +115,17 @@ export function PublicSupportChat() {
 			const updated = await orpcClient.xiaofei.sendPublicMessage({
 				conversationId: conversation.id,
 				text,
+				expectedRevision: conversation.revision,
+				expectedOwnerType: conversation.ownerType,
+				expectedOwnerEpoch: conversation.ownerEpoch,
 			});
 			setConversation(updated);
 			setPendingMessage(null);
 		} catch {
 			setPendingMessage(null);
 			setInput(text);
-			toastError("消息发送失败，请稍后重试");
+			await refreshConversation(conversation.id).catch(() => undefined);
+			toastError("会话状态已变化，请确认最新消息后重试");
 		} finally {
 			setSending(false);
 		}

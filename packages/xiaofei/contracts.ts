@@ -771,6 +771,18 @@ export const SupportMessageSchema = z.object({
 
 export const SupportConversationStatusSchema = z.enum(["open", "closed"]);
 
+/** Server-authored audit facts for an isolated, non-deliverable Preview acceptance thread. */
+export const SyntheticAcceptanceMetadataSchema = z
+	.object({
+		organizationId: z.string().min(1),
+		createdByUserId: z.string().min(1),
+		deploymentEnvironment: z.literal("preview"),
+		previewHeadSha: z.string().regex(/^[0-9a-f]{40}$/u),
+		allowExternalDelivery: z.literal(false),
+		createdAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
+
 export const SupportConversationSummarySchema = z.object({
 	id: z.string().min(1),
 	customerId: z.string().min(1).nullable().default(null),
@@ -778,6 +790,8 @@ export const SupportConversationSummarySchema = z.object({
 	channel: z.string().min(1),
 	status: SupportConversationStatusSchema,
 	ownerType: OwnerTypeSchema,
+	ownerEpoch: z.number().int().nonnegative(),
+	revision: z.number().int().positive(),
 	stage: ConversationStageSchema,
 	attentionRequired: z.boolean().default(false),
 	attentionReason: z.string().nullable().default(null),
@@ -787,6 +801,7 @@ export const SupportConversationSummarySchema = z.object({
 	processingJobId: z.string().nullable().default(null),
 	processingStatus: z.string().nullable().default(null),
 	deliveryStatus: z.string().nullable().default(null),
+	syntheticAcceptance: SyntheticAcceptanceMetadataSchema.nullable().default(null),
 	lastMessage: z.string(),
 	lastMessageAt: z.string().nullable(),
 	updatedAt: z.string().min(1),
@@ -872,6 +887,7 @@ export type XiaofeiTestTurnRecord = z.infer<typeof XiaofeiTestTurnRecordSchema>;
 export type SupportMessageRole = z.infer<typeof SupportMessageRoleSchema>;
 export type SupportMessage = z.infer<typeof SupportMessageSchema>;
 export type SupportConversationStatus = z.infer<typeof SupportConversationStatusSchema>;
+export type SyntheticAcceptanceMetadata = z.infer<typeof SyntheticAcceptanceMetadataSchema>;
 export type SupportConversationSummary = z.infer<typeof SupportConversationSummarySchema>;
 export type SupportConversation = z.infer<typeof SupportConversationSchema>;
 export type Customer = z.infer<typeof CustomerSchema>;

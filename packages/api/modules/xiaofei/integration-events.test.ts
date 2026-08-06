@@ -4,17 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
 	acceptInboundEvent: vi.fn(),
+	appendXiaofeiSupportInboundMessage: vi.fn(),
+	claimXiaofeiInboundEventProcessing: vi.fn(),
 	getInboundEvent: vi.fn(),
 	listInboundEvents: vi.fn(),
 	getXiaofeiOrganizationConfigByExternalMerchantId: vi.fn(),
 	getXiaofeiCustomer: vi.fn(),
 	createXiaofeiCustomer: vi.fn(),
 	updateXiaofeiCustomer: vi.fn(),
-	getXiaofeiConversation: vi.fn(),
 	updateXiaofeiInboundEventStatus: vi.fn(),
 	updateXiaofeiSupportConversation: vi.fn(),
-	upsertXiaofeiSupportConversation: vi.fn(),
 	XiaofeiInboundEventConflictError: class XiaofeiInboundEventConflictError extends Error {},
+	XiaofeiSupportConversationConflictError: class XiaofeiSupportConversationConflictError extends Error {},
 	XiaofeiChannelBindingNotFoundError: class XiaofeiChannelBindingNotFoundError extends Error {},
 	listXiaofeiOrganizationEmailChannelBindings: vi.fn(),
 	listXiaofeiOrganizationEmailMirrorMetadata: vi.fn(),
@@ -32,12 +33,15 @@ vi.mock("./service", () => ({
 
 import { runXiaofeiTurn } from "@repo/ai";
 import {
+	appendXiaofeiSupportInboundMessage,
+	claimXiaofeiInboundEventProcessing,
 	getXiaofeiOrganizationConfigByExternalMerchantId,
 	createXiaofeiCustomer,
 	getXiaofeiCustomer,
-	getXiaofeiConversation,
 	updateXiaofeiCustomer,
 	updateXiaofeiInboundEventStatus,
+	updateXiaofeiSupportConversation,
+	XiaofeiSupportConversationConflictError,
 	listXiaofeiOrganizationEmailChannelBindings,
 	listXiaofeiOrganizationEmailMirrorMetadata,
 	getXiaofeiOrganizationEmailMirrorDetail,
@@ -178,13 +182,39 @@ describe("organization mock worker", () => {
 			kind: "created",
 			event: { id: "event-a" },
 		} as never);
+		vi.mocked(claimXiaofeiInboundEventProcessing).mockResolvedValue(true);
 		vi.mocked(getXiaofeiOrganizationConfigByExternalMerchantId).mockResolvedValue({
 			organizationId: "org-a",
 			xiaofeiEnabled: false,
 		} as never);
 		vi.mocked(getXiaofeiCustomer).mockResolvedValue({ id: "customer-row", name: "A" } as never);
 		vi.mocked(updateXiaofeiCustomer).mockResolvedValue({ id: "customer-row", name: "A" } as never);
-		vi.mocked(getXiaofeiConversation).mockResolvedValue(null);
+		vi.mocked(appendXiaofeiSupportInboundMessage).mockImplementation((input) => {
+			const state = input.initialState as ReturnType<typeof createConversationState>;
+			return {
+				id: "conversation-row",
+				externalId: input.externalId,
+				revision: 1,
+				ownerType: state.ownerType,
+				ownerEpoch: state.ownerEpoch,
+				state,
+				messages: [input.message],
+				traceEvents: [],
+			} as never;
+		});
+		vi.mocked(updateXiaofeiSupportConversation).mockImplementation(
+			async (_workspaceId, externalId, expectation, data) => {
+				const nextState = data.state as ReturnType<typeof createConversationState> | undefined;
+				return {
+					...data,
+					id: "conversation-row",
+					externalId,
+					revision: expectation.expectedRevision + 1,
+					ownerType: nextState?.ownerType ?? expectation.expectedOwnerType,
+					ownerEpoch: nextState?.ownerEpoch ?? expectation.expectedOwnerEpoch,
+				} as never;
+			},
+		);
 	});
 	it("fails closed for a merchant outside the active organization and records it", async () => {
 		vi.mocked(getXiaofeiOrganizationConfigByExternalMerchantId).mockResolvedValue({
@@ -215,6 +245,15 @@ describe("organization mock worker", () => {
 			"customer-a",
 			expect.objectContaining({ lastSeenAt: expect.any(Date) }),
 		);
+		expect(appendXiaofeiSupportInboundMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				externalId: payload.externalConversationId,
+				message: expect.objectContaining({
+					id: payload.externalMessageId,
+					text: "Subject\n\nBody",
+				}),
+			}),
+		);
 	});
 	it("creates a missing customer for the resolved organization", async () => {
 		vi.mocked(getXiaofeiCustomer).mockResolvedValue(null);
@@ -233,10 +272,70 @@ describe("organization mock worker", () => {
 	it("does not run twice for a duplicate external message", async () => {
 		vi.mocked(acceptInboundEvent).mockResolvedValue({
 			kind: "duplicate",
-			event: { id: "event-a" },
+			event: { id: "event-a", status: "mock_delivered" },
 		} as never);
+		vi.mocked(claimXiaofeiInboundEventProcessing).mockResolvedValue(false);
 		await expect(runMockWorker(context, payload)).resolves.toMatchObject({ outcome: "duplicate" });
 		expect(runXiaofeiTurn).not.toHaveBeenCalled();
+	});
+	it("recovers a failed duplicate without rerunning an already persisted AI reply", async () => {
+		vi.mocked(getXiaofeiOrganizationConfigByExternalMerchantId).mockResolvedValue({
+			organizationId: "org-a",
+			xiaofeiEnabled: true,
+		} as never);
+		vi.mocked(acceptInboundEvent).mockResolvedValue({
+			kind: "duplicate",
+			event: { id: "event-a", status: "failed" },
+		} as never);
+		vi.mocked(appendXiaofeiSupportInboundMessage).mockImplementation(async (input) => {
+			const state = input.initialState as ReturnType<typeof createConversationState>;
+			return {
+				id: "conversation-row",
+				externalId: input.externalId,
+				revision: 2,
+				ownerType: state.ownerType,
+				ownerEpoch: state.ownerEpoch,
+				state,
+				messages: [
+					input.message,
+					{
+						id: `xiaofei:${payload.externalMessageId}`,
+						role: "ai",
+						authorName: "Xiaofei",
+						text: "Already persisted",
+						createdAt: "2026-08-06T00:00:01.000Z",
+					},
+				],
+				traceEvents: [],
+			} as never;
+		});
+
+		await expect(runMockWorker(context, payload)).resolves.toMatchObject({
+			outcome: "mock_delivered",
+		});
+
+		expect(runXiaofeiTurn).not.toHaveBeenCalled();
+		expect(updateXiaofeiSupportConversation).not.toHaveBeenCalled();
+		expect(claimXiaofeiInboundEventProcessing).toHaveBeenCalledWith("workspace-a", "event-a");
+	});
+	it.each([
+		"processing",
+		"organization_resolved",
+		"customer_upserted",
+		"conversation_updated",
+		"ai_replied",
+	])("recovers a stale %s duplicate after the durable claim succeeds", async (status) => {
+		vi.mocked(acceptInboundEvent).mockResolvedValue({
+			kind: "duplicate",
+			event: { id: "event-a", status },
+		} as never);
+
+		await expect(runMockWorker(context, payload)).resolves.toMatchObject({
+			outcome: "ai_disabled",
+		});
+
+		expect(claimXiaofeiInboundEventProcessing).toHaveBeenCalledWith("workspace-a", "event-a");
+		expect(appendXiaofeiSupportInboundMessage).toHaveBeenCalledOnce();
 	});
 	it("runs the enabled worker once with the normalized email title and text", async () => {
 		vi.mocked(getXiaofeiOrganizationConfigByExternalMerchantId).mockResolvedValue({
@@ -287,10 +386,9 @@ describe("organization mock worker", () => {
 		);
 	});
 	it("rejects a reused conversation bound to another customer or channel", async () => {
-		vi.mocked(getXiaofeiConversation).mockResolvedValue({
-			customerId: "customer-b",
-			channel: "whatsapp",
-		} as never);
+		vi.mocked(appendXiaofeiSupportInboundMessage).mockRejectedValue(
+			new XiaofeiSupportConversationConflictError("workspace-a", payload.externalConversationId),
+		);
 		await expect(runMockWorker(context, payload)).resolves.toMatchObject({
 			outcome: "conversation_conflict",
 		});

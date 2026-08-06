@@ -324,6 +324,7 @@ model XiaofeiConversation {
   state              Json
   messages           Json             @default("[]")
   traceEvents        Json             @default("[]")
+  syntheticAcceptance Json?
   lastCustomerSeenAt DateTime?
   lastMessageAt      DateTime?
   createdAt          DateTime         @default(now())
@@ -725,7 +726,7 @@ model XiaofeiResponseIntervention {
 }
 
 /// One immutable answer and ConversationState snapshot from the Organization's
-/// governed Active or Test hosting CA. The latest snapshot for a session is
+/// governed current Test hosting CA. The latest snapshot for a session is
 /// loaded only through the Organization-scoped persistence boundary.
 model XiaofeiTestTurn {
   id                       String                       @id @default(cuid())

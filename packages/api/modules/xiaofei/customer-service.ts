@@ -114,6 +114,9 @@ function toConversationSummary(record: {
 	channel: string;
 	status: string;
 	assignedUserName: string | null;
+	ownerEpoch?: number | null;
+	revision?: number;
+	syntheticAcceptance?: unknown;
 	lastCustomerSeenAt: Date | null;
 	lastMessageAt: Date | null;
 	updatedAt: Date;
@@ -121,7 +124,12 @@ function toConversationSummary(record: {
 	messages: unknown;
 }) {
 	// Customer detail is a read-only audit view. The inbox remains the owner-state authority.
-	const state = record.state as { ownerType?: string; stage?: string; operatorAttention?: unknown };
+	const state = record.state as {
+		ownerType?: string;
+		ownerEpoch?: number;
+		stage?: string;
+		operatorAttention?: unknown;
+	};
 	const messages = Array.isArray(record.messages) ? record.messages : [];
 	const last = messages[messages.length - 1] as { text?: unknown } | undefined;
 	return SupportConversationSummarySchema.parse({
@@ -131,6 +139,8 @@ function toConversationSummary(record: {
 		channel: record.channel,
 		status: record.status,
 		ownerType: state.ownerType ?? "ai",
+		ownerEpoch: record.ownerEpoch ?? state.ownerEpoch ?? 0,
+		revision: record.revision ?? 1,
 		stage: state.stage ?? "new",
 		attentionRequired: state.operatorAttention !== null && state.operatorAttention !== undefined,
 		attentionReason: null,
@@ -139,6 +149,7 @@ function toConversationSummary(record: {
 			record.lastCustomerSeenAt !== null &&
 			Date.now() - record.lastCustomerSeenAt.getTime() <= 30_000,
 		assignedUserName: record.assignedUserName,
+		syntheticAcceptance: record.syntheticAcceptance ?? null,
 		lastMessage: typeof last?.text === "string" ? last.text : "",
 		lastMessageAt: record.lastMessageAt?.toISOString() ?? null,
 		updatedAt: record.updatedAt.toISOString(),

@@ -12,6 +12,7 @@ import {
 import {
 	ConversationStateSchema,
 	SupportMessageSchema,
+	SyntheticAcceptanceMetadataSchema,
 	TraceEventSchema,
 	createConversationState,
 	materializeActiveCapabilitySnapshot,
@@ -36,6 +37,10 @@ export const sendSyntheticSupportMessage = supportProcedure
 		const { workspace, snapshot } = await getOrCreateXiaofeiWorkspace(context);
 		// This is the only external ID used for lookup, create, CAS commit, and Inbox links.
 		const conversationId = syntheticSupportConversationId(input.externalId);
+		const syntheticAcceptance = createSyntheticAcceptanceMetadata({
+			organizationId,
+			createdByUserId: context.user.id,
+		});
 		const baseState = createConversationState({
 			id: conversationId,
 			tenantId: snapshot.agent.tenantId,
@@ -51,6 +56,7 @@ export const sendSyntheticSupportMessage = supportProcedure
 				state: toJson(baseState),
 				messages: toJson([]),
 				traceEvents: toJson([]),
+				syntheticAcceptance: toJson(syntheticAcceptance),
 			});
 		} catch (error) {
 			throwSyntheticConflict(error);
@@ -133,6 +139,26 @@ function toJson(value: unknown): Prisma.InputJsonValue {
 
 export function syntheticSupportConversationId(externalId: string) {
 	return `synthetic:${externalId}`;
+}
+
+export function createSyntheticAcceptanceMetadata(
+	input: { organizationId: string; createdByUserId: string },
+	env: NodeJS.ProcessEnv = process.env,
+	now: () => Date = () => new Date(),
+) {
+	const deploymentEnvironment = env.VERCEL_ENV?.trim();
+	const previewHeadSha = env.VERCEL_GIT_COMMIT_SHA?.trim().toLowerCase();
+	if (deploymentEnvironment !== "preview" || !previewHeadSha?.match(/^[0-9a-f]{40}$/u))
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Synthetic Support acceptance is available only on a revision-pinned Preview.",
+		});
+	return SyntheticAcceptanceMetadataSchema.parse({
+		...input,
+		deploymentEnvironment,
+		previewHeadSha,
+		allowExternalDelivery: false,
+		createdAt: now().toISOString(),
+	});
 }
 
 function throwSyntheticConflict(error: unknown): never {

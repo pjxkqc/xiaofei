@@ -3,6 +3,7 @@ import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/database", () => ({
+	activateXiaofeiKnowledgeEntries: vi.fn(),
 	createXiaofeiKnowledgeDocument: vi.fn(),
 	createXiaofeiKnowledgeDocumentWithEntries: vi.fn(),
 	createXiaofeiKnowledgeUnit: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock("./knowledge-content-parser", () => ({
 
 import { generateKnowledgeUnitDrafts } from "@repo/ai";
 import {
+	activateXiaofeiKnowledgeEntries,
 	createXiaofeiKnowledgeUnit,
 	createOrReturnXiaofeiKnowledgeUnit,
 	createXiaofeiTestSession,
@@ -201,6 +203,7 @@ describe("knowledge document application boundary", () => {
 		vi.mocked(getXiaofeiTenantKey).mockResolvedValue("organization:org-a");
 		vi.mocked(getXiaofeiOrganizationId).mockResolvedValue("org-a");
 		vi.mocked(requireXiaofeiOrganizationAdmin).mockResolvedValue("organization:org-a");
+		vi.mocked(activateXiaofeiKnowledgeEntries).mockResolvedValue({ activatedCount: 0 });
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
 		} as never);
@@ -775,7 +778,7 @@ describe("knowledge document application boundary", () => {
 
 	it("prepares once, then retries through the real service without another current KU", async () => {
 		let current: Record<string, unknown> | undefined;
-		const sessions: Array<{ capabilityVersionId: string }> = [];
+		const sessions: Array<{ id: string; capabilityVersionId: string }> = [];
 		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(currentEntry() as never);
 		vi.mocked(listXiaofeiKnowledgeUnits).mockImplementation(
 			(async () => (current ? [current] : []) as never) as never,
@@ -805,7 +808,7 @@ describe("knowledge document application boundary", () => {
 		}) as never);
 		vi.mocked(initializeXiaofeiTestHostingForTenant).mockResolvedValue({ versionId: "test-ca-1" });
 		vi.mocked(createXiaofeiTestSession).mockImplementation(async (_organizationId, input) => {
-			sessions.push(input);
+			if (!sessions.some((session) => session.id === input.id)) sessions.push(input);
 			return { id: input.id } as never;
 		});
 		const draftGenerator = (input: Parameters<typeof generateKnowledgeUnitDrafts>[0]) =>
@@ -817,6 +820,7 @@ describe("knowledge document application boundary", () => {
 
 		expect(first.stages.map((stage) => [stage.name, stage.count])).toEqual(
 			expect.arrayContaining([
+				["activated", 0],
 				["generated", 1],
 				["reused", 0],
 				["published", 1],
@@ -830,12 +834,14 @@ describe("knowledge document application boundary", () => {
 			]),
 		);
 		expect(createOrReturnXiaofeiKnowledgeUnit).toHaveBeenCalledTimes(1);
+		expect(activateXiaofeiKnowledgeEntries).toHaveBeenCalledTimes(2);
 		expect(current).toMatchObject({ status: "released", eligibility: "eligible" });
 		expect(vi.mocked(createOrReturnXiaofeiKnowledgeUnit).mock.calls[0]?.[0].content).toMatchObject({
 			lineage: { entryId: "entry-1" },
 		});
-		expect(sessions).toHaveLength(2);
+		expect(sessions).toHaveLength(1);
 		expect(sessions[0]).toMatchObject({ capabilityVersionId: "test-ca-1" });
+		expect(first.testSessionId).toBe(retry.testSessionId);
 	});
 
 	it("rejects duplicate preparation entry IDs before any entry, KU, or session mutation", async () => {
@@ -849,6 +855,37 @@ describe("knowledge document application boundary", () => {
 		expect(draftGenerator).not.toHaveBeenCalled();
 		expect(createOrReturnXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
 		expect(createXiaofeiTestSession).not.toHaveBeenCalled();
+	});
+
+	it("returns durable committed-stage evidence and a stable retry key after partial progress", async () => {
+		vi.mocked(activateXiaofeiKnowledgeEntries).mockResolvedValueOnce({ activatedCount: 1 });
+		vi.mocked(listXiaofeiKnowledgeUnits).mockResolvedValue([] as never);
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(currentEntry() as never);
+		const unavailableGenerator = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+
+		const first = prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1"], unavailableGenerator);
+		await expect(first).rejects.toMatchObject({
+			code: "CONFLICT",
+			data: {
+				code: "KNOWLEDGE_PREPARATION_INCOMPLETE",
+				failedStage: "generated",
+				partialCount: 0,
+				committedStages: [
+					expect.objectContaining({ name: "activated", status: "completed", count: 1 }),
+				],
+				retryKey: expect.stringMatching(/^[a-f0-9]{16}$/u),
+			},
+		});
+
+		vi.mocked(activateXiaofeiKnowledgeEntries).mockResolvedValueOnce({ activatedCount: 0 });
+		await expect(
+			prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1"], unavailableGenerator),
+		).rejects.toMatchObject({
+			data: expect.objectContaining({
+				code: "KNOWLEDGE_PREPARATION_INCOMPLETE",
+				retryKey: expect.stringMatching(/^[a-f0-9]{16}$/u),
+			}),
+		});
 	});
 
 	it("converges two concurrent preparations after both observe no current KU", async () => {
@@ -919,7 +956,9 @@ describe("knowledge document application boundary", () => {
 		expect(listCalls).toBeGreaterThanOrEqual(2);
 		expect(createOrReturnXiaofeiKnowledgeUnit).toHaveBeenCalledTimes(2);
 		expect(
-			results.map((result) => result.stages[0]!.count).sort((left, right) => left - right),
+			results
+				.map((result) => result.stages.find((stage) => stage.name === "generated")!.count)
+				.sort((left, right) => left - right),
 		).toEqual([0, 1]);
 		expect(current).toMatchObject({ status: "released", eligibility: "eligible" });
 	});

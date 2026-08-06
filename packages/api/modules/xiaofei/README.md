@@ -114,12 +114,26 @@ truth: `getConfig`, capability review, and Eval project the exact current
 manifest instead of a stale pre-correction snapshot. The manifest hash is the
 capability-plan version, and changed membership or content returns to
 unreviewed/warning until that CA is reviewed and evaluated. Activation repeats
-the same server-side admission check before moving the Active pointer. The API
+the same server-side admission check, carries its exact Test CA identity into a
+locked compare-and-set, and refuses activation if the Test pointer moved. The API
 refuses to run Eval before the current capability plan is reviewed.
 
 P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on
 `XiaofeiConversation` because the support inbox queries those lifecycle fields.
+Public support and Inbox semantic writes carry the exact displayed
+`revision + ownerType + ownerEpoch` tuple. The service verifies the semantic
+Owner from the validated state and the database commits against the raw stored
+tuple, so a legacy nullable projection can be repaired without weakening the
+CAS. Concurrent customer messages, AI completions, human replies, takeover, or
+return-to-Xiaofei operations fail with a safe conflict and the browser refreshes
+the latest row. Online-presence heartbeats use a separate touch operation and do
+not increment the semantic revision. The Mock Worker and Email reply completion
+use the same final-commit rule, so model output captured before a human takeover
+cannot create a visible reply or Email Outbox delivery.
+Mock Worker inbound events first use the database's locked create-or-append
+boundary, so two different events racing to create one conversation retain both
+customer messages even when one AI completion is invalidated by the newer turn.
 
 Knowledge ingestion limits and source handling are documented in the canonical
 [P0 framework guide](../../../docs/xiaofei-p0-framework.md#knowledge-entry-ingestion).
@@ -280,18 +294,42 @@ Authenticated browser pages can call the identical contract through
 
 ## Test CA and synthetic Support acceptance
 
-`prepareKnowledge` is owner/admin-only and validates distinct active entries before
-materializing retry-safe current KUs. It returns separately timed generation,
-reuse, publish, Test-CA, and durable zero-turn session stages. Test sessions are
+`prepareKnowledge` is owner/admin-only and accepts one distinct set of current
+draft or active entries. One server request validates and activates drafts under
+the workspace lock, invalidates obsolete KU lineage, then materializes retry-safe
+current KUs. It returns separately timed activation, generation, reuse, publish,
+Test-CA, and durable zero-turn session stages. If a later stage fails after an
+earlier durable mutation, the typed conflict returns a stable retry key, failed
+stage, partial count, and the exact committed-stage list; retrying the same entry
+set converges to the same Test-CA-pinned zero-turn session instead of asking the
+browser to guess what persisted. Test sessions are
 Organization-scoped and pinned to their Test CA: historical sessions remain
-readable but are rejected for writes after the Test pointer changes.
+readable but are rejected for writes after the Test pointer changes. A feedback
+write also compares the exact source session/CA and advances the Test pointer by
+CAS. Test pointer changes, session creation, and TestTurn writes share one
+Organization capability lock, so a slow old-CA request cannot commit after a
+new Test pointer. Knowledge preparation also captures its starting pointer and
+fails closed if a correction wins while the new CA is being materialized.
 
 `sendSyntheticSupportMessage` is owner/admin-only, uses the canonical
-`synthetic:<externalId>` conversation identity, materializes its empty row before
-AI work, and commits every turn through the revision/owner/ownerEpoch lease. A
+`synthetic:<externalId>` conversation identity, materializes its row through a
+per-conversation locked create-or-append boundary before AI work, and commits
+every turn through the revision/owner/ownerEpoch lease. A
 human takeover or concurrent commit returns a safe conflict and never persists a
-stale AI reply. Synthetic acceptance uses the enabled Active CA and does not
-create Email bindings, jobs, outbox records, or external delivery.
+stale AI reply. New synthetic conversations are allowed only on a Preview with a
+valid exact Git head; the server persists the Organization, creator, exact head,
+Preview environment, and literal `allowExternalDelivery: false` audit facts.
+Legacy rows without those facts stay visibly unverified rather than being
+backfilled. Synthetic acceptance uses the enabled Active CA and does not create
+Email bindings, jobs, outbox records, or external delivery.
+
+Mock Worker delivery uses one durable processing claim. Fresh accepted events
+and explicit `failed` / `conversation_conflict` outcomes can be claimed
+immediately; `processing`, `organization_resolved`, `customer_upserted`,
+`conversation_updated`, and `ai_replied` become retryable after the bounded
+lease expires. The inbound message ID and deterministic AI reply ID make the
+recovery idempotent, so a retry after a crash does not append a second visible
+message or rerun the model when the durable reply already exists.
 
 ```bash
 pnpm --filter @repo/api test

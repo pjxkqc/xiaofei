@@ -23,7 +23,10 @@ import {
 	runP0EvalSuite,
 } from "@repo/xiaofei";
 
-import { getXiaofeiTestAdmissionSnapshot } from "./versioning-service";
+import {
+	getXiaofeiTestAdmissionSnapshot,
+	getXiaofeiTestAdmissionTarget,
+} from "./versioning-service";
 
 const ORGANIZATION_ID = "organization-a";
 const TENANT_ID = `organization:${ORGANIZATION_ID}`;
@@ -78,5 +81,12 @@ describe("current Test CA admission projection", () => {
 		expect(result.evalSuite.status).toBe("warning");
 		expect(result.evalSuite.capabilityPlanVersion).toBeNull();
 		expect(result.knowledgeUnits).toHaveLength(revisions.length);
+
+		const target = await getXiaofeiTestAdmissionTarget({
+			session: { activeOrganizationId: ORGANIZATION_ID },
+			user: { id: "support-user" },
+		});
+		expect(target.capabilityVersionId).toBe("test-ca");
+		expect(target.snapshot.capabilityPlan.version).toBe(result.capabilityPlan.version);
 	});
 });

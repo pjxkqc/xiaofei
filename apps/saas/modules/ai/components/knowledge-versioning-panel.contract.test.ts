@@ -27,8 +27,9 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 			panel.indexOf("});", panel.indexOf("applyTestTurnCorrection({")),
 		);
 		expect(panel).toContain("sourceTestTurnId: turn.turn.id");
+		expect(correctionCall).toContain("testSessionId");
+		expect(correctionCall).toContain("capabilityVersionId: turn.turn.capabilityVersionId");
 		expect(correctionCall).not.toContain("knowledgeUnitRevisionId");
-		expect(correctionCall).not.toContain("capabilityVersionId");
 		expect(panel).toContain('label="Before"');
 		expect(panel).toContain('label="After"');
 		expect(panel).toContain("人工验收 Test CA");
@@ -51,10 +52,11 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("After 尚未完成");
 		expect(panel).toContain("旧 CA（只读）");
 		expect(panel).toContain("testSessionId,");
+		expect(panel).toContain("capabilityVersionId: selectedSession.capabilityVersionId");
 		expect(panel).toContain("setTurns((history) => [...history, toTestTurnView(result)])");
 		expect(panel).toContain("orpcClient.xiaofei.newTestSession()");
 		expect(panel).toContain("后续测试已切换为新会话");
-		expect(panel).toContain("历史轮次仍在加载");
+		expect(panel).toContain("历史轮次与最新写入位置仍在加载");
 		expect(panel).toContain("重新读取历史");
 		expect(panel).toContain("recoveryRequest.current");
 	});
@@ -80,9 +82,12 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 			"正在审核当前能力方案…",
 			"正在运行当前版本 Eval…",
 			'busyAction === "support"',
-			"排队 → 选择知识 → 生成候选 → Guardrail → 保存测试轮次",
-			"校验权限 → 保存不可变干预 → 生成新 CA → 同题复测",
-			"校验版本 → 更新托管指针/状态 → 确认生效",
+			"运行并保存 Test CA 轮次",
+			"保存不可变干预并完成同题复测",
+			"更新验收与托管状态",
+			"请求已提交 · 已完成",
+			"服务端处理中 · 进行中",
+			"等待持久化结果 · 待处理",
 			"操作失败：",
 			"可保留当前输入后重试",
 			"已等待",

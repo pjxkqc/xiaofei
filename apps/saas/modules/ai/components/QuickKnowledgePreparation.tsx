@@ -20,19 +20,19 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 type Entry = Awaited<ReturnType<typeof orpcClient.xiaofei.listKnowledgeEntries>>["items"][number];
 type Document = Awaited<ReturnType<typeof orpcClient.xiaofei.createKnowledgeDocument>>;
 type Preparation = Awaited<ReturnType<typeof orpcClient.xiaofei.prepareKnowledge>>;
-type PreparationPhase =
-	| "idle"
-	| "uploading"
-	| "validating"
-	| "activating_entries"
-	| "preparing_entries"
-	| "failed";
+type PreparationPhase = "idle" | "uploading" | "preparing" | "failed";
+interface PreparationFailureEvidence {
+	retryKey: string;
+	failedStage: string;
+	partialCount: number;
+	committedStages: Array<{ name: string; count: number; elapsedMs: number }>;
+}
 
+const UPLOAD_STEPS = ["上传请求已提交", "服务端校验并解析", "等待持久化结果"] as const;
 const PREPARATION_STEPS = [
-	{ id: "uploading", label: "上传并解析资料" },
-	{ id: "validating", label: "校验当前条目" },
-	{ id: "activating_entries", label: "激活可用条目" },
-	{ id: "preparing_entries", label: "生成/复用 KU、发布并创建 Test CA" },
+	"准备请求已提交",
+	"服务端激活条目并准备 Test CA",
+	"等待持久化结果",
 ] as const;
 
 export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => void }) {
@@ -43,6 +43,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 	const [preparation, setPreparation] = useState<Preparation | null>(null);
 	const [phase, setPhase] = useState<PreparationPhase>("idle");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [failureEvidence, setFailureEvidence] = useState<PreparationFailureEvidence | null>(null);
 	const [startedAt, setStartedAt] = useState<number | null>(null);
 	const elapsedSeconds = useElapsedSeconds(startedAt);
 	const refresh = useCallback(async (sourceId?: string) => {
@@ -64,6 +65,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 		if (file.size > MAX_FILE_BYTES) return toastError("上传失败", "文件不能超过 4 MB。");
 		setPhase("uploading");
 		setErrorMessage(null);
+		setFailureEvidence(null);
 		setStartedAt(Date.now());
 		setBusy(true);
 		try {
@@ -92,44 +94,37 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 
 	async function prepareTestCa() {
 		if (!document) return;
-		setPhase("validating");
+		setPhase("preparing");
 		setErrorMessage(null);
+		setFailureEvidence(null);
 		setStartedAt(Date.now());
 		setBusy(true);
 		try {
-			const sourceEntries = (
-				(await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 })).items as Entry[]
-			).filter((entry) => entry.sourceId === document.id && entry.eligible);
+			const sourceEntries = entries.filter(
+				(entry) => entry.sourceId === document.id && entry.eligible,
+			);
 			if (!sourceEntries.length)
 				throw new Error("这份资料没有可用于 Test CA 的当前条目，请先在高级治理中检查解析结果。");
-			setPhase("activating_entries");
-			await Promise.all(
-				sourceEntries
-					.filter((entry) => entry.status === "draft")
-					.map((entry) =>
-						orpcClient.xiaofei.updateKnowledgeEntry({ id: entry.id, status: "active" }),
-					),
-			);
-			const allEntries = (await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 }))
-				.items as Entry[];
-			const currentEntries = allEntries.filter(
-				(entry) => entry.sourceId === document.id && entry.eligible && entry.status === "active",
-			);
-			if (!currentEntries.length) throw new Error("这份资料没有可用的当前条目，无法准备 Test CA。");
-			setPhase("preparing_entries");
 			const result = await orpcClient.xiaofei.prepareKnowledge({
-				entryIds: currentEntries.map((entry) => entry.id),
+				entryIds: sourceEntries.map((entry) => entry.id),
 			});
 			setPreparation(result);
+			setEntries((current) =>
+				current.map((entry) =>
+					sourceEntries.some((sourceEntry) => sourceEntry.id === entry.id)
+						? { ...entry, status: "active" }
+						: entry,
+				),
+			);
 			setPrepared(true);
 			setPhase("idle");
 			setStartedAt(null);
 			onPrepared?.();
-			await refresh(document.id);
 			toastSuccess("Test CA 已准备", "资料、KU 和服务端测试会话已就绪；Active 没有改变。");
 		} catch (error) {
 			setPhase("failed");
 			setErrorMessage(message(error));
+			setFailureEvidence(toPreparationFailureEvidence(error));
 			setStartedAt(null);
 			toastError("无法准备 Test CA", message(error));
 		} finally {
@@ -151,32 +146,24 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 					<div className="gap-2 text-sm flex flex-col text-muted-foreground" aria-live="polite">
 						<output className="font-medium block">
 							{phase === "uploading"
-								? "上传 → 校验 → 解析中，请保持页面打开…"
-								: "校验条目 → 生成/复用 KU → 发布 → 创建 Test CA → 建立会话中…"}
+								? "资料已提交，服务端正在校验、解析并保存…"
+								: "准备请求已提交，服务端正在处理并保存结果…"}
 						</output>
 						<ol
 							className="gap-1 sm:gap-2 sm:flex-row sm:flex-wrap flex flex-col"
 							aria-label="知识准备阶段"
 						>
-							{PREPARATION_STEPS.map((step, index) => {
-								const activeIndex = PREPARATION_STEPS.findIndex((item) => item.id === phase);
-								const status =
-									phase === "uploading" && index === 0
-										? "进行中"
-										: index < activeIndex
-											? "已完成"
-											: index === activeIndex
-												? "进行中"
-												: "待处理";
+							{(phase === "uploading" ? UPLOAD_STEPS : PREPARATION_STEPS).map((step, index) => {
+								const status = index === 0 ? "已完成" : index === 1 ? "进行中" : "待处理";
 								return (
-									<li key={step.id} className="gap-1.5 text-xs flex items-center">
+									<li key={step} className="gap-1.5 text-xs flex items-center">
 										<span
 											className={`size-5 flex items-center justify-center rounded-full border ${status === "进行中" ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}
 										>
 											{status === "已完成" ? "✓" : index + 1}
 										</span>
 										<span>
-											{step.label} · {status}
+											{step} · {status}
 										</span>
 									</li>
 								);
@@ -188,9 +175,28 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 					</div>
 				) : null}
 				{errorMessage ? (
-					<p className="text-sm text-destructive" role="alert">
-						{errorMessage} 当前资料和输入已保留，可直接重试。
-					</p>
+					<div className="gap-2 text-sm flex flex-col text-destructive" role="alert">
+						<p>{errorMessage} 当前资料和输入已保留，可直接重试。</p>
+						{failureEvidence ? (
+							<div className="text-xs text-muted-foreground">
+								<p>
+									失败阶段：{preparationStageLabel(failureEvidence.failedStage)}
+									{failureEvidence.partialCount > 0
+										? `（已完成 ${failureEvidence.partialCount} 项）`
+										: ""}
+									；安全重试标识：{failureEvidence.retryKey}
+								</p>
+								{failureEvidence.committedStages.length ? (
+									<p>
+										已持久化：
+										{failureEvidence.committedStages
+											.map((stage) => `${preparationStageLabel(stage.name)} ${stage.count} 项`)
+											.join("、")}
+									</p>
+								) : null}
+							</div>
+						) : null}
+					</div>
 				) : null}
 				{!document ? (
 					<form className="gap-3 max-w-xl flex flex-col" onSubmit={upload}>
@@ -238,7 +244,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 											}>
 										).map((stage) => (
 											<li key={stage.name}>
-												{stage.name}：完成 · {stage.count} 项 ·{" "}
+												{preparationStageLabel(stage.name)}：完成 · {stage.count} 项 ·{" "}
 												{(stage.elapsedMs / 1000).toFixed(1)} 秒
 											</li>
 										))}
@@ -269,6 +275,49 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 
 function message(error: unknown) {
 	return error instanceof Error ? error.message : "请稍后重试。";
+}
+
+function toPreparationFailureEvidence(error: unknown): PreparationFailureEvidence | null {
+	if (!error || typeof error !== "object" || !("data" in error)) return null;
+	const data = error.data;
+	if (!data || typeof data !== "object") return null;
+	const record = data as Record<string, unknown>;
+	if (
+		record.code !== "KNOWLEDGE_PREPARATION_INCOMPLETE" ||
+		typeof record.retryKey !== "string" ||
+		typeof record.failedStage !== "string" ||
+		typeof record.partialCount !== "number" ||
+		!Array.isArray(record.committedStages)
+	)
+		return null;
+	const committedStages = record.committedStages.flatMap((stage) => {
+		if (!stage || typeof stage !== "object") return [];
+		const row = stage as Record<string, unknown>;
+		return typeof row.name === "string" &&
+			typeof row.count === "number" &&
+			typeof row.elapsedMs === "number"
+			? [{ name: row.name, count: row.count, elapsedMs: row.elapsedMs }]
+			: [];
+	});
+	return {
+		retryKey: record.retryKey,
+		failedStage: record.failedStage,
+		partialCount: record.partialCount,
+		committedStages,
+	};
+}
+
+function preparationStageLabel(stage: string) {
+	return (
+		{
+			activated: "激活条目",
+			generated: "生成 KU",
+			reused: "复用 KU",
+			published: "发布 KU",
+			test_ca: "创建 Test CA",
+			session: "建立测试会话",
+		}[stage] ?? stage
+	);
 }
 
 export function resetFileUploadForm(form: Pick<HTMLFormElement, "reset">) {

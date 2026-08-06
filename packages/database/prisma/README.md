@@ -75,6 +75,10 @@ newest 100 turns in chronological display order.
 projects acceptance-only state, messages, and traces into the Organization's
 existing conversation aggregate with channel `synthetic_support`; it never opens
 an Email binding, inbound-event, processing-job, or outbound-delivery path.
+New rows also retain strict server-authored `syntheticAcceptance` JSON containing
+the Organization, creator, exact Preview head, environment, creation time, and
+literal `allowExternalDelivery: false`. Existing metadata is immutable; legacy
+null rows are not guessed or backfilled.
 
 ### Governed answer-feedback-rerun bridge
 
@@ -92,11 +96,16 @@ column preserves pre-session records during lossless Preview schema pushes; only
 non-null, schema-valid snapshot can resume a session. A session loads its newest
 snapshot only through the compound Organization + session query and is pinned to
 its initial Test CA; a CA switch requires a new session rather than mixing evidence.
-Each new turn uses a session advisory lock and compares the previously loaded turn
-ID before writing, so concurrent stale turns fail closed instead of overwriting the
-latest state. Writes prove the referenced CA is that
-Organization's current Active/Test hosting pointer and that evidence is an
-exact member; no-hit evidence remains null. Feedback derives all before facts
+Every Test-pointer change, session creation, and turn write first acquires the same
+Organization capability advisory lock, then any narrower session/feedback lock.
+Slow Test-CA initialization captures the starting pointer and commits by CAS, and
+Active activation holds that same lock while requiring the admitted CA to remain
+the exact current Test pointer; neither path can overwrite a newer correction CA.
+Each new turn also compares the previously loaded turn ID before writing, so a
+slow historical request and concurrent stale turns fail closed instead of overwriting the
+latest state. Writes prove the referenced CA is that Organization's current Test
+hosting pointer and that evidence is an exact member; no-hit evidence remains
+null. Feedback derives all before facts
 from the saved source turn. Merchant-grounded feedback replaces only that
 merchant KU Revision. Platform-grounded or no-hit feedback leaves the global
 baseline unchanged and creates a new Organization-owned KU Revision appended to
@@ -107,6 +116,30 @@ conversation history. The multi-record feedback transaction keeps its atomic
 scope and explicitly uses a 5-second acquisition wait and 15-second execution
 timeout for cold Neon Preview paths; this override is local to that operation
 and does not change global Prisma defaults.
+
+### Support conversation CAS
+
+`revision`, `ownerType`, and `ownerEpoch` are the durable semantic-write tuple
+for public Support, Organization Inbox, synthetic acceptance, Mock Worker, and
+Email AI completion. Every message or Owner mutation uses `updateMany` against
+the exact previously read tuple, updates the validated state projection, and
+increments `revision`; a zero-row update is a typed conflict and the surrounding
+transaction rolls back. Historical nullable Owner projections are matched as
+stored and repaired from the validated state on the first successful semantic
+write. Presence heartbeat updates only `lastCustomerSeenAt`, so polling cannot
+invalidate a legitimate AI or human commit.
+
+Mock Worker inbound projection uses one per-conversation locked create-or-append
+operation. Two different events that concurrently materialize the same new
+conversation retain both customer messages; the external message ID also makes
+an in-operation retry idempotent. The later AI completion still uses the
+captured semantic tuple and is discarded if another inbound or takeover wins.
+The inbound ledger adds an atomic processing claim: accepted and explicit failure
+states are immediately claimable, while interrupted non-terminal stages can be
+reclaimed only after a two-minute lease. Terminal outcomes remain immutable.
+Duplicate delivery bookkeeping uses a direct atomic counter/timestamp update that
+does not touch the lease clock, so it can neither renew nor roll back an in-flight
+worker lease.
 
 ### Email mirror ledger
 
@@ -173,7 +206,10 @@ from a missing record at the query boundary. Callers must resolve the
 authenticated tenant to a Xiaofei workspace before using these queries.
 Entry activation revalidates the entry status and source hash/version while
 holding the workspace advisory lock, so a concurrent source update cannot leave
-a stale entry marked active.
+a stale entry marked active. Batch preparation activates one bounded distinct
+set under that same lock, advances draft entry lineage, and marks any prior KU
+rows for those entries stale before the service generates or reuses current
+lineage.
 
 Source lists return metadata only; `bodyText` is available only from the
 workspace-scoped get query. Source and entry lists use a stable `(createdAt, id)`

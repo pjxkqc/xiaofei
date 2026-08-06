@@ -30,16 +30,17 @@ describe("knowledge workspace information architecture", () => {
 	});
 
 	it("prepares the uploaded source through the authorized atomic preparation endpoint", () => {
-		expect(quickPreparation).toContain("updateKnowledgeEntry");
+		expect(quickPreparation).not.toContain("updateKnowledgeEntry");
 		expect(quickPreparation).toContain("prepareKnowledge");
 		expect(quickPreparation).not.toContain("generateKnowledgeUnits");
 		expect(quickPreparation).not.toContain("transitionKnowledgeUnit");
 		expect(quickPreparation).toContain("elapsedMs");
-		expect(quickPreparation).toContain("上传 → 校验 → 解析中");
-		expect(quickPreparation).toContain(
-			"校验条目 → 生成/复用 KU → 发布 → 创建 Test CA → 建立会话中",
-		);
+		expect(quickPreparation).toContain("资料已提交，服务端正在校验、解析并保存");
+		expect(quickPreparation).toContain("准备请求已提交，服务端正在处理并保存结果");
 		expect(quickPreparation).toContain("当前资料和输入已保留，可直接重试");
+		expect(quickPreparation).toContain("KNOWLEDGE_PREPARATION_INCOMPLETE");
+		expect(quickPreparation).toContain("安全重试标识");
+		expect(quickPreparation).toContain("已持久化");
 		expect(quickPreparation).toContain("完成后会显示各阶段耗时");
 	});
 

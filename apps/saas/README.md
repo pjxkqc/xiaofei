@@ -56,6 +56,16 @@ The product surface is deliberately kept to small, focused pages:
   units, and creates a Test CA without changing Active. Source details, web and
   manual entry intake, KU lifecycle editing, capability/Eval evidence, and
   Agent/fallback diagnostics remain in collapsed advanced governance.
+- Long workbench actions acknowledge the browser request immediately, then show
+  the honest states “request submitted”, “server processing”, and “waiting for
+  the durable result”. The browser does not pretend to know an internal server
+  sub-step that has not been streamed; after knowledge preparation succeeds it
+  displays the actual server-recorded activation, generation/reuse, publish,
+  Test-CA, and session timings.
+- If preparation stops after durable progress, the workbench shows the failed
+  stage, committed stages, partial count, and safe retry key returned by the
+  server. Retrying the same selected entries does not rely on browser session
+  state.
 
 The authenticated workbench uses three merchant-readable stages: knowledge
 preparation → Test CA conversation and correction → acceptance and hosting.
@@ -77,6 +87,10 @@ The pages can:
 - reset the server-side demonstration conversation.
 - persist public customer/human messages and poll the shared channel without
   introducing a second realtime stack.
+- submit every public or Inbox semantic mutation with the displayed revision,
+  owner, and owner epoch. A concurrent takeover, reply, or AI completion keeps
+  the newer state; the UI refreshes it and asks the user to retry instead of
+  overwriting it. Presence polling does not advance the semantic revision.
 - prioritize knowledge-miss conversations in `/inbox` with a visible
   **待人工关注** state while Xiaofei retains ownership and keeps matching later
   customer messages.
