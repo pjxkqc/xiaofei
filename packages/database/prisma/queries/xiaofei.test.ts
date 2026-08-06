@@ -707,29 +707,18 @@ describe("Xiaofei Organization queries", () => {
 	});
 
 	it("lists Organization-local sessions with a bounded cursor and current writability", async () => {
-		queryMocks.getHostingBinding.mockResolvedValueOnce({
-			activeCapabilityVersionId: "active-version",
-			testCapabilityVersionId: "test-version",
-		});
-		queryMocks.queryRaw
-			.mockResolvedValueOnce([
-				{
-					id: "latest-turn",
-					testSessionId: "session-a",
-					capabilityVersionId: "test-version",
-					testCapabilityVersionId: "test-version",
-					completedAt: new Date("2026-08-04T00:00:01.000Z"),
-					firstQuestion: "First question",
-					turnCount: BigInt(2),
-					beforeInterventionCount: BigInt(1),
-					afterInterventionCount: BigInt(0),
-				},
-			])
-			.mockResolvedValueOnce([
-				{ testSessionId: "session-a", beforeCount: BigInt(1), afterCount: BigInt(0) },
-			]);
-		queryMocks.groupTestTurns.mockResolvedValueOnce([
-			{ testSessionId: "session-a", _count: { _all: 2 } },
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{
+				id: "latest-turn",
+				testSessionId: "session-a",
+				capabilityVersionId: "test-version",
+				testCapabilityVersionId: "test-version",
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+				firstQuestion: "First question",
+				turnCount: BigInt(2),
+				beforeInterventionCount: BigInt(1),
+				afterInterventionCount: BigInt(0),
+			},
 		]);
 
 		await expect(listXiaofeiTestSessions("organization-a")).resolves.toEqual({
@@ -752,9 +741,12 @@ describe("Xiaofei Organization queries", () => {
 		expect(sessionSql).toContain('SELECT DISTINCT ON (t."testSessionId")');
 		expect(sessionSql).toContain('ORDER BY "createdAt" DESC, id DESC');
 		expect(sessionSql).toContain("LIMIT");
-		expect(sessionSql).toContain('INNER JOIN "selected" s');
+		expect(sessionSql).toContain('FROM "selected" s');
+		expect(sessionSql).toContain('INNER JOIN "xiaofei_test_turn" t');
+		expect(sessionSql).toContain('t."testSessionId" = s."testSessionId"');
 		expect(sessionSql).toContain('"testCapabilityVersionId"');
 		expect(sessionSql).toContain("COUNT(DISTINCT t.id)");
+		expect(queryMocks.queryRaw).toHaveBeenCalledOnce();
 		expect(queryMocks.getHostingBinding).not.toHaveBeenCalled();
 		expect(queryMocks.groupTestTurns).not.toHaveBeenCalled();
 		expect(queryMocks.listTestTurns).not.toHaveBeenCalled();
@@ -821,34 +813,24 @@ describe("Xiaofei Organization queries", () => {
 	});
 
 	it("treats an Active-only session as historical and read-only", async () => {
-		queryMocks.getHostingBinding.mockResolvedValueOnce({
-			activeCapabilityVersionId: "active-version",
-			testCapabilityVersionId: "test-version",
-		});
-		queryMocks.queryRaw
-			.mockResolvedValueOnce([
-				{
-					id: "active-turn",
-					testSessionId: "active-only-session",
-					capabilityVersionId: "active-version",
-					testCapabilityVersionId: "test-version",
-					completedAt: new Date("2026-08-04T00:00:01.000Z"),
-					firstQuestion: "Saved",
-					turnCount: BigInt(1),
-					beforeInterventionCount: BigInt(0),
-					afterInterventionCount: BigInt(0),
-				},
-			])
-			.mockResolvedValueOnce([
-				{ testSessionId: "active-only-session", beforeCount: BigInt(0), afterCount: BigInt(0) },
-			]);
-		queryMocks.groupTestTurns.mockResolvedValueOnce([
-			{ testSessionId: "active-only-session", _count: { _all: 1 } },
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{
+				id: "active-turn",
+				testSessionId: "active-only-session",
+				capabilityVersionId: "active-version",
+				testCapabilityVersionId: "test-version",
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+				firstQuestion: "Saved",
+				turnCount: BigInt(1),
+				beforeInterventionCount: BigInt(0),
+				afterInterventionCount: BigInt(0),
+			},
 		]);
 
 		await expect(listXiaofeiTestSessions("organization-a", { limit: 1 })).resolves.toMatchObject({
 			items: [{ id: "active-only-session", isCurrent: false, writable: false }],
 		});
+		expect(queryMocks.queryRaw).toHaveBeenCalledOnce();
 	});
 
 	it("returns the newest bounded detail evidence in chronological display order", async () => {
@@ -1374,7 +1356,6 @@ describe("Xiaofei Organization queries", () => {
 	});
 
 	it("lists a zero-turn Organization-local session with empty evidence and writability", async () => {
-		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "test-ca" });
 		queryMocks.queryRaw.mockResolvedValueOnce([
 			{
 				id: "session-zero",
@@ -1407,7 +1388,6 @@ describe("Xiaofei Organization queries", () => {
 		});
 		expect(queryMocks.groupTestTurns).not.toHaveBeenCalled();
 
-		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "new-test-ca" });
 		queryMocks.queryRaw.mockResolvedValueOnce([
 			{
 				id: "session-zero",

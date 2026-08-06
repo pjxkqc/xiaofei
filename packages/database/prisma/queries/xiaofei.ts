@@ -2854,11 +2854,11 @@ export async function listXiaofeiTestSessions(
 			SELECT t."testSessionId", COUNT(DISTINCT t.id) AS "turnCount",
 				COUNT(i.id) FILTER (WHERE i."beforeResponse" IS NOT NULL) AS "beforeInterventionCount",
 				COUNT(i.id) FILTER (WHERE i."afterResponse" IS NOT NULL) AS "afterInterventionCount"
-			FROM "xiaofei_test_turn" t
-			INNER JOIN "selected" s ON s."testSessionId" = t."testSessionId"
+			FROM "selected" s
+			INNER JOIN "xiaofei_test_turn" t
+				ON t."organizationId" = ${organizationId} AND t."testSessionId" = s."testSessionId"
 			LEFT JOIN "xiaofei_response_intervention" i
 				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
-			WHERE t."organizationId" = ${organizationId}
 			GROUP BY t."testSessionId"
 		), "first" AS (
 			SELECT DISTINCT ON (t."testSessionId") t."testSessionId", t.question
