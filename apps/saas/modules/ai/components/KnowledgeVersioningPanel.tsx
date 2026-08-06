@@ -301,7 +301,7 @@ export function KnowledgeVersioningPanel({
 		testSessionId !== null &&
 		testVersion !== null &&
 		selectedSession?.writable === true &&
-		(selectedSession.turnCount === 0 || sessionDetailState === "ready");
+		sessionDetailState !== "error";
 	return (
 		<div className="gap-6 flex flex-col">
 			<OperationFeedback operation={operation} />
@@ -818,7 +818,7 @@ function TestConversation({
 					<>
 						{sessionDetailState === "loading" && testSessionId ? (
 							<output className="text-sm block text-muted-foreground">
-								会话列表已恢复；历史轮次仍在加载。零轮可写会话现在即可输入。
+								服务端会话已恢复；历史轮次仍在加载（后台加载）。当前可写会话现在即可安全追加新问题。
 							</output>
 						) : null}
 						{sessionDetailState === "error" && testSessionId ? (
