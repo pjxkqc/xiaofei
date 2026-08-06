@@ -167,6 +167,11 @@ This is a framework slice, not a production-complete Agent Center:
 
 ## Preview acceptance
 
+FLY-140 迭代 2 的三阶段反馈与延迟预算、模型兼容实验、服务端 Test CA 历史、
+Organization-scoped 合成 Support 会话、冻结 32 场景题集和报告模板统一以
+[`acceptance/fly-140-preview.md`](./acceptance/fly-140-preview.md) 为准。本文不复制该契约，
+也不把尚待实现或尚待 Preview 实测的项目描述为当前能力。
+
 The complete slice has been exercised in an isolated Vercel + Neon Preview:
 
 - password signup continued to onboarding without email verification;

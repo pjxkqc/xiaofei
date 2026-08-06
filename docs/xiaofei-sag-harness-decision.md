@@ -63,6 +63,10 @@ SAG 这类方案可能让资料接入、知识结构化、检索证据和知识�
 继续按现有 P0 交付和验收：Xiaofei 是知识版本、会话状态、所有权、Guardrail、Eval 和
 Trace 的唯一权威；LangGraph 和 Mastra 仅在各自的适配器边界承担编排与候选生成。
 
+FLY-140 的冻结资料、模型实验、性能预算、Test CA/Inbox 验收、32 场景评分和最终报告统一
+记录在 [`acceptance/fly-140-preview.md`](./acceptance/fly-140-preview.md)。该报告只能判断
+Harness P0 目标，不构成 SAG/RAG 同条件直接对照。
+
 主线的结果是后续研究的基线，而不是与研究方案并行写入同一份知识或会话数据。
 
 ### 轻量知识治理研究轨道
