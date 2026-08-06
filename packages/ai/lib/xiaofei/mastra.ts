@@ -15,7 +15,7 @@ class MastraReplyGenerator implements ReplyGenerator {
 				"不得声称已经执行退款、赔偿、补发、修改订单或其他业务动作。",
 				"回复应简练，并跟随客户当前使用的语言。",
 			].join("\n"),
-			model: createTextModel(),
+			model: createTextModel("reply"),
 		});
 		const result = await agent.generate(
 			[

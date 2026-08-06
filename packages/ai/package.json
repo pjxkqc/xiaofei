@@ -6,7 +6,8 @@
 	"scripts": {
 		"clean": "git clean -xdf .cache .turbo dist node_modules",
 		"test": "vitest run",
-		"type-check": "tsc --noEmit"
+		"type-check": "tsc --noEmit",
+		"model:latency": "node ./scripts/model-latency.mjs"
 	},
 	"dependencies": {
 		"@ai-sdk/openai": "catalog:",

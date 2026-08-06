@@ -1,9 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
 
-import { getOpenAITextModelConfig } from "./config";
+import { getOpenAITextModelConfig, type OpenAITextModelProfile } from "./config";
 
-export function createTextModel() {
-	const textModelConfig = getOpenAITextModelConfig();
+export function createTextModel(profile: OpenAITextModelProfile = "reply") {
+	const textModelConfig = getOpenAITextModelConfig(process.env, profile);
 	const textModelProvider = createOpenAI({
 		apiKey: textModelConfig.apiKey,
 		baseURL: textModelConfig.baseURL,

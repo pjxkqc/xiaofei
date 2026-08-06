@@ -30,6 +30,19 @@ The model is created on the server from:
 | `OPENAI_BASE_URL` | Optional OpenAI-compatible `/v1` base URL |
 | `OPENAI_MODEL`    | Exact model identifier                    |
 
+`OPENAI_KNOWLEDGE_MODEL` and `OPENAI_REPLY_MODEL` are optional server-only
+overrides for the structured KU-generation and customer-reply profiles,
+respectively. If either is absent, that profile uses `OPENAI_MODEL` exactly as
+before. Model identifiers are not exposed as customer settings.
+
+Do not set provider-specific reasoning controls merely because a model name
+suggests support. The current Chat Completions adapter intentionally sends no
+reasoning parameter until the target gateway and model have passed the Preview
+compatibility matrix. Use `pnpm --filter @repo/ai model:latency` only in the
+authorized Preview environment to collect five cold and five warm samples; its
+summary contains labels, availability, success counts, and aggregate latency
+only, never credentials, URLs, headers, tokens, or raw provider errors.
+
 Chat Completions mode is explicit because compatible gateways are not required
 to implement the OpenAI Responses API. Credential values must never be passed
 to React components, traces, test snapshots, or logs.

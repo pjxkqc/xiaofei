@@ -81,7 +81,7 @@ async function generateStructuredKnowledgeUnitCandidates(
 			"Use required: true only when an aftersales entry explicitly requires collecting that field before a human action or investigation.",
 			"Never promise refunds, compensation, reshipment, timing, or an executed business action.",
 		].join("\n"),
-		model: createTextModel(),
+		model: createTextModel("knowledge"),
 	});
 	const result = await agent.generate(
 		entries
