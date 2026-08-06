@@ -649,7 +649,12 @@ S23 历史会话来回切换时没有残留另一会话的 transient correction/
 
 - I5 使用真实问题 `Mini 滤芯多久检查？`：Before 为统一未命中；提交修正后形成新的商户
   KU Revision/CA；After 正确回答“6 个月检查、按环境调整、滤芯耗材不在整机保修”。保存并
-  同题复测约 17.310 s，刷新后 Before、Intervention 和 After 仍可恢复。
+  同题复测约 17.310 s，刷新后 Before、Intervention 和 After 仍可恢复。持久证据链为 source
+  TestTurn `cmsi34ewf000104l7kggg4oew` / session
+  `91422d07-43c9-4b38-a6ee-b806cfb4f4c3` → Intervention
+  `cmsi35ce6001604jsaqg4sym2` → result Revision `cmsi35bcz000m04jsh7rc79dt` / CA
+  `cmsi35c1i000n04jsq4hnml30` → rerun TestTurn `cmsi35kq2001704js1ojhdsq1` / session
+  `096c9928-3103-4175-84d3-d863ce7fcfca`；rerun 仍绑定同一 result CA。
 - 旧 CA 显示“历史 CA，只读”，输入禁用；当前 CA 可写。服务端持久记录而非
   `sessionStorage` 是会话、轮次和 Before/After 的事实源；typed conflict 由同 head 的
   API/contract tests 覆盖。
