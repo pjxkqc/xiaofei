@@ -762,6 +762,84 @@ describe("Xiaofei Organization queries", () => {
 		);
 	});
 
+	it("treats an Active-only session as historical and read-only", async () => {
+		queryMocks.getHostingBinding.mockResolvedValueOnce({
+			activeCapabilityVersionId: "active-version",
+			testCapabilityVersionId: "test-version",
+		});
+		queryMocks.listTestTurns
+			.mockResolvedValueOnce([
+				{
+					id: "active-turn",
+					testSessionId: "active-only-session",
+					capabilityVersionId: "active-version",
+					completedAt: new Date("2026-08-04T00:00:01.000Z"),
+				},
+			])
+			.mockResolvedValueOnce([{ testSessionId: "active-only-session", question: "Saved" }]);
+		queryMocks.groupTestTurns.mockResolvedValueOnce([
+			{ testSessionId: "active-only-session", _count: { _all: 1 } },
+		]);
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{ testSessionId: "active-only-session", beforeCount: BigInt(0), afterCount: BigInt(0) },
+		]);
+
+		await expect(listXiaofeiTestSessions("organization-a", { limit: 1 })).resolves.toMatchObject({
+			items: [{ id: "active-only-session", isCurrent: false, writable: false }],
+		});
+	});
+
+	it("returns the newest bounded detail evidence in chronological display order", async () => {
+		const turns = Array.from({ length: 100 }, (_, index) => {
+			const number = 101 - index;
+			return {
+				id: `turn-${number}`,
+				question: `Question ${number}`,
+				answer: `Answer ${number}`,
+				capabilityVersionId: "test-version",
+				conversationState,
+				runtimeMetadata: {
+					knowledgeTitle: null,
+					knowledgeEvidence: null,
+					nextAction: "reply",
+					riskLevel: "low",
+					ownerType: "ai",
+					stage: "admission",
+					missingSlots: [],
+					traces: [],
+				},
+				evidenceRevisionId: null,
+				sourceTestTurnId: null,
+				interventionId: null,
+				requestedAt: new Date(`2026-08-04T00:00:${String(number % 60).padStart(2, "0")}.000Z`),
+				completedAt: new Date(`2026-08-04T00:01:${String(number % 60).padStart(2, "0")}.000Z`),
+				createdAt: new Date(`2026-08-04T00:02:${String(number % 60).padStart(2, "0")}.000Z`),
+			};
+		});
+		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "test-version" });
+		queryMocks.listTestTurns.mockResolvedValueOnce(turns);
+		queryMocks.findLatestTestTurn
+			.mockResolvedValueOnce({ question: "Question 1" })
+			.mockResolvedValueOnce({
+				capabilityVersionId: "test-version",
+				completedAt: turns[0]?.completedAt,
+			});
+		queryMocks.countTestTurns.mockResolvedValueOnce(101);
+		queryMocks.queryRaw.mockResolvedValueOnce([{ beforeCount: BigInt(1), afterCount: BigInt(1) }]);
+
+		const detail = await getXiaofeiTestSessionDetail("organization-a", "session-a");
+		expect(detail).toMatchObject({
+			firstQuestion: "Question 1",
+			turnCount: 101,
+			beforeInterventionCount: 1,
+			afterInterventionCount: 1,
+			writable: true,
+		});
+		expect(detail?.turns).toHaveLength(100);
+		expect(detail?.turns[0]?.question).toBe("Question 2");
+		expect(detail?.turns[detail.turns.length - 1]?.question).toBe("Question 101");
+	});
+
 	it("projects synthetic support only into its Organization conversation aggregate", async () => {
 		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
 		queryMocks.findConversationInTransaction.mockResolvedValueOnce(null);
