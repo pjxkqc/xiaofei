@@ -140,7 +140,7 @@ function materializeExactCapabilitySnapshot(
 		...deriveCapabilityPlan(knowledgeUnits, input.manifest.createdAt),
 		reviewed: true,
 	};
-	const evalSuite = canTransferEvalEvidence(input.base, knowledgeUnits, capabilityPlan)
+	const evalSuite = canTransferEvalEvidence(input.base, input.revisions, capabilityPlan)
 		? {
 				...input.base.evalSuite,
 				// The immutable manifest creates a new runtime plan version. The
@@ -169,7 +169,7 @@ function materializeExactCapabilitySnapshot(
  */
 function canTransferEvalEvidence(
 	base: import("./contracts").XiaofeiWorkspaceSnapshot,
-	knowledgeUnits: KnowledgeUnit[],
+	revisions: KnowledgeUnitRevision[],
 	capabilityPlan: import("./contracts").CapabilityPlan,
 ): boolean {
 	if (
@@ -181,19 +181,26 @@ function canTransferEvalEvidence(
 		return false;
 	const baseIds = [...base.capabilityPlan.knowledgeUnitIds].sort();
 	const materializedIds = [...capabilityPlan.knowledgeUnitIds].sort();
-	if (
-		baseIds.length !== materializedIds.length ||
-		baseIds.some((id, index) => id !== materializedIds[index])
-	)
+	if (baseIds.length !== materializedIds.length) return false;
+	const baseIdSet = new Set(baseIds);
+	if (base.knowledgeUnits.filter((unit) => baseIdSet.has(unit.id)).length !== baseIds.length)
 		return false;
-	const baseUnits = new Map(base.knowledgeUnits.map((unit) => [unit.id, unit]));
-	return knowledgeUnits.every((unit) => {
-		const previous = baseUnits.get(unit.id);
-		return (
-			previous !== undefined &&
-			knowledgeUnitContentHash(previous) === knowledgeUnitContentHash(unit)
-		);
-	});
+
+	// A persisted CA can legitimately use a different revision-row/manifest
+	// identity while preserving the exact reviewed behavior. Compare the
+	// immutable content plus platform/merchant partition instead of requiring
+	// the workspace KU row IDs to be reused by the CA materialization.
+	const baseFingerprints = base.knowledgeUnits
+		.filter((unit) => baseIdSet.has(unit.id))
+		.map((unit) => `${unit.lineage ? "merchant" : "platform"}:${knowledgeUnitContentHash(unit)}`)
+		.sort();
+	const materializedFingerprints = revisions
+		.map((revision) => `${revision.origin}:${knowledgeUnitContentHash(revision.knowledgeUnit)}`)
+		.sort();
+	return (
+		baseFingerprints.length === materializedFingerprints.length &&
+		baseFingerprints.every((fingerprint, index) => fingerprint === materializedFingerprints[index])
+	);
 }
 
 function knowledgeUnitContentHash(knowledgeUnit: KnowledgeUnit): string {

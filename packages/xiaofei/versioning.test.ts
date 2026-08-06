@@ -204,6 +204,35 @@ describe("knowledge revision and capability version contracts", () => {
 		expect(stale.evalSuite.capabilityPlanVersion).toBe(base.evalSuite.capabilityPlanVersion);
 		expect(stale.evalSuite.capabilityPlanVersion).not.toBe(stale.capabilityPlan.version);
 	});
+	it("rebinds unchanged evidence when CA materialization uses new KU row identities", async () => {
+		const base = createDefaultWorkspaceSnapshot(TENANT_ID, () => CREATED_AT);
+		base.capabilityPlan.reviewed = true;
+		base.evalSuite = await runP0EvalSuite(base, () => CREATED_AT);
+		const revisions = base.knowledgeUnits.map((knowledgeUnit, index) =>
+			createKnowledgeUnitRevision({
+				id: `revision-rematerialized-${index}`,
+				logicalKnowledgeUnitId: `logical-rematerialized-${index}`,
+				organizationId: null,
+				revision: 1,
+				origin: "platform",
+				knowledgeUnit: { ...knowledgeUnit, id: `materialized-${index}` },
+				createdAt: CREATED_AT,
+			}),
+		);
+		const manifest = createCapabilityVersionManifest({
+			id: "ca-active-rematerialized",
+			organizationId: ORGANIZATION_ID,
+			capabilityKey: "xiaofei-hosting",
+			status: "active",
+			knowledgeUnitRevisionIds: revisions.map((item) => item.id),
+			createdAt: "2026-08-05T00:01:00.000Z",
+		});
+
+		const active = materializeActiveCapabilitySnapshot({ base, manifest, revisions });
+
+		expect(active.evalSuite.status).toBe("passed");
+		expect(active.evalSuite.capabilityPlanVersion).toBe(active.capabilityPlan.version);
+	});
 	it("hashes immutable KU content, not revision identity, and changes with answer policy", () => {
 		const first = revision();
 		const identicalSuccessor = revision({ id: "ku-revision-2", revision: 2 });
