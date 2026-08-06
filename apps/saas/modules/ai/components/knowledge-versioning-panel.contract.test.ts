@@ -54,6 +54,9 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("setTurns((history) => [...history, toTestTurnView(result)])");
 		expect(panel).toContain("orpcClient.xiaofei.newTestSession()");
 		expect(panel).toContain("后续测试已切换为新会话");
+		expect(panel).toContain("历史轮次仍在加载");
+		expect(panel).toContain("重新读取历史");
+		expect(panel).toContain("recoveryRequest.current");
 	});
 
 	it("shows semantic pending and retry feedback for every long action", () => {

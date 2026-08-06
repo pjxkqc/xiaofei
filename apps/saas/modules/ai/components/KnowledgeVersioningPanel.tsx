@@ -17,7 +17,7 @@ import { RuntimeMetadataSchema } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
 import { RefreshCcwIcon } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { acceptanceGate } from "./acceptance-gate";
 import { recoverTestSession } from "./test-session-recovery";
@@ -74,6 +74,11 @@ export function KnowledgeVersioningPanel({
 	const [rerun, setRerun] = useState<Correction | null>(null);
 	const [sessions, setSessions] = useState<TestSessionSummary[]>([]);
 	const [interventionEvidence, setInterventionEvidence] = useState<InterventionEvidence[]>([]);
+	const [sessionDetailState, setSessionDetailState] = useState<
+		"idle" | "loading" | "ready" | "error"
+	>("idle");
+	const recoveryRequest = useRef(0);
+	const mounted = useRef(true);
 	const [busy, setBusy] = useState(false);
 	const [operation, setOperation] = useState<{
 		label: string;
@@ -101,15 +106,30 @@ export function KnowledgeVersioningPanel({
 	useEffect(() => {
 		void refresh().catch(() => toastError("无法读取版本状态"));
 	}, [refresh]);
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
 	const loadSession = useCallback(async (next: string) => {
-		beginOperation("正在载入所选会话 → 恢复有界测试轮次与干预证据…");
+		const request = ++recoveryRequest.current;
+		beginOperation("会话列表已恢复；正在读取历史轮次与干预证据…");
+		setTestSessionId(next);
+		setTurns([]);
+		setInterventionEvidence([]);
+		setSelectedTurnId(null);
+		setSessionDetailState("loading");
 		try {
 			const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
-			setTestSessionId(next);
+			if (!mounted.current || request !== recoveryRequest.current) return;
 			setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
 			setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
+			setSessionDetailState("ready");
 			completeOperation();
 		} catch (error) {
+			if (!mounted.current || request !== recoveryRequest.current) return;
+			setSessionDetailState("error");
 			failOperation(error);
 			throw error;
 		}
@@ -120,34 +140,46 @@ export function KnowledgeVersioningPanel({
 		setSessions(items);
 		return { ...result, items };
 	}, []);
-	const refreshSessionHistory = useCallback(async () => {
-		beginOperation("正在读取 Test CA 历史…");
+	const recoverSessionHistory = useCallback(async () => {
+		const request = ++recoveryRequest.current;
+		beginOperation("正在恢复 Test CA 会话列表…");
 		try {
-			const result = await refreshSessions();
+			const result = await recoverTestSession({
+				list: refreshSessions,
+				detail: async (id) => orpcClient.xiaofei.getTestSession({ testSessionId: id }),
+				onSelected: (selected, items) => {
+					if (!mounted.current || request !== recoveryRequest.current) return;
+					setSessions(items);
+					if (!selected) return;
+					setTestSessionId(selected.id);
+					setTurns([]);
+					setInterventionEvidence([]);
+					setSelectedTurnId(null);
+					setSessionDetailState("loading");
+					if (selected.writable && selected.turnCount === 0) completeOperation();
+				},
+			});
+			if (!mounted.current || request !== recoveryRequest.current) return result;
+			const detail = result.detail;
+			if (result.selected && detail) {
+				setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
+				setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
+				setSessionDetailState("ready");
+			}
 			completeOperation();
 			return result;
 		} catch (error) {
+			if (!mounted.current || request !== recoveryRequest.current) return;
+			setSessionDetailState("error");
 			failOperation(error);
 			throw error;
 		}
 	}, [refreshSessions]);
 	useEffect(() => {
-		void recoverTestSession({
-			list: refreshSessions,
-			detail: async (id) => orpcClient.xiaofei.getTestSession({ testSessionId: id }),
-		})
-			.then(({ items, selected, detail }) => {
-				setSessions(items);
-				if (selected && detail) {
-					setTestSessionId(selected.id);
-					setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
-					setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
-				}
-			})
-			.catch((error) => {
+		void recoverSessionHistory().catch((error) => {
 				toastError("无法读取 Test CA 历史", message(error));
 			});
-	}, [refreshSessions]);
+	}, [recoverSessionHistory]);
 
 	function storeSession(next: string) {
 		setTestSessionId(next);
@@ -220,6 +252,12 @@ export function KnowledgeVersioningPanel({
 	}
 	const active = overview?.binding?.activeCapabilityVersion ?? null;
 	const testVersion = overview?.binding?.testCapabilityVersion ?? null;
+	const selectedSession = sessions.find((session) => session.id === testSessionId) ?? null;
+	const ready =
+		testSessionId !== null &&
+		testVersion !== null &&
+		selectedSession?.writable === true &&
+		(selectedSession.turnCount === 0 || sessionDetailState === "ready");
 	return (
 		<div className="gap-6 flex flex-col">
 			<OperationFeedback operation={operation} />
@@ -249,11 +287,7 @@ export function KnowledgeVersioningPanel({
 					rerun={rerun}
 					interventionEvidence={interventionEvidence}
 					busy={busy}
-					ready={
-						testSessionId !== null &&
-						testVersion !== null &&
-						sessions.some((session) => session.id === testSessionId && session.writable)
-					}
+					ready={ready}
 					hasTestVersion={testVersion !== null}
 					onTest={test}
 					onCorrect={correct}
@@ -261,7 +295,8 @@ export function KnowledgeVersioningPanel({
 					sessions={sessions}
 					testSessionId={testSessionId}
 					onSelectSession={loadSession}
-					onRefreshSessions={refreshSessionHistory}
+					onRefreshSessions={recoverSessionHistory}
+					sessionDetailState={sessionDetailState}
 				/>
 			)}
 		</div>
@@ -606,6 +641,7 @@ function TestConversation({
 	testSessionId,
 	onSelectSession,
 	onRefreshSessions,
+	sessionDetailState,
 }: {
 	question: string;
 	setQuestion: (value: string) => void;
@@ -626,6 +662,7 @@ function TestConversation({
 	testSessionId: string | null;
 	onSelectSession: (id: string) => Promise<void>;
 	onRefreshSessions: () => Promise<unknown>;
+	sessionDetailState: "idle" | "loading" | "ready" | "error";
 }) {
 	const selected = turns.find((turn) => turn.turn.id === selectedTurnId) ?? null;
 	return (
@@ -684,6 +721,19 @@ function TestConversation({
 					</div>
 				) : (
 					<>
+						{sessionDetailState === "loading" && testSessionId ? (
+							<output className="text-sm block text-muted-foreground">
+								会话列表已恢复；历史轮次仍在加载。零轮可写会话现在即可输入。
+							</output>
+						) : null}
+						{sessionDetailState === "error" && testSessionId ? (
+							<div className="gap-2 text-sm text-destructive flex items-center">
+								<span>会话列表已恢复；历史轮次读取失败。</span>
+								<Button variant="outline" size="sm" disabled={busy} onClick={() => void onRefreshSessions()}>
+									重新读取历史
+								</Button>
+							</div>
+						) : null}
 						<Label>
 							下一轮问题
 							<Input
