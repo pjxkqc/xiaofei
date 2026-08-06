@@ -12,7 +12,7 @@ const queryMocks = vi.hoisted(() => {
 		},
 		xiaofeiWorkspace: { findUnique: vi.fn() },
 		xiaofeiCustomer: { findUnique: vi.fn() },
-		xiaofeiConversation: { upsert: vi.fn() },
+		xiaofeiConversation: { create: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
 		xiaofeiKnowledgeDocument: {
 			create: vi.fn(),
 			deleteMany: vi.fn(),
@@ -97,6 +97,7 @@ const queryMocks = vi.hoisted(() => {
 		findTestTurn: transactionClient.xiaofeiTestTurn.findUnique,
 		listTestTurns: vi.fn(),
 		countTestTurns: vi.fn(),
+		groupTestTurns: vi.fn(),
 		updateTestTurn: transactionClient.xiaofeiTestTurn.update,
 		createResponseIntervention: transactionClient.xiaofeiResponseIntervention.create,
 		findResponseIntervention: transactionClient.xiaofeiResponseIntervention.findUnique,
@@ -120,6 +121,8 @@ const queryMocks = vi.hoisted(() => {
 		findWorkspaceInTransaction: transactionClient.xiaofeiWorkspace.findUnique,
 		findCustomerInTransaction: transactionClient.xiaofeiCustomer.findUnique,
 		upsertConversation: transactionClient.xiaofeiConversation.upsert,
+		createConversation: transactionClient.xiaofeiConversation.create,
+		findConversationInTransaction: transactionClient.xiaofeiConversation.findUnique,
 	};
 });
 
@@ -446,6 +449,7 @@ vi.mock("../client", () => ({
 			findFirst: queryMocks.findLatestTestTurn,
 			findMany: queryMocks.listTestTurns,
 			count: queryMocks.countTestTurns,
+			groupBy: queryMocks.groupTestTurns,
 		},
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
@@ -653,16 +657,19 @@ describe("Xiaofei Organization queries", () => {
 			activeCapabilityVersionId: "active-version",
 			testCapabilityVersionId: "test-version",
 		});
-		queryMocks.listTestTurns.mockResolvedValueOnce([
-			{
-				id: "latest-turn",
-				testSessionId: "session-a",
-				capabilityVersionId: "test-version",
-				completedAt: new Date("2026-08-04T00:00:01.000Z"),
-			},
-		]);
-		queryMocks.findLatestTestTurn.mockResolvedValueOnce({ question: "First question" });
-		queryMocks.countTestTurns.mockResolvedValueOnce(2);
+		queryMocks.listTestTurns
+			.mockResolvedValueOnce([
+				{
+					id: "latest-turn",
+					testSessionId: "session-a",
+					capabilityVersionId: "test-version",
+					completedAt: new Date("2026-08-04T00:00:01.000Z"),
+				},
+			])
+			.mockResolvedValueOnce([
+				{ testSessionId: "session-a", question: "First question" },
+				{ testSessionId: "session-a", question: "Second question" },
+			]);
 
 		await expect(listXiaofeiTestSessions("organization-a", { limit: 1 })).resolves.toEqual({
 			items: [
@@ -717,6 +724,12 @@ describe("Xiaofei Organization queries", () => {
 				createdAt: new Date("2026-08-04T00:00:01.000Z"),
 			},
 		]);
+		queryMocks.findLatestTestTurn
+			.mockResolvedValueOnce({ question: "First question" })
+			.mockResolvedValueOnce({
+				capabilityVersionId: "historic-version",
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			});
 		queryMocks.countTestTurns.mockResolvedValueOnce(1);
 
 		await expect(getXiaofeiTestSessionDetail("organization-a", "session-a")).resolves.toMatchObject(
@@ -739,7 +752,8 @@ describe("Xiaofei Organization queries", () => {
 
 	it("projects synthetic support only into its Organization conversation aggregate", async () => {
 		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
-		queryMocks.upsertConversation.mockResolvedValueOnce({ id: "conversation-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce(null);
+		queryMocks.createConversation.mockResolvedValueOnce({ id: "conversation-a" });
 
 		await upsertXiaofeiSyntheticSupportConversation({
 			organizationId: "organization-a",
@@ -749,9 +763,9 @@ describe("Xiaofei Organization queries", () => {
 			traceEvents: [{ type: "synthetic.acceptance" }],
 		});
 
-		expect(queryMocks.upsertConversation).toHaveBeenCalledWith(
+		expect(queryMocks.createConversation).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({
+				data: expect.objectContaining({
 					workspaceId: "workspace-a",
 					channel: "synthetic_support",
 					messages: [{ direction: "inbound", content: "Synthetic question" }],
