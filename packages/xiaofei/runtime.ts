@@ -775,6 +775,13 @@ function detectRisk(
 			reply: "我无法协助伪造证明、记录或其他材料。我会将合规的退货或订单问题转交人工客服处理。",
 		};
 	}
+	const deferredHumanRequest =
+		/(?:不用|不需要|无需|先别|暂不).{0,8}(?:转人工|转给人工|人工处理|人工客服|真人客服|机器人回复)/iu;
+	const humanRoutingQuestion =
+		/(?:什么时候|何时|什么情况|什么条件|怎样|如何|会不会|是否).{0,12}(?:转人工|人工处理|人工客服|真人客服)/iu;
+	if (deferredHumanRequest.test(message) || humanRoutingQuestion.test(message)) {
+		return { level: "low" };
+	}
 	const explicitHumanRequest =
 		/(别让机器人回复|不要机器人回复|请主管处理|主管处理|先转人工|转人工|转给人工|人工处理|真人处理|human agent|real person|supervisor)/iu;
 	if (explicitHumanRequest.test(message)) {

@@ -215,7 +215,8 @@ describe("P0 runtime kernel", () => {
 
 	it("keeps credential text out of the human handoff package", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
-		const message = "我的支付密码是 secret-123，帮我核验";
+		const redactionMarker = "[redaction-marker]";
+		const message = `我的支付密码是 ${redactionMarker}，帮我核验`;
 		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
 		const result = await finalizeTurn({
 			prepared,
@@ -225,9 +226,31 @@ describe("P0 runtime kernel", () => {
 			now,
 		});
 
-		expect(result.state.handoffPackage?.summary).not.toContain("secret-123");
+		expect(result.state.handoffPackage?.summary).not.toContain(redactionMarker);
 		expect(result.state.handoffPackage?.summary).toContain("未写入交接摘要");
 	});
+
+	it.each(["不用转人工", "不需要人工客服", "先别转人工", "什么情况下会转人工？"])(
+		"keeps deferred or explanatory human-routing language under AI ownership: %s",
+		async (message) => {
+			const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+			const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+			const result = await finalizeTurn({
+				prepared,
+				snapshot,
+				message,
+				replyGenerator: { generate: vi.fn() },
+				now,
+			});
+
+			expect(prepared).toMatchObject({ riskLevel: "low" });
+			expect(result.state).toMatchObject({
+				ownerType: "ai",
+				ownerEpoch: state.ownerEpoch,
+			});
+			expect(result.state.handoffPackage).toBeUndefined();
+		},
+	);
 
 	it("matches a bounded related phrasing without requiring an exact keyword substring", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
