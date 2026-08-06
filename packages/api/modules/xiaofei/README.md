@@ -273,6 +273,21 @@ Authenticated browser pages can call the identical contract through
 
 ## Tests
 
+## Test CA and synthetic Support acceptance
+
+`prepareKnowledge` is owner/admin-only and validates distinct active entries before
+materializing retry-safe current KUs. It returns separately timed generation,
+reuse, publish, Test-CA, and durable zero-turn session stages. Test sessions are
+Organization-scoped and pinned to their Test CA: historical sessions remain
+readable but are rejected for writes after the Test pointer changes.
+
+`sendSyntheticSupportMessage` is owner/admin-only, uses the canonical
+`synthetic:<externalId>` conversation identity, materializes its empty row before
+AI work, and commits every turn through the revision/owner/ownerEpoch lease. A
+human takeover or concurrent commit returns a safe conflict and never persists a
+stale AI reply. Synthetic acceptance uses the enabled Active CA and does not
+create Email bindings, jobs, outbox records, or external delivery.
+
 ```bash
 pnpm --filter @repo/api test
 pnpm --filter @repo/api type-check

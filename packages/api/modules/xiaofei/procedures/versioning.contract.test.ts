@@ -36,12 +36,12 @@ describe("Xiaofei versioned test-turn API contract", () => {
 	});
 
 	it("continues only a same-Organization session pinned to its Test CA and can reset safely", () => {
-		expect(source).toContain("getXiaofeiTestSession(organizationId, testSessionId)");
-		expect(source).toContain("savedSession?.conversationState");
+		expect(source).toContain("getXiaofeiTestSessionDetail(organizationId, testSessionId)");
+		expect(source).toContain("latestTurn?.conversationState");
 		expect(source).toContain("conversationState: result.state");
 		expect(source).toContain("The Test version changed; start a new test session.");
 		expect(source).toContain("export const resetXiaofeiTestSession");
-		expect(source).toContain("expectedPreviousTestTurnId: savedSession?.id ?? null");
+		expect(source).toContain("expectedPreviousTestTurnId: latestTurn?.id ?? null");
 		expect(source).toContain("This test session changed; reload and try again.");
 	});
 

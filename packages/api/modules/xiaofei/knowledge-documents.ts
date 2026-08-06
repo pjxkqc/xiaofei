@@ -2,6 +2,8 @@ import { ORPCError } from "@orpc/server";
 import { generateKnowledgeUnitDrafts, type StructuredKnowledgeUnitGenerator } from "@repo/ai";
 import {
 	createXiaofeiKnowledgeUnit,
+	createOrReturnXiaofeiKnowledgeUnit,
+	createXiaofeiTestSession,
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
@@ -41,6 +43,7 @@ import {
 import type { XiaofeiAuthContext } from "./service";
 import {
 	getOrCreateXiaofeiWorkspaceByTenantKey,
+	getXiaofeiOrganizationId,
 	clearKnowledgeWorkspaceAdmission,
 	getXiaofeiTenantKey,
 	requireXiaofeiOrganizationAdmin,
@@ -287,6 +290,7 @@ export async function generateKnowledgeUnitsForTenant(
 	context: XiaofeiAuthContext,
 	entryIds: string[],
 	generateDrafts: typeof generateKnowledgeUnitDrafts = generateKnowledgeUnitDrafts,
+	createOrReturnCurrent = false,
 ) {
 	await requireXiaofeiOrganizationAdmin(context);
 	const { workspace } = await getKnowledgeWorkspace(context);
@@ -332,15 +336,18 @@ export async function generateKnowledgeUnitsForTenant(
 	try {
 		const units = [];
 		for (const draft of drafts) {
+			const input = {
+				workspaceId: workspace.id,
+				entryId: draft.lineage.entryId,
+				title: draft.title,
+				content: draft,
+				status: "draft",
+				eligibility: "ineligible",
+			};
 			units.push(
-				await createXiaofeiKnowledgeUnit({
-					workspaceId: workspace.id,
-					entryId: draft.lineage.entryId,
-					title: draft.title,
-					content: draft,
-					status: "draft",
-					eligibility: "ineligible",
-				}),
+				createOrReturnCurrent
+					? await createOrReturnXiaofeiKnowledgeUnit(input)
+					: await createXiaofeiKnowledgeUnit(input),
 			);
 		}
 		return units;
@@ -360,6 +367,8 @@ export async function generateKnowledgeUnitsForTenant(
  */
 export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, entryIds: string[]) {
 	await requireXiaofeiOrganizationAdmin(context);
+	if (!hasUniqueKnowledgeEntryIds(entryIds))
+		throw new ORPCError("BAD_REQUEST", { message: "Knowledge entries must be unique." });
 	const { workspace } = await getKnowledgeWorkspace(context);
 	const entries = await Promise.all(
 		entryIds.map((id) => getXiaofeiKnowledgeEntry(workspace.id, id)),
@@ -376,9 +385,23 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 	const covered = new Set(resumable.map((unit) => unit.entryId));
 	const missingEntryIds = entryIds.filter((id) => !covered.has(id));
 	const generatedStarted = Date.now();
-	const generated = missingEntryIds.length
-		? await generateKnowledgeUnitsForTenant(context, missingEntryIds)
+	const generatedResults = missingEntryIds.length
+		? await generateKnowledgeUnitsForTenant(
+				context,
+				missingEntryIds,
+				generateKnowledgeUnitDrafts,
+				true,
+			)
 		: [];
+	const generated = generatedResults.map((result) =>
+		"knowledgeUnit" in result ? result.knowledgeUnit : result,
+	);
+	const generatedCount = generatedResults.filter(
+		(result) => !("created" in result) || result.created,
+	).length;
+	const reusedCount =
+		resumable.length +
+		generatedResults.filter((result) => "created" in result && !result.created).length;
 	const generatedElapsedMs = Date.now() - generatedStarted;
 	const lifecycleStarted = Date.now();
 	const candidates = [...resumable, ...generated];
@@ -397,6 +420,10 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 	const testCaElapsedMs = Date.now() - testCaStarted;
 	const sessionStarted = Date.now();
 	const testSessionId = globalThis.crypto.randomUUID();
+	await createXiaofeiTestSession(await getXiaofeiOrganizationId(context), {
+		id: testSessionId,
+		capabilityVersionId: testCa.versionId,
+	});
 	const sessionElapsedMs = Date.now() - sessionStarted;
 	return {
 		stages: [
@@ -404,13 +431,13 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 				name: "generated",
 				status: "completed",
 				elapsedMs: generatedElapsedMs,
-				count: generated.length,
+				count: generatedCount,
 			},
 			{
 				name: "reused",
 				status: "completed",
 				elapsedMs: 0,
-				count: resumable.length,
+				count: reusedCount,
 			},
 			{
 				name: "published",
@@ -435,6 +462,10 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 		testCapabilityVersionId: testCa.versionId,
 		testSessionId,
 	};
+}
+
+export function hasUniqueKnowledgeEntryIds(entryIds: string[]) {
+	return new Set(entryIds).size === entryIds.length;
 }
 
 /**

@@ -1,10 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import { runXiaofeiTurn } from "@repo/ai";
 import {
-	getXiaofeiConversation,
 	loadXiaofeiRuntimeHostingCapability,
 	type Prisma,
-	updateXiaofeiSupportConversation,
+	commitXiaofeiSyntheticSupportConversation,
+	XiaofeiSyntheticSupportCommitConflictError,
+	XiaofeiSyntheticSupportConversationConflictError,
+	XiaofeiSyntheticSupportTenantConflictError,
 	upsertXiaofeiSyntheticSupportConversation,
 } from "@repo/database";
 import {
@@ -32,22 +34,34 @@ export const sendSyntheticSupportMessage = supportProcedure
 		await requireXiaofeiOrganizationAdmin(context);
 		const organizationId = await getXiaofeiOrganizationId(context);
 		const { workspace, snapshot } = await getOrCreateXiaofeiWorkspace(context);
-		const conversationId = `synthetic:${input.externalId}`;
-		const existing = await getXiaofeiConversation(workspace.id, conversationId);
-		if (existing && existing.channel !== "synthetic_support")
-			throw new ORPCError("CONFLICT", {
-				message: "This synthetic support ID is already owned by another channel.",
+		// This is the only external ID used for lookup, create, CAS commit, and Inbox links.
+		const conversationId = syntheticSupportConversationId(input.externalId);
+		const baseState = createConversationState({
+			id: conversationId,
+			tenantId: snapshot.agent.tenantId,
+			agentId: snapshot.agent.id,
+			maxFollowUps: snapshot.agent.maxFollowUps,
+		});
+		let existing;
+		try {
+			// Materialize before invoking AI so simultaneous first turns share one lease.
+			existing = await upsertXiaofeiSyntheticSupportConversation({
+				organizationId,
+				externalId: conversationId,
+				state: toJson(baseState),
+				messages: toJson([]),
+				traceEvents: toJson([]),
 			});
-		const state = existing
-			? ConversationStateSchema.parse(existing.state)
-			: createConversationState({
-					id: conversationId,
-					tenantId: snapshot.agent.tenantId,
-					agentId: snapshot.agent.id,
-					maxFollowUps: snapshot.agent.maxFollowUps,
-				});
-		const previousMessages = existing ? z.array(SupportMessageSchema).parse(existing.messages) : [];
-		const previousTraces = existing ? z.array(TraceEventSchema).parse(existing.traceEvents) : [];
+		} catch (error) {
+			throwSyntheticConflict(error);
+		}
+		if (existing.channel !== "synthetic_support")
+			throw new ORPCError("CONFLICT", {
+				message: "This support conversation changed; reload and try again.",
+			});
+		const state = ConversationStateSchema.parse(existing.state);
+		const previousMessages = z.array(SupportMessageSchema).parse(existing.messages);
+		const previousTraces = z.array(TraceEventSchema).parse(existing.traceEvents);
 		const now = new Date();
 		const customer = SupportMessageSchema.parse({
 			id: crypto.randomUUID(),
@@ -89,23 +103,23 @@ export const sendSyntheticSupportMessage = supportProcedure
 				}),
 			);
 		}
-		const conversation = existing
-			? await updateXiaofeiSupportConversation(workspace.id, conversationId, {
-					state: toJson(nextState),
-					messages: toJson(messages.slice(-160)),
-					traceEvents: toJson(traces),
-					lastCustomerSeenAt: now,
-					lastMessageAt: now,
-				})
-			: await upsertXiaofeiSyntheticSupportConversation({
-					organizationId,
-					externalId: input.externalId,
-					state: toJson(nextState),
-					messages: toJson(messages.slice(-160)),
-					traceEvents: toJson(traces),
-					lastCustomerSeenAt: now,
-					lastMessageAt: now,
-				});
+		let conversation;
+		try {
+			conversation = await commitXiaofeiSyntheticSupportConversation({
+				organizationId,
+				externalId: conversationId,
+				expectedRevision: existing.revision,
+				expectedOwnerType: existing.ownerType,
+				expectedOwnerEpoch: existing.ownerEpoch,
+				state: toJson(nextState),
+				messages: toJson(messages.slice(-160)),
+				traceEvents: toJson(traces),
+				lastCustomerSeenAt: now,
+				lastMessageAt: now,
+			});
+		} catch (error) {
+			throwSyntheticConflict(error);
+		}
 		return {
 			conversationId: conversation.externalId,
 			ownerType: ConversationStateSchema.parse(conversation.state).ownerType,
@@ -115,4 +129,20 @@ export const sendSyntheticSupportMessage = supportProcedure
 
 function toJson(value: unknown): Prisma.InputJsonValue {
 	return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+export function syntheticSupportConversationId(externalId: string) {
+	return `synthetic:${externalId}`;
+}
+
+function throwSyntheticConflict(error: unknown): never {
+	if (
+		error instanceof XiaofeiSyntheticSupportCommitConflictError ||
+		error instanceof XiaofeiSyntheticSupportConversationConflictError ||
+		error instanceof XiaofeiSyntheticSupportTenantConflictError
+	)
+		throw new ORPCError("CONFLICT", {
+			message: "This support conversation changed; reload and try again.",
+		});
+	throw error;
 }

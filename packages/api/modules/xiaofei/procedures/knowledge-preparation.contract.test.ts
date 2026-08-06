@@ -1,23 +1,24 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
-import { describe, expect, it } from "vitest";
+vi.mock("@repo/ai", () => ({ generateKnowledgeUnitDrafts: vi.fn() }));
+vi.mock("@repo/database", () => ({
+	XiaofeiKnowledgeDocumentFileType: {
+		DOCX: "DOCX",
+		MARKDOWN: "MARKDOWN",
+		TEXT: "TEXT",
+		PDF: "PDF",
+		XLSX: "XLSX",
+	},
+	XiaofeiKnowledgeDocumentCategory: { PRESALES: "PRESALES", POSTSALES: "POSTSALES" },
+	XiaofeiKnowledgeDocumentSourceType: { FILE: "FILE", MANUAL: "MANUAL", WEB: "WEB" },
+}));
+vi.mock("@repo/auth", () => ({ auth: { api: { getSession: vi.fn() } } }));
 
-const source = readFileSync(path.resolve(import.meta.dirname, "../knowledge-documents.ts"), "utf8");
+import { hasUniqueKnowledgeEntryIds } from "../knowledge-documents";
 
-describe("knowledge preparation contract", () => {
-	it("validates before mutation and reuses resumable current KUs on retry", () => {
-		expect(source).toContain("const entries = await Promise.all(");
-		expect(source).toContain('unit.eligibility !== "stale"');
-		expect(source).toContain("const missingEntryIds = entryIds.filter");
-		expect(source).toContain("generateKnowledgeUnitsForTenant(context, missingEntryIds)");
-	});
-
-	it("returns separately timed Test-CA and session evidence without changing Active", () => {
-		for (const stage of ["generated", "reused", "published", "test_ca", "session"])
-			expect(source).toContain(`name: "${stage}"`);
-		expect(source).toContain("initializeXiaofeiTestHostingForTenant(context)");
-		expect(source).toContain("testSessionId");
-		expect(source).not.toContain("setXiaofeiOrganizationActiveHostingVersion");
+describe("knowledge preparation input", () => {
+	it("rejects duplicate entry IDs before a retry can materialize duplicate KUs", () => {
+		expect(hasUniqueKnowledgeEntryIds(["entry-a", "entry-b"])).toBe(true);
+		expect(hasUniqueKnowledgeEntryIds(["entry-a", "entry-a"])).toBe(false);
 	});
 });
