@@ -3,8 +3,6 @@ import { runXiaofeiTestTurn } from "@repo/ai";
 import {
 	activateXiaofeiCapabilityVersion,
 	applyXiaofeiTestTurnFeedback,
-	createXiaofeiCapabilityVersion,
-	createXiaofeiKnowledgeUnitRevision,
 	createXiaofeiTestTurn,
 	createXiaofeiTestTurnRerun,
 	getXiaofeiTestSession,
@@ -12,10 +10,8 @@ import {
 	getXiaofeiOrganizationHostingBinding,
 	loadXiaofeiRuntimeHostingCapability,
 	listXiaofeiKnowledgeUnitRevisions,
-	listXiaofeiKnowledgeUnits,
 	listXiaofeiTestSessions,
 	getXiaofeiTestSessionDetail,
-	setXiaofeiOrganizationTestHostingVersion,
 	upsertXiaofeiOrganizationConfig,
 	XiaofeiTestTurnFeedbackConflictError,
 	XiaofeiTestSessionCapabilityConflictError,
@@ -32,7 +28,7 @@ import {
 	getXiaofeiOrganizationId,
 	requireXiaofeiOrganizationAdmin,
 } from "../service";
-import { freezeMerchantKnowledgeUnitRevisionContent } from "./versioning-knowledge";
+import { initializeXiaofeiTestHostingForTenant } from "../versioning-service";
 
 const hostingKey = "xiaofei-hosting" as const;
 const questionSchema = z.string().trim().min(1).max(10_000);
@@ -48,80 +44,7 @@ export const getXiaofeiVersioningOverview = supportProcedure.handler(async ({ co
 });
 
 export const initializeXiaofeiVersioning = supportProcedure.handler(async ({ context }) => {
-	await requireXiaofeiOrganizationAdmin(context);
-	const organizationId = await getXiaofeiOrganizationId(context);
-	const { workspace, snapshot } = await getOrCreateXiaofeiWorkspace(context);
-	const units = await listXiaofeiKnowledgeUnits(workspace.id);
-	const platform = snapshot.knowledgeUnits.filter(
-		(unit) =>
-			unit.lineage === undefined && unit.status === "released" && unit.eligibility === "eligible",
-	);
-	const merchant = units.filter(
-		(unit) => unit.status === "released" && unit.eligibility === "eligible",
-	);
-	const platformRevisions = await Promise.all(
-		platform.map((unit) =>
-			createXiaofeiKnowledgeUnitRevision({
-				organizationId: null,
-				logicalKnowledgeUnitId: `platform:${unit.id}`,
-				origin: "platform",
-				content: unit,
-			}),
-		),
-	);
-	const merchantRevisions = await Promise.all(
-		merchant.map((unit) =>
-			createXiaofeiKnowledgeUnitRevision({
-				organizationId,
-				logicalKnowledgeUnitId: `merchant:${unit.id}`,
-				knowledgeUnitId: unit.id,
-				origin: "merchant",
-				content: freezeMerchantKnowledgeUnitRevisionContent(unit),
-			}),
-		),
-	);
-	if (!platformRevisions.length && !merchantRevisions.length)
-		throw new ORPCError("BAD_REQUEST", {
-			message: "Publish eligible knowledge before creating a version.",
-		});
-	if (platformRevisions.length)
-		await createXiaofeiCapabilityVersion({
-			organizationId,
-			capabilityKey: "platform-fallback",
-			knowledgeUnits: platformRevisions.map((revision, index) => ({
-				knowledgeUnitRevisionId: revision.id,
-				role: "fallback",
-				priority: -index,
-			})),
-		});
-	if (merchantRevisions.length)
-		await createXiaofeiCapabilityVersion({
-			organizationId,
-			capabilityKey: "merchant-knowledge",
-			knowledgeUnits: merchantRevisions.map((revision, index) => ({
-				knowledgeUnitRevisionId: revision.id,
-				role: "primary",
-				priority: merchantRevisions.length - index,
-			})),
-		});
-	const hosting = await createXiaofeiCapabilityVersion({
-		organizationId,
-		capabilityKey: hostingKey,
-		knowledgeUnits: [
-			...platformRevisions.map((revision, index) => ({
-				knowledgeUnitRevisionId: revision.id,
-				role: "fallback",
-				priority: -index,
-			})),
-			...merchantRevisions.map((revision, index) => ({
-				knowledgeUnitRevisionId: revision.id,
-				role: "primary",
-				priority: merchantRevisions.length - index,
-			})),
-		],
-	});
-	await setXiaofeiOrganizationTestHostingVersion(organizationId, hosting.id);
-	return { versionId: hosting.id };
+	return await initializeXiaofeiTestHostingForTenant(context);
 });
 
 export const runXiaofeiVersionedTest = supportProcedure

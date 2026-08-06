@@ -4,14 +4,20 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(path.resolve(import.meta.dirname, "versioning.ts"), "utf8");
+const initializationSource = readFileSync(
+	path.resolve(import.meta.dirname, "../versioning-service.ts"),
+	"utf8",
+);
 
 describe("Xiaofei versioned test-turn API contract", () => {
 	it("freezes only released, eligible KUs and changes only the Test pointer during initialization", () => {
-		expect(source).toContain('unit.status === "released" && unit.eligibility === "eligible"');
-		expect(source).toContain(
+		expect(initializationSource).toContain(
+			'unit.status === "released" && unit.eligibility === "eligible"',
+		);
+		expect(initializationSource).toContain(
 			"setXiaofeiOrganizationTestHostingVersion(organizationId, hosting.id)",
 		);
-		expect(source).not.toContain("setXiaofeiOrganizationActiveHostingVersion");
+		expect(initializationSource).not.toContain("setXiaofeiOrganizationActiveHostingVersion");
 	});
 
 	it("persists an actual TestTurn before answer-bound feedback and does not accept browser evidence", () => {
