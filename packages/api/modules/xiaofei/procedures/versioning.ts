@@ -13,6 +13,8 @@ import {
 	loadXiaofeiRuntimeHostingCapability,
 	listXiaofeiKnowledgeUnitRevisions,
 	listXiaofeiKnowledgeUnits,
+	listXiaofeiTestSessions,
+	getXiaofeiTestSessionDetail,
 	setXiaofeiOrganizationTestHostingVersion,
 	upsertXiaofeiOrganizationConfig,
 	XiaofeiTestTurnFeedbackConflictError,
@@ -204,6 +206,49 @@ export const resetXiaofeiTestSession = supportProcedure.handler(async ({ context
 	await getXiaofeiOrganizationId(context);
 	return { testSessionId: globalThis.crypto.randomUUID() };
 });
+
+/** Bounded Organization-scoped Test CA history projections. */
+export const listXiaofeiTestSessionsProcedure = supportProcedure
+	.input(
+		z
+			.object({
+				cursor: z.string().min(1).optional(),
+				limit: z.number().int().min(1).max(50).optional(),
+			})
+			.optional(),
+	)
+	.handler(async ({ context, input }) =>
+		listXiaofeiTestSessions(await getXiaofeiOrganizationId(context), input ?? {}),
+	);
+
+export const getXiaofeiTestSessionProcedure = supportProcedure
+	.input(z.object({ testSessionId: z.string().trim().min(1).max(128) }))
+	.handler(async ({ context, input }) => {
+		const detail = await getXiaofeiTestSessionDetail(
+			await getXiaofeiOrganizationId(context),
+			input.testSessionId,
+		);
+		if (!detail) throw new ORPCError("NOT_FOUND", { message: "Test session not found." });
+		return detail;
+	});
+
+export const newXiaofeiTestSession = resetXiaofeiTestSession;
+
+/** Resume is an explicit stale-session check; callers then use runVersionedTest. */
+export const resumeXiaofeiTestSession = supportProcedure
+	.input(z.object({ testSessionId: z.string().trim().min(1).max(128) }))
+	.handler(async ({ context, input }) => {
+		const detail = await getXiaofeiTestSessionDetail(
+			await getXiaofeiOrganizationId(context),
+			input.testSessionId,
+		);
+		if (!detail) throw new ORPCError("NOT_FOUND", { message: "Test session not found." });
+		if (!detail.writable)
+			throw new ORPCError("CONFLICT", {
+				message: "The Test version changed; start a new test session.",
+			});
+		return detail;
+	});
 
 export const applyXiaofeiTestTurnCorrection = supportProcedure
 	.input(z.object({ sourceTestTurnId: z.string().cuid(), correction: questionSchema }))

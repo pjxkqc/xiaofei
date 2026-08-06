@@ -1,3 +1,4 @@
+import { sendSyntheticSupportMessage } from "./procedures/acceptance";
 import {
 	archiveCustomer,
 	createCustomer,
@@ -50,6 +51,7 @@ import {
 	updateKnowledgeEntryProcedure,
 	updateKnowledgeUnitProcedure,
 } from "./procedures/knowledge-documents";
+import { prepareKnowledgeProcedure } from "./procedures/knowledge-preparation";
 import { resetXiaofeiConversation } from "./procedures/reset-conversation";
 import { reviewXiaofeiCapability } from "./procedures/review-capability";
 import { runXiaofeiEval } from "./procedures/run-eval";
@@ -72,6 +74,10 @@ import {
 	resetXiaofeiTestSession,
 	runXiaofeiVersionedTest,
 	setXiaofeiHostingEnabled,
+	listXiaofeiTestSessionsProcedure,
+	getXiaofeiTestSessionProcedure,
+	newXiaofeiTestSession,
+	resumeXiaofeiTestSession,
 } from "./procedures/versioning";
 
 export const xiaofeiRouter = {
@@ -112,6 +118,12 @@ export const xiaofeiRouter = {
 	applyTestTurnCorrection: applyXiaofeiTestTurnCorrection,
 	activateHostingVersion: activateXiaofeiHostingVersion,
 	setHostingEnabled: setXiaofeiHostingEnabled,
+	listTestSessions: listXiaofeiTestSessionsProcedure,
+	getTestSession: getXiaofeiTestSessionProcedure,
+	newTestSession: newXiaofeiTestSession,
+	resumeTestSession: resumeXiaofeiTestSession,
+	sendSyntheticSupportMessage,
+	prepareKnowledge: prepareKnowledgeProcedure,
 	runEval: runXiaofeiEval,
 	startSupportConversation,
 	getPublicConversation,

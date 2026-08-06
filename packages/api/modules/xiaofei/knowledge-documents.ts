@@ -351,6 +351,35 @@ export async function generateKnowledgeUnitsForTenant(
 	}
 }
 
+/** Atomically prepares selected active entries for Test CA consumption. */
+export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, entryIds: string[]) {
+	const started = Date.now();
+	const generated = await generateKnowledgeUnitsForTenant(context, entryIds);
+	const reviewed: string[] = [];
+	for (const unit of generated) {
+		await transitionKnowledgeUnitForTenant(context, unit.id, "review");
+		await transitionKnowledgeUnitForTenant(context, unit.id, "publish");
+		reviewed.push(unit.id);
+	}
+	return {
+		stages: [
+			{
+				name: "generate",
+				status: "completed",
+				elapsedMs: Date.now() - started,
+				count: generated.length,
+			},
+			{
+				name: "lifecycle",
+				status: "completed",
+				elapsedMs: Date.now() - started,
+				count: reviewed.length,
+			},
+		],
+		knowledgeUnitIds: reviewed,
+	};
+}
+
 /**
  * Provider outage fallback: one review-required candidate per exact active
  * normalized entry. It intentionally adds only generic safety boundaries;
