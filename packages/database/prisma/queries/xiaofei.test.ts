@@ -125,6 +125,7 @@ const queryMocks = vi.hoisted(() => {
 		updateCustomer: vi.fn(),
 		getWorkspace: vi.fn(),
 		getConversation: vi.fn(),
+		getTestSession: vi.fn(),
 		listConversations: vi.fn(),
 		updateInboundEventDirect: vi.fn(),
 		findWorkspaceInTransaction: transactionClient.xiaofeiWorkspace.findUnique,
@@ -465,6 +466,7 @@ vi.mock("../client", () => ({
 			count: queryMocks.countTestTurns,
 			groupBy: queryMocks.groupTestTurns,
 		},
+		xiaofeiTestSession: { findUnique: queryMocks.getTestSession },
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
 			findUnique: queryMocks.getInboundEvent,
@@ -863,7 +865,7 @@ describe("Xiaofei Organization queries", () => {
 		await upsertXiaofeiSyntheticSupportConversation({
 			organizationId: "organization-a",
 			externalId: "synthetic-acceptance-a",
-			state: { owner: "support" },
+			state: conversationState,
 			messages: [{ direction: "inbound", content: "Synthetic question" }],
 			traceEvents: [{ type: "synthetic.acceptance" }],
 		});
@@ -873,6 +875,8 @@ describe("Xiaofei Organization queries", () => {
 				data: expect.objectContaining({
 					workspaceId: "workspace-a",
 					channel: "synthetic_support",
+					ownerType: "ai",
+					ownerEpoch: 0,
 					messages: [{ direction: "inbound", content: "Synthetic question" }],
 					traceEvents: [{ type: "synthetic.acceptance" }],
 				}),
@@ -886,6 +890,47 @@ describe("Xiaofei Organization queries", () => {
 		expect(queryMocks.findConversationInTransaction.mock.invocationCallOrder[0]).toBeLessThan(
 			queryMocks.createConversation.mock.invocationCallOrder[0] ?? Infinity,
 		);
+	});
+
+	it("projects a successful guarded commit to its resulting handoff owner lease", async () => {
+		const handoffState = { ...conversationState, ownerType: "human" as const, ownerEpoch: 1 };
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce({
+			id: "conversation-a",
+			channel: "synthetic_support",
+			revision: 1,
+			ownerType: "ai",
+			ownerEpoch: 0,
+		});
+		queryMocks.updateSyntheticConversation.mockResolvedValueOnce({ count: 1 });
+		queryMocks.findConversationOrThrowInTransaction.mockResolvedValueOnce({
+			id: "conversation-a",
+			ownerType: "human",
+			ownerEpoch: 1,
+			revision: 2,
+		});
+
+		await expect(
+			commitXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-a",
+				externalId: "synthetic-acceptance-a",
+				expectedRevision: 1,
+				expectedOwnerType: "ai",
+				expectedOwnerEpoch: 0,
+				state: handoffState,
+				messages: [],
+				traceEvents: [],
+			}),
+		).resolves.toMatchObject({ ownerType: "human", ownerEpoch: 1, revision: 2 });
+		expect(queryMocks.updateSyntheticConversation).toHaveBeenCalledWith({
+			where: { id: "conversation-a", revision: 1, ownerType: "ai", ownerEpoch: 0 },
+			data: expect.objectContaining({
+				ownerType: "human",
+				ownerEpoch: 1,
+				revision: { increment: 1 },
+			}),
+		});
+		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
 	});
 
 	it("returns an existing synthetic retry without overwriting later state", async () => {
@@ -903,7 +948,7 @@ describe("Xiaofei Organization queries", () => {
 			upsertXiaofeiSyntheticSupportConversation({
 				organizationId: "organization-a",
 				externalId: "synthetic-acceptance-a",
-				state: { owner: "ai", ownerEpoch: 1 },
+				state: conversationState,
 				messages: [],
 				traceEvents: [],
 			}),
@@ -932,7 +977,7 @@ describe("Xiaofei Organization queries", () => {
 		const input = {
 			organizationId: "organization-a",
 			externalId: "synthetic-acceptance-a",
-			state: {},
+			state: conversationState,
 			messages: [],
 			traceEvents: [],
 		};
@@ -957,7 +1002,7 @@ describe("Xiaofei Organization queries", () => {
 			upsertXiaofeiSyntheticSupportConversation({
 				organizationId: "organization-a",
 				externalId: "existing-email",
-				state: {},
+				state: conversationState,
 				messages: [],
 				traceEvents: [],
 			}),
@@ -981,7 +1026,7 @@ describe("Xiaofei Organization queries", () => {
 				expectedRevision: 2,
 				expectedOwnerType: "ai",
 				expectedOwnerEpoch: 1,
-				state: {},
+				state: conversationState,
 				messages: [],
 				traceEvents: [],
 			}),
@@ -1120,7 +1165,7 @@ describe("Xiaofei Organization queries", () => {
 				organizationId: "organization-a",
 				externalId: "conversation-a",
 				customerId: "customer-b",
-				state: {},
+				state: conversationState,
 				traceEvents: [],
 			}),
 		).rejects.toBeInstanceOf(XiaofeiOrganizationCustomerNotFoundError);

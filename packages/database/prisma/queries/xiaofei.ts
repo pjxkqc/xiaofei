@@ -386,7 +386,7 @@ export interface UpsertXiaofeiSyntheticSupportConversationInput {
 	organizationId: string;
 	externalId: string;
 	customerName?: string | null;
-	state: Prisma.InputJsonValue;
+	state: ConversationState;
 	messages: Prisma.InputJsonValue;
 	traceEvents: Prisma.InputJsonValue;
 	lastCustomerSeenAt?: Date | null;
@@ -399,7 +399,7 @@ export interface CommitXiaofeiSyntheticSupportConversationInput {
 	expectedRevision: number;
 	expectedOwnerType: string | null;
 	expectedOwnerEpoch: number | null;
-	state: Prisma.InputJsonValue;
+	state: ConversationState;
 	messages: Prisma.InputJsonValue;
 	traceEvents: Prisma.InputJsonValue;
 	lastCustomerSeenAt?: Date | null;
@@ -1059,6 +1059,7 @@ export function upsertXiaofeiSyntheticSupportConversation(
 	input: UpsertXiaofeiSyntheticSupportConversationInput,
 ) {
 	return db.$transaction(async (transaction) => {
+		const state = ConversationStateSchema.parse(input.state);
 		const workspace = await transaction.xiaofeiWorkspace.findUnique({
 			where: { tenantKey: organizationTenantKey(input.organizationId) },
 		});
@@ -1083,7 +1084,9 @@ export function upsertXiaofeiSyntheticSupportConversation(
 				externalId: input.externalId,
 				channel: "synthetic_support",
 				customerName: input.customerName ?? "Synthetic support acceptance",
-				state: input.state,
+				state: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue,
+				ownerType: state.ownerType,
+				ownerEpoch: state.ownerEpoch,
 				messages: input.messages,
 				traceEvents: input.traceEvents,
 				lastCustomerSeenAt: input.lastCustomerSeenAt ?? null,
@@ -1101,6 +1104,7 @@ export function commitXiaofeiSyntheticSupportConversation(
 	input: CommitXiaofeiSyntheticSupportConversationInput,
 ) {
 	return db.$transaction(async (transaction) => {
+		const state = ConversationStateSchema.parse(input.state);
 		const workspace = await transaction.xiaofeiWorkspace.findUnique({
 			where: { tenantKey: organizationTenantKey(input.organizationId) },
 		});
@@ -1131,7 +1135,9 @@ export function commitXiaofeiSyntheticSupportConversation(
 				ownerEpoch: input.expectedOwnerEpoch,
 			},
 			data: {
-				state: input.state,
+				state: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue,
+				ownerType: state.ownerType,
+				ownerEpoch: state.ownerEpoch,
 				messages: input.messages,
 				traceEvents: input.traceEvents,
 				lastCustomerSeenAt: input.lastCustomerSeenAt ?? null,
@@ -2819,7 +2825,7 @@ export async function getXiaofeiTestSessionDetail(
 				},
 				select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
 			}),
-			db.xiaofeiTestSession?.findUnique({
+			db.xiaofeiTestSession.findUnique({
 				where: { organizationId_id: { organizationId, id: testSessionId } },
 				select: { capabilityVersionId: true, createdAt: true },
 			}),
