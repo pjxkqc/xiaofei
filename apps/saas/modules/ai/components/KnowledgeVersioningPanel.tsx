@@ -23,10 +23,27 @@ type CapabilityVersion = NonNullable<NonNullable<Overview["binding"]>["activeCap
 type MembershipRow = CapabilityVersion["knowledgeUnits"][number];
 type TestTurn = Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>;
 type Correction = Awaited<ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>>;
+type TestTurnView = {
+	turn: {
+		id: string;
+		question: string;
+		capabilityVersionId: string;
+	};
+	answer: string;
+	metadata: TestTurn["metadata"];
+	feedbackAllowed: boolean;
+	feedbackMode: "revise" | "supplement";
+};
 interface TestSessionSummary {
 	id: string;
 	turnCount: number;
 	writable: boolean;
+	firstQuestion: string | null;
+	latestAt: string | null;
+	capabilityVersionId: string;
+	beforeInterventionCount: number;
+	afterInterventionCount: number;
+	isCurrent: boolean;
 }
 
 export function KnowledgeVersioningPanel({
@@ -37,12 +54,30 @@ export function KnowledgeVersioningPanel({
 	const [overview, setOverview] = useState<Overview | null>(null);
 	const [testSessionId, setTestSessionId] = useState<string | null>(null);
 	const [question, setQuestion] = useState("");
-	const [turns, setTurns] = useState<TestTurn[]>([]);
+	const [turns, setTurns] = useState<TestTurnView[]>([]);
 	const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
 	const [correction, setCorrection] = useState("");
 	const [rerun, setRerun] = useState<Correction | null>(null);
 	const [sessions, setSessions] = useState<TestSessionSummary[]>([]);
 	const [busy, setBusy] = useState(false);
+	const [operation, setOperation] = useState<{
+		label: string;
+		error: string | null;
+		startedAt: number | null;
+	}>({
+		label: "",
+		error: null,
+		startedAt: null,
+	});
+	function beginOperation(label: string) {
+		setOperation({ label, error: null, startedAt: Date.now() });
+	}
+	function completeOperation() {
+		setOperation({ label: "", error: null, startedAt: null });
+	}
+	function failOperation(error: unknown) {
+		setOperation({ label: "", error: message(error), startedAt: null });
+	}
 	const refresh = useCallback(
 		async () => setOverview(await orpcClient.xiaofei.getVersioningOverview()),
 		[],
@@ -52,48 +87,68 @@ export function KnowledgeVersioningPanel({
 		void refresh().catch(() => toastError("无法读取版本状态"));
 	}, [refresh]);
 	const loadSession = useCallback(async (next: string) => {
-		const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
-		setTestSessionId(next);
-		setTurns(
-			detail.turns
-				.slice()
-				.reverse()
-				.map((turn) => ({
-					turn: {
-						id: turn.id,
-						question: turn.question,
-						capabilityVersionId: turn.capabilityVersionId,
-					},
-					testSessionId: next,
-					answer: turn.answer,
-					metadata: turn.runtimeMetadata,
-					feedbackAllowed: detail.writable && !turn.interventionId,
-					feedbackMode:
-						turn.runtimeMetadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
-							? ("revise" as const)
-							: ("supplement" as const),
-				})),
-		);
+		beginOperation("正在载入会话元数据 → 恢复有界测试轮次…");
+		try {
+			const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
+			setTestSessionId(next);
+			setTurns(
+				detail.turns
+					.slice()
+					.reverse()
+					.map((turn) => ({
+						turn: {
+							id: turn.id,
+							question: turn.question,
+							capabilityVersionId: turn.capabilityVersionId,
+						},
+						answer: turn.answer,
+						metadata: turn.runtimeMetadata as TestTurn["metadata"],
+						feedbackAllowed: detail.writable && !turn.interventionId,
+						feedbackMode:
+							turn.runtimeMetadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
+								? ("revise" as const)
+								: ("supplement" as const),
+					})),
+			);
+			completeOperation();
+		} catch (error) {
+			failOperation(error);
+			throw error;
+		}
 	}, []);
 	const refreshSessions = useCallback(async () => {
 		const result = await orpcClient.xiaofei.listTestSessions({ limit: 20 });
-		const items = result.items as TestSessionSummary[];
+		const items = (result.items as unknown[]).map(normalizeTestSessionSummary);
 		setSessions(items);
 		return { ...result, items };
 	}, []);
+	const refreshSessionHistory = useCallback(async () => {
+		beginOperation("正在读取 Test CA 历史…");
+		try {
+			const result = await refreshSessions();
+			completeOperation();
+			return result;
+		} catch (error) {
+			failOperation(error);
+			throw error;
+		}
+	}, [refreshSessions]);
 	useEffect(() => {
-		void refreshSessions()
+		void refreshSessionHistory()
 			.then((result) => {
 				const current = result.items.find((session) => session.writable);
 				if (current) return loadSession(current.id);
 			})
-			.catch(() => toastError("无法读取 Test CA 历史"));
-	}, [loadSession, refreshSessions]);
+			.catch((error) => {
+				toastError("无法读取 Test CA 历史", message(error));
+			});
+	}, [loadSession, refreshSessionHistory]);
 
 	function storeSession(next: string) {
 		setTestSessionId(next);
 	}
 	async function resetSession() {
+		beginOperation("正在创建新的 Test CA 会话…");
 		setBusy(true);
 		try {
 			const next = await orpcClient.xiaofei.newTestSession();
@@ -103,8 +158,10 @@ export function KnowledgeVersioningPanel({
 			setSelectedTurnId(null);
 			setRerun(null);
 			setCorrection("");
+			completeOperation();
 			toastSuccess("已开始新的 Test CA 会话");
 		} catch (error) {
+			failOperation(error);
 			toastError("无法重置会话", message(error));
 		} finally {
 			setBusy(false);
@@ -112,6 +169,7 @@ export function KnowledgeVersioningPanel({
 	}
 	async function test() {
 		if (!question.trim() || !testSessionId || !testVersion) return;
+		beginOperation("排队 → 选择知识 → 生成候选 → Guardrail → 保存测试轮次…");
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.runVersionedTest({
@@ -120,16 +178,19 @@ export function KnowledgeVersioningPanel({
 			});
 			storeSession(result.testSessionId);
 			await refreshSessions();
-			setTurns((history) => [...history, result]);
+			setTurns((history) => [...history, toTestTurnView(result)]);
 			setQuestion("");
+			completeOperation();
 		} catch (error) {
+			failOperation(error);
 			toastError("测试失败", message(error));
 		} finally {
 			setBusy(false);
 		}
 	}
-	async function correct(turn: TestTurn) {
+	async function correct(turn: TestTurnView) {
 		if (!correction.trim()) return;
+		beginOperation("校验权限 → 保存不可变干预 → 生成新 CA → 同题复测…");
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.applyTestTurnCorrection({
@@ -144,8 +205,10 @@ export function KnowledgeVersioningPanel({
 			storeSession(next.testSessionId);
 			setTurns([]);
 			await refreshSessions();
+			completeOperation();
 			toastSuccess("已生成 Test CA 并完成同题复测；后续测试已切换为新会话");
 		} catch (error) {
+			failOperation(error);
 			toastError("修正失败", message(error));
 		} finally {
 			setBusy(false);
@@ -155,6 +218,7 @@ export function KnowledgeVersioningPanel({
 	const testVersion = overview?.binding?.testCapabilityVersion ?? null;
 	return (
 		<div className="gap-6 flex flex-col">
+			<OperationFeedback operation={operation} />
 			{section !== "test" && (
 				<VersionOverview
 					overview={overview}
@@ -164,6 +228,9 @@ export function KnowledgeVersioningPanel({
 					setBusy={setBusy}
 					refresh={refresh}
 					section={section}
+					onStart={beginOperation}
+					onComplete={completeOperation}
+					onFail={failOperation}
 				/>
 			)}
 			{section !== "prepare" && section !== "hosting" && (
@@ -189,7 +256,7 @@ export function KnowledgeVersioningPanel({
 					sessions={sessions}
 					testSessionId={testSessionId}
 					onSelectSession={loadSession}
-					onRefreshSessions={refreshSessions}
+					onRefreshSessions={refreshSessionHistory}
 				/>
 			)}
 		</div>
@@ -204,6 +271,9 @@ function VersionOverview({
 	setBusy,
 	refresh,
 	section,
+	onStart,
+	onComplete,
+	onFail,
 }: {
 	overview: Overview | null;
 	active: CapabilityVersion | null;
@@ -212,16 +282,22 @@ function VersionOverview({
 	setBusy: (busy: boolean) => void;
 	refresh: () => Promise<void>;
 	section: "prepare" | "hosting" | "all";
+	onStart: (label: string) => void;
+	onComplete: () => void;
+	onFail: (error: unknown) => void;
 }) {
 	const isPrepare = section === "prepare";
 	const testIsActive = active?.id === testVersion?.id && testVersion !== null;
 	async function act(action: () => Promise<unknown>, success: string) {
+		onStart("校验版本 → 更新托管指针/状态 → 确认生效…");
 		setBusy(true);
 		try {
 			await action();
 			await refresh();
+			onComplete();
 			toastSuccess(success);
 		} catch (error) {
+			onFail(error);
 			toastError("操作失败", message(error));
 		} finally {
 			setBusy(false);
@@ -258,7 +334,14 @@ function VersionOverview({
 					</Button>
 				)}
 				<MembershipSummary active={active} testVersion={testVersion} />
-				{!isPrepare ? <SupportAcceptance /> : null}
+				{!isPrepare ? (
+					<SupportAcceptance
+						hasActive={active !== null}
+						onStart={onStart}
+						onComplete={onComplete}
+						onFail={onFail}
+					/>
+				) : null}
 				{!isPrepare && (
 					<Button
 						variant="outline"
@@ -278,24 +361,38 @@ function VersionOverview({
 	);
 }
 
-function SupportAcceptance() {
+function SupportAcceptance({
+	hasActive,
+	onStart,
+	onComplete,
+	onFail,
+}: {
+	hasActive: boolean;
+	onStart: (label: string) => void;
+	onComplete: () => void;
+	onFail: (error: unknown) => void;
+}) {
 	const [text, setText] = useState("请用这份知识回答一个客户问题。");
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [externalId] = useState(() => globalThis.crypto.randomUUID());
 	async function create() {
-		if (!text.trim()) return;
+		if (!hasActive || !text.trim() || conversationId) return;
+		onStart("校验 Active CA → 创建合成会话 → 投影首条消息…");
 		setBusy(true);
 		try {
 			const result = await orpcClient.xiaofei.sendSyntheticSupportMessage({
-				externalId: globalThis.crypto.randomUUID(),
+				externalId,
 				text: text.trim(),
 			});
 			setConversationId(result.conversationId);
+			onComplete();
 			toastSuccess(
 				"已创建 Support 验收会话",
 				"这是当前 Organization 的合成客户消息，不会被标记为 Email。",
 			);
 		} catch (error) {
+			onFail(error);
 			toastError("无法创建 Support 验收会话", message(error));
 		} finally {
 			setBusy(false);
@@ -309,6 +406,11 @@ function SupportAcceptance() {
 					可继续 Test CA 沙盒，或创建当前 Organization 的 Support/Inbox 验收会话。
 				</p>
 			</div>
+			{!hasActive ? (
+				<output className="text-sm block text-muted-foreground">
+					请先验收当前 Test CA 为 Active，才能创建 Support 验收会话。
+				</output>
+			) : null}
 			<Button variant="outline" className="w-fit" asChild>
 				<Link href="/knowledge?stage=test">继续 Test CA 沙盒</Link>
 			</Button>
@@ -317,8 +419,11 @@ function SupportAcceptance() {
 				<Textarea value={text} onChange={(event) => setText(event.target.value)} disabled={busy} />
 			</Label>
 			<div className="gap-2 flex flex-wrap">
-				<Button disabled={busy || !text.trim()} onClick={() => void create()}>
-					{busy ? "正在创建验收会话…" : "创建 Support 验收会话"}
+				<Button
+					disabled={busy || !hasActive || !text.trim() || conversationId !== null}
+					onClick={() => void create()}
+				>
+					{busy ? "正在创建验收会话…" : conversationId ? "验收会话已创建" : "创建 Support 验收会话"}
 				</Button>
 				{conversationId ? (
 					<Button variant="outline" asChild>
@@ -328,6 +433,35 @@ function SupportAcceptance() {
 					</Button>
 				) : null}
 			</div>
+			{busy ? (
+				<output className="text-sm block text-muted-foreground" aria-live="polite">
+					正在校验 Active CA、创建合成会话并准备 Inbox 定位…
+				</output>
+			) : null}
+		</div>
+	);
+}
+
+function OperationFeedback({
+	operation,
+}: {
+	operation: { label: string; error: string | null; startedAt: number | null };
+}) {
+	const elapsedSeconds = useElapsedSeconds(operation.startedAt);
+	if (!operation.label && !operation.error) return null;
+	return (
+		<div className="gap-2 p-3 text-sm rounded-lg border bg-muted/30" aria-live="polite">
+			{operation.label ? <p>{operation.label}</p> : null}
+			{operation.label && elapsedSeconds >= 2 ? (
+				<p className="text-muted-foreground">
+					已等待 {elapsedSeconds} 秒；服务端仍在处理当前阶段，完成后会保留确定结果。
+				</p>
+			) : null}
+			{operation.error ? (
+				<p className="text-destructive" role="alert">
+					操作失败：{operation.error} 可保留当前输入后重试。
+				</p>
+			) : null}
 		</div>
 	);
 }
@@ -354,7 +488,7 @@ function TestConversation({
 }: {
 	question: string;
 	setQuestion: (value: string) => void;
-	turns: TestTurn[];
+	turns: TestTurnView[];
 	selectedTurnId: string | null;
 	setSelectedTurnId: (id: string | null) => void;
 	correction: string;
@@ -364,7 +498,7 @@ function TestConversation({
 	ready: boolean;
 	hasTestVersion: boolean;
 	onTest: () => Promise<void>;
-	onCorrect: (turn: TestTurn) => Promise<void>;
+	onCorrect: (turn: TestTurnView) => Promise<void>;
 	onReset: () => Promise<void>;
 	sessions: TestSessionSummary[];
 	testSessionId: string | null;
@@ -407,7 +541,8 @@ function TestConversation({
 							</option>
 							{sessions.map((session) => (
 								<option key={session.id} value={session.id}>
-									{session.writable ? "可继续" : "旧 CA（只读）"} · {session.turnCount} 轮
+									{session.writable ? "可继续" : "旧 CA（只读）"} · {session.turnCount} 轮 ·{" "}
+									{session.firstQuestion ?? "无首题"} · {formatSessionTime(session.latestAt)}
 								</option>
 							))}
 						</select>
@@ -437,7 +572,11 @@ function TestConversation({
 						<Button disabled={busy || !ready || !question.trim()} onClick={() => void onTest()}>
 							发送到 Test CA
 						</Button>
-						{!ready ? <p className="text-sm text-muted-foreground">正在恢复测试会话…</p> : null}
+						{!ready ? (
+							<output className="text-sm block text-muted-foreground">
+								正在恢复可写测试会话；若仅有历史 CA，请点击“重置测试会话”新建当前会话。
+							</output>
+						) : null}
 					</>
 				)}
 				{turns.map((turn, index) => (
@@ -645,6 +784,68 @@ function Evidence({
 			</p>
 		</details>
 	);
+}
+
+function toTestTurnView(result: TestTurn): TestTurnView {
+	return {
+		turn: {
+			id: result.turn.id,
+			question: result.turn.question,
+			capabilityVersionId: result.turn.capabilityVersionId,
+		},
+		answer: result.answer,
+		metadata: result.metadata,
+		feedbackAllowed: result.feedbackAllowed,
+		feedbackMode: result.feedbackMode,
+	};
+}
+
+function normalizeTestSessionSummary(value: unknown): TestSessionSummary {
+	if (!value || typeof value !== "object") throw new Error("会话历史格式无效");
+	const row = value as Record<string, unknown>;
+	if (
+		typeof row.id !== "string" ||
+		typeof row.writable !== "boolean" ||
+		typeof row.capabilityVersionId !== "string"
+	)
+		throw new Error("会话历史格式无效");
+	return {
+		id: row.id,
+		turnCount: typeof row.turnCount === "number" ? row.turnCount : Number(row.turnCount ?? 0),
+		writable: row.writable,
+		firstQuestion: typeof row.firstQuestion === "string" ? row.firstQuestion : null,
+		latestAt: typeof row.latestAt === "string" ? row.latestAt : null,
+		capabilityVersionId: row.capabilityVersionId,
+		beforeInterventionCount:
+			typeof row.beforeInterventionCount === "number" ? row.beforeInterventionCount : 0,
+		afterInterventionCount:
+			typeof row.afterInterventionCount === "number" ? row.afterInterventionCount : 0,
+		isCurrent: row.isCurrent === true,
+	};
+}
+
+function formatSessionTime(value: string | null) {
+	if (!value) return "刚刚";
+	const date = new Date(value);
+	return Number.isNaN(date.getTime())
+		? "时间未知"
+		: new Intl.DateTimeFormat("zh-CN", {
+				month: "numeric",
+				day: "numeric",
+				hour: "2-digit",
+				minute: "2-digit",
+			}).format(date);
+}
+
+function useElapsedSeconds(startedAt: number | null) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (startedAt === null) return;
+		setNow(Date.now());
+		const timer = globalThis.setInterval(() => setNow(Date.now()), 1_000);
+		return () => globalThis.clearInterval(timer);
+	}, [startedAt]);
+	return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1_000));
 }
 
 export function symmetricDifferenceSize(left: Set<string>, right: Set<string>) {

@@ -46,9 +46,22 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("getTestSession");
 		expect(panel).toContain("旧 CA（只读）");
 		expect(panel).toContain("testSessionId,");
-		expect(panel).toContain("setTurns((history) => [...history, result])");
+		expect(panel).toContain("setTurns((history) => [...history, toTestTurnView(result)])");
 		expect(panel).toContain("orpcClient.xiaofei.newTestSession()");
 		expect(panel).toContain("后续测试已切换为新会话");
+	});
+
+	it("shows semantic pending and retry feedback for every long action", () => {
+		for (const value of [
+			"排队 → 选择知识 → 生成候选 → Guardrail → 保存测试轮次",
+			"校验权限 → 保存不可变干预 → 生成新 CA → 同题复测",
+			"校验版本 → 更新托管指针/状态 → 确认生效",
+			"操作失败：",
+			"可保留当前输入后重试",
+			"已等待",
+			"服务端仍在处理当前阶段",
+		])
+			expect(panel).toContain(value);
 	});
 
 	it("offers both Test CA and Organization-scoped Support acceptance", () => {

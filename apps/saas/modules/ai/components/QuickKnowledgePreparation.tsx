@@ -27,6 +27,10 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 	const [busy, setBusy] = useState(false);
 	const [prepared, setPrepared] = useState(false);
 	const [preparation, setPreparation] = useState<Preparation | null>(null);
+	const [phase, setPhase] = useState<"idle" | "uploading" | "preparing" | "failed">("idle");
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [startedAt, setStartedAt] = useState<number | null>(null);
+	const elapsedSeconds = useElapsedSeconds(startedAt);
 	const refresh = useCallback(async (sourceId?: string) => {
 		const result = await orpcClient.xiaofei.listKnowledgeEntries({ limit: 50 });
 		const items = result.items as Entry[];
@@ -43,6 +47,9 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return;
 		const file = input.files[0];
 		if (file.size > MAX_FILE_BYTES) return toastError("上传失败", "文件不能超过 4 MB。");
+		setPhase("uploading");
+		setErrorMessage(null);
+		setStartedAt(Date.now());
 		setBusy(true);
 		try {
 			const created = await orpcClient.xiaofei.createKnowledgeDocument({
@@ -54,9 +61,14 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 			setDocument(created);
 			setPrepared(false);
 			setPreparation(null);
+			setPhase("idle");
+			setStartedAt(null);
 			event.currentTarget.reset();
 			toastSuccess("资料已解析", "已生成可用于 Test CA 的候选条目。");
 		} catch (error) {
+			setPhase("failed");
+			setErrorMessage(message(error));
+			setStartedAt(null);
 			toastError("上传失败", message(error));
 		} finally {
 			setBusy(false);
@@ -65,6 +77,9 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 
 	async function prepareTestCa() {
 		if (!document) return;
+		setPhase("preparing");
+		setErrorMessage(null);
+		setStartedAt(Date.now());
 		setBusy(true);
 		try {
 			const sourceEntries = (
@@ -90,10 +105,15 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 			});
 			setPreparation(result);
 			setPrepared(true);
+			setPhase("idle");
+			setStartedAt(null);
 			onPrepared?.();
 			await refresh(document.id);
 			toastSuccess("Test CA 已准备", "资料、KU 和服务端测试会话已就绪；Active 没有改变。");
 		} catch (error) {
+			setPhase("failed");
+			setErrorMessage(message(error));
+			setStartedAt(null);
 			toastError("无法准备 Test CA", message(error));
 		} finally {
 			setBusy(false);
@@ -110,6 +130,23 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="gap-5 flex flex-col">
+				{busy ? (
+					<div className="gap-1 text-sm text-muted-foreground" aria-live="polite">
+						<output className="block">
+							{phase === "uploading"
+								? "上传 → 校验 → 解析中，请保持页面打开…"
+								: "校验条目 → 生成/复用 KU → 发布 → 创建 Test CA → 建立会话中…"}
+						</output>
+						{elapsedSeconds >= 2 ? (
+							<p>已等待 {elapsedSeconds} 秒，完成后会显示各阶段耗时。</p>
+						) : null}
+					</div>
+				) : null}
+				{errorMessage ? (
+					<p className="text-sm text-destructive" role="alert">
+						{errorMessage} 当前资料和输入已保留，可直接重试。
+					</p>
+				) : null}
 				{!document ? (
 					<form className="gap-3 max-w-xl flex flex-col" onSubmit={upload}>
 						<Label>
@@ -128,7 +165,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 							) : (
 								<UploadIcon className="mr-2 size-4" />
 							)}
-							上传并解析
+							{busy ? "正在上传并解析…" : "上传并解析"}
 						</Button>
 					</form>
 				) : (
@@ -168,7 +205,8 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 							</div>
 						) : (
 							<Button disabled={busy || entries.length === 0} onClick={() => void prepareTestCa()}>
-								{busy && <LoaderCircleIcon className="mr-2 size-4 animate-spin" />}准备 Test CA
+								{busy && <LoaderCircleIcon className="mr-2 size-4 animate-spin" />}
+								{busy ? "正在准备 Test CA…" : "准备 Test CA"}
 							</Button>
 						)}
 						<Link
@@ -193,4 +231,15 @@ async function fileToBase64(file: File) {
 	for (let index = 0; index < bytes.length; index += 32_768)
 		binary += String.fromCharCode(...bytes.subarray(index, index + 32_768));
 	return btoa(binary);
+}
+
+function useElapsedSeconds(startedAt: number | null) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (startedAt === null) return;
+		setNow(Date.now());
+		const timer = globalThis.setInterval(() => setNow(Date.now()), 1_000);
+		return () => globalThis.clearInterval(timer);
+	}, [startedAt]);
+	return startedAt === null ? 0 : Math.max(0, Math.floor((now - startedAt) / 1_000));
 }
