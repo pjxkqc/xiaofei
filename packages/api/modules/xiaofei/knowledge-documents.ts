@@ -365,7 +365,11 @@ export async function generateKnowledgeUnitsForTenant(
  * lifecycle rather than regenerated. Each mutation is independently durable,
  * so a failed request can be retried without creating another current KU.
  */
-export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, entryIds: string[]) {
+export async function prepareKnowledgeForTenant(
+	context: XiaofeiAuthContext,
+	entryIds: string[],
+	generateDrafts: typeof generateKnowledgeUnitDrafts = generateKnowledgeUnitDrafts,
+) {
 	await requireXiaofeiOrganizationAdmin(context);
 	if (!hasUniqueKnowledgeEntryIds(entryIds))
 		throw new ORPCError("BAD_REQUEST", { message: "Knowledge entries must be unique." });
@@ -386,12 +390,7 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 	const missingEntryIds = entryIds.filter((id) => !covered.has(id));
 	const generatedStarted = Date.now();
 	const generatedResults = missingEntryIds.length
-		? await generateKnowledgeUnitsForTenant(
-				context,
-				missingEntryIds,
-				generateKnowledgeUnitDrafts,
-				true,
-			)
+		? await generateKnowledgeUnitsForTenant(context, missingEntryIds, generateDrafts, true)
 		: [];
 	const generated = generatedResults.map((result) =>
 		"knowledgeUnit" in result ? result.knowledgeUnit : result,
@@ -407,12 +406,8 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 	const candidates = [...resumable, ...generated];
 	const published: string[] = [];
 	for (const candidate of candidates) {
-		let unit = candidate;
-		if (unit.status === "draft")
-			unit = await transitionKnowledgeUnitForTenant(context, unit.id, "review");
-		if (unit.status === "review_ready")
-			unit = await transitionKnowledgeUnitForTenant(context, unit.id, "publish");
-		if (unit.status === "released" && unit.eligibility === "eligible") published.push(unit.id);
+		const unit = await advancePreparationKnowledgeUnit(context, candidate);
+		published.push(unit.id);
 	}
 	const lifecycleElapsedMs = Date.now() - lifecycleStarted;
 	const testCaStarted = Date.now();
@@ -462,6 +457,45 @@ export async function prepareKnowledgeForTenant(context: XiaofeiAuthContext, ent
 		testCapabilityVersionId: testCa.versionId,
 		testSessionId,
 	};
+}
+
+const MAX_PREPARATION_LIFECYCLE_ATTEMPTS = 4;
+
+async function advancePreparationKnowledgeUnit(
+	context: XiaofeiAuthContext,
+	candidate: { id: string; entryId: string },
+) {
+	const { workspace } = await getKnowledgeWorkspace(context);
+	for (let attempt = 0; attempt < MAX_PREPARATION_LIFECYCLE_ATTEMPTS; attempt += 1) {
+		const unit = await requireKnowledgeUnit(workspace.id, candidate.id);
+		if (unit.entryId !== candidate.entryId)
+			throw new ORPCError("BAD_REQUEST", {
+				message: "Knowledge unit lineage changed during preparation.",
+			});
+		if (unit.eligibility === "stale")
+			throw new ORPCError("BAD_REQUEST", {
+				message: "This knowledge unit is stale and must be regenerated.",
+			});
+		if (unit.status === "released" && unit.eligibility === "eligible") return unit;
+		if (unit.status !== "draft" && unit.status !== "review_ready")
+			throw new ORPCError("BAD_REQUEST", {
+				message: `Cannot prepare a knowledge unit in ${unit.status}.`,
+			});
+
+		const action = unit.status === "draft" ? "review" : "publish";
+		const observedStatus = unit.status;
+		const observedEligibility = unit.eligibility;
+		try {
+			await transitionKnowledgeUnitForTenant(context, unit.id, action);
+		} catch (error) {
+			const refreshed = await requireKnowledgeUnit(workspace.id, candidate.id);
+			if (refreshed.status === observedStatus && refreshed.eligibility === observedEligibility)
+				throw error;
+		}
+	}
+	throw new ORPCError("BAD_REQUEST", {
+		message: "Knowledge unit lifecycle did not converge during preparation.",
+	});
 }
 
 export function hasUniqueKnowledgeEntryIds(entryIds: string[]) {

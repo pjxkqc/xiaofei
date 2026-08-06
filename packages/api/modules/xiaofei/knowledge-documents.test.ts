@@ -6,6 +6,8 @@ vi.mock("@repo/database", () => ({
 	createXiaofeiKnowledgeDocument: vi.fn(),
 	createXiaofeiKnowledgeDocumentWithEntries: vi.fn(),
 	createXiaofeiKnowledgeUnit: vi.fn(),
+	createOrReturnXiaofeiKnowledgeUnit: vi.fn(),
+	createXiaofeiTestSession: vi.fn(),
 	deleteXiaofeiKnowledgeDocument: vi.fn(),
 	deleteXiaofeiKnowledgeEntry: vi.fn(),
 	deleteXiaofeiKnowledgeUnit: vi.fn(),
@@ -47,10 +49,15 @@ vi.mock("@repo/database", () => ({
 vi.mock("./service", () => ({
 	clearKnowledgeWorkspaceAdmission: vi.fn(),
 	getOrCreateXiaofeiWorkspaceByTenantKey: vi.fn(),
+	getXiaofeiOrganizationId: vi.fn(),
 	getXiaofeiTenantKey: vi.fn(),
 	requireXiaofeiOrganizationAdmin: vi.fn(),
 	PUBLIC_SUPPORT_TENANT_KEY: "channel:public-support",
 	synchronizeKnowledgeWorkspaceSnapshot: vi.fn(),
+}));
+
+vi.mock("./versioning-service", () => ({
+	initializeXiaofeiTestHostingForTenant: vi.fn(),
 }));
 
 vi.mock("./knowledge-content-parser", () => ({
@@ -63,6 +70,8 @@ vi.mock("./knowledge-content-parser", () => ({
 import { generateKnowledgeUnitDrafts } from "@repo/ai";
 import {
 	createXiaofeiKnowledgeUnit,
+	createOrReturnXiaofeiKnowledgeUnit,
+	createXiaofeiTestSession,
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeDocumentWithEntries,
 	deleteXiaofeiKnowledgeDocument,
@@ -87,6 +96,7 @@ import {
 	createManualKnowledgeEntries,
 	deleteKnowledgeDocumentForTenant,
 	generateKnowledgeUnitsForTenant,
+	prepareKnowledgeForTenant,
 	getKnowledgeDocument,
 	getKnowledgeTenantKey,
 	listKnowledgeDocuments,
@@ -98,10 +108,12 @@ import {
 } from "./knowledge-documents";
 import {
 	getOrCreateXiaofeiWorkspaceByTenantKey,
+	getXiaofeiOrganizationId,
 	getXiaofeiTenantKey,
 	requireXiaofeiOrganizationAdmin,
 	synchronizeKnowledgeWorkspaceSnapshot,
 } from "./service";
+import { initializeXiaofeiTestHostingForTenant } from "./versioning-service";
 
 const USER_CONTEXT = {
 	session: { activeOrganizationId: null },
@@ -187,6 +199,7 @@ describe("knowledge document application boundary", () => {
 				}) as never,
 		);
 		vi.mocked(getXiaofeiTenantKey).mockResolvedValue("organization:org-a");
+		vi.mocked(getXiaofeiOrganizationId).mockResolvedValue("org-a");
 		vi.mocked(requireXiaofeiOrganizationAdmin).mockResolvedValue("organization:org-a");
 		vi.mocked(createXiaofeiKnowledgeDocument).mockReturnValue({
 			id: "document-1",
@@ -758,6 +771,157 @@ describe("knowledge document application boundary", () => {
 				}),
 			}),
 		);
+	});
+
+	it("prepares once, then retries through the real service without another current KU", async () => {
+		let current: Record<string, unknown> | undefined;
+		const sessions: Array<{ capabilityVersionId: string }> = [];
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(currentEntry() as never);
+		vi.mocked(listXiaofeiKnowledgeUnits).mockImplementation(
+			(async () => (current ? [current] : []) as never) as never,
+		);
+		vi.mocked(createOrReturnXiaofeiKnowledgeUnit).mockImplementation((async (
+			input: Parameters<typeof createOrReturnXiaofeiKnowledgeUnit>[0],
+		) => {
+			if (current) return { knowledgeUnit: current, created: false } as never;
+			current = {
+				id: "unit-1",
+				entryId: input.entryId,
+				status: "draft",
+				eligibility: "ineligible",
+				content: input.content,
+			};
+			return { knowledgeUnit: current, created: true } as never;
+		}) as never);
+		vi.mocked(getXiaofeiKnowledgeUnit).mockImplementation((async () => current as never) as never);
+		vi.mocked(updateXiaofeiKnowledgeUnit).mockImplementation((async (
+			_workspaceId: string,
+			_id: string,
+			update: Parameters<typeof updateXiaofeiKnowledgeUnit>[2],
+		) => {
+			if (!current) throw new Error("Missing current knowledge unit.");
+			Object.assign(current, update);
+			return current as never;
+		}) as never);
+		vi.mocked(initializeXiaofeiTestHostingForTenant).mockResolvedValue({ versionId: "test-ca-1" });
+		vi.mocked(createXiaofeiTestSession).mockImplementation(async (_organizationId, input) => {
+			sessions.push(input);
+			return { id: input.id } as never;
+		});
+		const draftGenerator = (input: Parameters<typeof generateKnowledgeUnitDrafts>[0]) =>
+			generateKnowledgeUnitDrafts(input, async () => [modelCandidate(input.entries[0]!.id)]);
+
+		const first = await prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1"], draftGenerator);
+		expect(sessions).toHaveLength(1);
+		const retry = await prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1"], draftGenerator);
+
+		expect(first.stages.map((stage) => [stage.name, stage.count])).toEqual(
+			expect.arrayContaining([
+				["generated", 1],
+				["reused", 0],
+				["published", 1],
+			]),
+		);
+		expect(retry.stages.map((stage) => [stage.name, stage.count])).toEqual(
+			expect.arrayContaining([
+				["generated", 0],
+				["reused", 1],
+				["published", 1],
+			]),
+		);
+		expect(createOrReturnXiaofeiKnowledgeUnit).toHaveBeenCalledTimes(1);
+		expect(current).toMatchObject({ status: "released", eligibility: "eligible" });
+		expect(vi.mocked(createOrReturnXiaofeiKnowledgeUnit).mock.calls[0]?.[0].content).toMatchObject({
+			lineage: { entryId: "entry-1" },
+		});
+		expect(sessions).toHaveLength(2);
+		expect(sessions[0]).toMatchObject({ capabilityVersionId: "test-ca-1" });
+	});
+
+	it("rejects duplicate preparation entry IDs before any entry, KU, or session mutation", async () => {
+		const draftGenerator = vi.fn();
+
+		await expect(
+			prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1", "entry-1"], draftGenerator),
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+		expect(getXiaofeiKnowledgeEntry).not.toHaveBeenCalled();
+		expect(draftGenerator).not.toHaveBeenCalled();
+		expect(createOrReturnXiaofeiKnowledgeUnit).not.toHaveBeenCalled();
+		expect(createXiaofeiTestSession).not.toHaveBeenCalled();
+	});
+
+	it("converges two concurrent preparations after both observe no current KU", async () => {
+		let current: Record<string, unknown> | undefined;
+		let listCalls = 0;
+		let releaseList: (() => void) | undefined;
+		const listBarrier = new Promise<void>((resolve) => (releaseList = resolve));
+		let reviewCalls = 0;
+		let releaseReview: (() => void) | undefined;
+		const reviewBarrier = new Promise<void>((resolve) => (releaseReview = resolve));
+		let publishCalls = 0;
+		let releasePublish: (() => void) | undefined;
+		const publishBarrier = new Promise<void>((resolve) => (releasePublish = resolve));
+		vi.mocked(getXiaofeiKnowledgeEntry).mockResolvedValue(currentEntry() as never);
+		vi.mocked(listXiaofeiKnowledgeUnits).mockImplementation((async () => {
+			listCalls += 1;
+			if (listCalls === 2) releaseList?.();
+			await listBarrier;
+			return [] as never;
+		}) as never);
+		vi.mocked(createOrReturnXiaofeiKnowledgeUnit).mockImplementation((async (
+			input: Parameters<typeof createOrReturnXiaofeiKnowledgeUnit>[0],
+		) => {
+			if (current) return { knowledgeUnit: current, created: false } as never;
+			current = {
+				id: "unit-1",
+				entryId: input.entryId,
+				status: "draft",
+				eligibility: "ineligible",
+				content: input.content,
+			};
+			return { knowledgeUnit: current, created: true } as never;
+		}) as never);
+		vi.mocked(getXiaofeiKnowledgeUnit).mockImplementation((async () => current as never) as never);
+		vi.mocked(updateXiaofeiKnowledgeUnit).mockImplementation((async (
+			_workspaceId: string,
+			_id: string,
+			update: Parameters<typeof updateXiaofeiKnowledgeUnit>[2],
+		) => {
+			if (!current) throw new Error("Missing current knowledge unit.");
+			if (update.status === "review_ready") {
+				reviewCalls += 1;
+				if (reviewCalls === 2) releaseReview?.();
+				await reviewBarrier;
+				if (current.status !== "draft")
+					throw new ORPCError("BAD_REQUEST", { message: "Concurrent review already applied." });
+			}
+			if (update.status === "released") {
+				publishCalls += 1;
+				if (publishCalls === 2) releasePublish?.();
+				await publishBarrier;
+				if (current.status !== "review_ready")
+					throw new ORPCError("BAD_REQUEST", { message: "Concurrent publish already applied." });
+			}
+			Object.assign(current, update);
+			return current as never;
+		}) as never);
+		vi.mocked(initializeXiaofeiTestHostingForTenant).mockResolvedValue({ versionId: "test-ca-1" });
+		vi.mocked(createXiaofeiTestSession).mockResolvedValue({ id: "session-1" } as never);
+		const draftGenerator = (input: Parameters<typeof generateKnowledgeUnitDrafts>[0]) =>
+			generateKnowledgeUnitDrafts(input, async () => [modelCandidate(input.entries[0]!.id)]);
+
+		const results = await Promise.all([
+			prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1"], draftGenerator),
+			prepareKnowledgeForTenant(USER_CONTEXT, ["entry-1"], draftGenerator),
+		]);
+
+		expect(listCalls).toBeGreaterThanOrEqual(2);
+		expect(createOrReturnXiaofeiKnowledgeUnit).toHaveBeenCalledTimes(2);
+		expect(
+			results.map((result) => result.stages[0]!.count).sort((left, right) => left - right),
+		).toEqual([0, 1]);
+		expect(current).toMatchObject({ status: "released", eligibility: "eligible" });
 	});
 
 	it.each([
