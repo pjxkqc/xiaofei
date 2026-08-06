@@ -157,8 +157,48 @@ export const getXiaofeiTestSessionProcedure = supportProcedure
 			input.testSessionId,
 		);
 		if (!detail) throw new ORPCError("NOT_FOUND", { message: "Test session not found." });
-		return detail;
+		return {
+			...detail,
+			interventionPairs: projectInterventionPairs(detail.interventionPairs),
+		};
 	});
+
+/**
+ * Keep persistence-only response payloads behind the API boundary. The UI needs
+ * the immutable TestTurn facts and runtime evidence, never provider/persistence
+ * response JSON that may contain fields outside the browser contract.
+ */
+export function projectInterventionPairs(
+	pairs: Array<{
+		interventionId: string;
+		isComplete: boolean;
+		correction: string;
+		beforeResponse: unknown;
+		afterResponse: unknown;
+		before: {
+			id: string;
+			testSessionId: string;
+			capabilityVersionId: string;
+			answer: string;
+			runtimeMetadata: unknown;
+		};
+		after: {
+			id: string;
+			testSessionId: string;
+			capabilityVersionId: string;
+			answer: string;
+			runtimeMetadata: unknown;
+		} | null;
+	}>,
+) {
+	return pairs.map(({ interventionId, isComplete, correction, before, after }) => ({
+		interventionId,
+		isComplete,
+		correction,
+		before,
+		after: isComplete ? after : null,
+	}));
+}
 
 export const newXiaofeiTestSession = resetXiaofeiTestSession;
 

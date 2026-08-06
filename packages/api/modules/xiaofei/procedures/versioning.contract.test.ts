@@ -247,6 +247,107 @@ describe("Xiaofei Test CA persistent-session procedures", () => {
 		).rejects.toMatchObject({ code: "FORBIDDEN" });
 		expect(mocks.applyFeedback).not.toHaveBeenCalled();
 	});
+
+	it("projects intervention pairs once into a browser-safe bounded DTO", async () => {
+		const detail = {
+			id: "session-a",
+			capabilityVersionId: TEST_VERSION,
+			firstQuestion: "Original question",
+			latestAt: new Date("2026-08-06T00:00:00.000Z"),
+			turnCount: 1,
+			beforeInterventionCount: 1,
+			afterInterventionCount: 1,
+			isCurrent: true,
+			writable: true,
+			turns: [],
+			interventionPairs: [
+				{
+					interventionId: "intervention-complete",
+					isComplete: true,
+					correction: "Use the corrected policy.",
+					beforeResponse: { privateSentinel: "raw-before" },
+					afterResponse: { privateSentinel: "raw-after" },
+					before: {
+						id: "before-turn",
+						testSessionId: "old-session",
+						capabilityVersionId: "old-ca",
+						answer: "Before answer",
+						runtimeMetadata: { traces: [{ type: "before-trace" }] },
+					},
+					after: {
+						id: "after-turn",
+						testSessionId: "new-session",
+						capabilityVersionId: "new-ca",
+						answer: "After answer",
+						runtimeMetadata: { traces: [{ type: "after-trace" }] },
+					},
+				},
+				{
+					interventionId: "intervention-incomplete",
+					isComplete: false,
+					correction: "Pending rerun",
+					beforeResponse: { privateSentinel: "raw-before-2" },
+					afterResponse: null,
+					before: {
+						id: "before-turn-2",
+						testSessionId: "old-session",
+						capabilityVersionId: "old-ca",
+						answer: "Before answer 2",
+						runtimeMetadata: { traces: [] },
+					},
+					after: null,
+				},
+			],
+		};
+		mocks.getDetail.mockResolvedValue(detail);
+
+		const result = await call(
+			getXiaofeiTestSessionProcedure,
+			{ testSessionId: "session-a" },
+			request(ORGANIZATION_A),
+		);
+
+		expect(mocks.getDetail).toHaveBeenCalledTimes(1);
+		expect(mocks.getDetail).toHaveBeenCalledWith(ORGANIZATION_A, "session-a");
+		expect(result.interventionPairs).toEqual([
+			{
+				interventionId: "intervention-complete",
+				isComplete: true,
+				correction: "Use the corrected policy.",
+				before: expect.objectContaining({
+					id: "before-turn",
+					testSessionId: "old-session",
+					capabilityVersionId: "old-ca",
+					answer: "Before answer",
+				}),
+				after: expect.objectContaining({
+					id: "after-turn",
+					testSessionId: "new-session",
+					capabilityVersionId: "new-ca",
+					answer: "After answer",
+				}),
+			},
+			{
+				interventionId: "intervention-incomplete",
+				isComplete: false,
+				correction: "Pending rerun",
+				before: expect.objectContaining({ id: "before-turn-2" }),
+				after: null,
+			},
+		]);
+		expect(JSON.stringify(result)).not.toContain("privateSentinel");
+		expect(result.interventionPairs[0]).not.toHaveProperty("beforeResponse");
+		expect(result.interventionPairs[0]).not.toHaveProperty("afterResponse");
+	});
+
+	it("treats a session ID from another Organization as not found", async () => {
+		mocks.getDetail.mockResolvedValue(null);
+		await expect(
+			call(getXiaofeiTestSessionProcedure, { testSessionId: "session-a" }, request(ORGANIZATION_B)),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
+		expect(mocks.getDetail).toHaveBeenCalledTimes(1);
+		expect(mocks.getDetail).toHaveBeenCalledWith(ORGANIZATION_B, "session-a");
+	});
 });
 
 function request(organizationId: string) {
