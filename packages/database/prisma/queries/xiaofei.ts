@@ -1222,9 +1222,24 @@ export function updateXiaofeiSupportConversation(
 		lastMessageAt?: Date;
 	},
 ) {
-	return db.xiaofeiConversation.update({
-		where: { workspaceId_externalId: { workspaceId, externalId } },
-		data,
+	return db.$transaction(async (transaction) => {
+		// Keep the CAS columns as a durable projection of the validated state. Every
+		// Inbox mutation also advances revision, invalidating any in-flight AI lease.
+		const current = await transaction.xiaofeiConversation.findUniqueOrThrow({
+			where: { workspaceId_externalId: { workspaceId, externalId } },
+			select: { state: true },
+		});
+		const nextState = data.state === undefined ? current.state : data.state;
+		const parsed = ConversationStateSchema.parse(nextState);
+		return transaction.xiaofeiConversation.update({
+			where: { workspaceId_externalId: { workspaceId, externalId } },
+			data: {
+				...data,
+				ownerType: parsed.ownerType,
+				ownerEpoch: parsed.ownerEpoch,
+				revision: { increment: 1 },
+			},
+		});
 	});
 }
 
@@ -2619,6 +2634,12 @@ async function createXiaofeiTestTurnInTransaction(
 		throw new XiaofeiTestSessionConflictError(organizationId, input.testSessionId);
 	if (previousTurn && previousTurn.capabilityVersionId !== input.capabilityVersionId)
 		throw new XiaofeiTestSessionCapabilityConflictError(organizationId, input.testSessionId);
+	const session = await transaction.xiaofeiTestSession.findUnique({
+		where: { organizationId_id: { organizationId, id: input.testSessionId } },
+		select: { capabilityVersionId: true },
+	});
+	if (session && session.capabilityVersionId !== input.capabilityVersionId)
+		throw new XiaofeiTestSessionCapabilityConflictError(organizationId, input.testSessionId);
 	const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
 		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
 		include: {
@@ -2790,10 +2811,14 @@ export async function getXiaofeiTestSessionDetail(
 	organizationId: string,
 	testSessionId: string,
 ): Promise<XiaofeiTestSessionDetailDto | null> {
-	const [binding, turns, first, latest, turnCount, interventionCounts] = await Promise.all([
+	const [binding, session, turns, first, latest, turnCount, interventionCounts] = await Promise.all([
 		db.xiaofeiCapabilityBinding.findUnique({
 			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
 			select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
+		}),
+		db.xiaofeiTestSession?.findUnique({
+			where: { organizationId_id: { organizationId, id: testSessionId } },
+			select: { capabilityVersionId: true, createdAt: true },
 		}),
 		db.xiaofeiTestTurn.findMany({
 			where: { organizationId, testSessionId },
@@ -2835,13 +2860,14 @@ export async function getXiaofeiTestSessionDetail(
 			WHERE t."organizationId" = ${organizationId} AND t."testSessionId" = ${testSessionId}
 		`,
 	]);
-	if (!turns.length || !first || !latest) return null;
-	const isCurrent = latest.capabilityVersionId === binding?.testCapabilityVersionId;
+	if (!session && (!turns.length || !first || !latest)) return null;
+	const capabilityVersionId = session?.capabilityVersionId ?? latest!.capabilityVersionId;
+	const isCurrent = capabilityVersionId === binding?.testCapabilityVersionId;
 	return {
 		id: testSessionId,
-		capabilityVersionId: latest.capabilityVersionId,
-		firstQuestion: first.question,
-		latestAt: latest.completedAt,
+		capabilityVersionId,
+		firstQuestion: first?.question ?? "",
+		latestAt: latest?.completedAt ?? session!.createdAt,
 		turnCount,
 		beforeInterventionCount: Number(interventionCounts[0]?.beforeCount ?? 0),
 		afterInterventionCount: Number(interventionCounts[0]?.afterCount ?? 0),
