@@ -714,6 +714,24 @@ export const RuntimeMetadataSchema = z.object({
 		})
 		.nullable()
 		.default(null),
+	knowledgeEvidenceSet: z
+		.array(
+			z.object({
+				logicalKnowledgeUnitId: z.string().min(1),
+				knowledgeUnitRevisionId: z.string().min(1),
+				capabilityVersionId: z.string().min(1),
+				capabilityKey: CapabilityKeySchema,
+				knowledgeUnitOrigin: KnowledgeUnitOriginSchema,
+			}),
+		)
+		.max(2)
+		.default([]),
+	knowledgeRecall: z
+		.object({
+			candidateCount: z.number().int().nonnegative(),
+			aggregationMs: z.number().nonnegative(),
+		})
+		.default({ candidateCount: 0, aggregationMs: 0 }),
 	nextAction: NextActionSchema,
 	riskLevel: RiskLevelSchema,
 	ownerType: OwnerTypeSchema,

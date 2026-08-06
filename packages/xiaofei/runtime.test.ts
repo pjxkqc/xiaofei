@@ -8,6 +8,7 @@ import {
 	createDefaultWorkspaceSnapshot,
 	createKnowledgeUnitRevision,
 	finalizeTurn,
+	prepareEvalTurn,
 	prepareTurn,
 	runP0EvalSuite,
 	type ReplyGenerator,
@@ -19,6 +20,7 @@ const now = () => NOW;
 async function setup() {
 	const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
 	snapshot.capabilityPlan.reviewed = true;
+	refreshExactActiveCa(snapshot);
 	snapshot.evalSuite = await runP0EvalSuite(snapshot, now);
 	const state = createConversationState({
 		id: "conversation-1",
@@ -30,34 +32,153 @@ async function setup() {
 	return { snapshot, state, knowledgeWorkspaceBinding: binding(snapshot, state.id) };
 }
 
+function refreshExactActiveCa(
+	snapshot: ReturnType<typeof createDefaultWorkspaceSnapshot>,
+	suffix = "base",
+) {
+	const callableIds = new Set(snapshot.capabilityPlan.knowledgeUnitIds);
+	const revisions = snapshot.knowledgeUnits
+		.filter((unit) => callableIds.has(unit.id))
+		.map((knowledgeUnit, index) => {
+			const merchant = Boolean(knowledgeUnit.lineage?.sourceId);
+			return createKnowledgeUnitRevision({
+				id: `test-${suffix}-revision-${String(index + 1).padStart(3, "0")}`,
+				logicalKnowledgeUnitId: `${knowledgeUnit.id}-${suffix}`,
+				organizationId: merchant ? "tenant-1" : null,
+				revision: 1,
+				origin: merchant ? "merchant" : "platform",
+				knowledgeUnit,
+				createdAt: NOW,
+			});
+		});
+	const manifest = createCapabilityVersionManifest({
+		id: `test-${suffix}-active-ca`,
+		organizationId: "tenant-1",
+		capabilityKey: "xiaofei-hosting",
+		status: "active",
+		knowledgeUnitRevisionIds: revisions.map((revision) => revision.id),
+		createdAt: NOW,
+	});
+	snapshot.knowledgeVersioning = {
+		knowledgeUnitRevisions: revisions,
+		capabilityVersionManifests: [manifest],
+		activeCapabilityVersionId: manifest.id,
+	};
+	snapshot.evalSuite = {
+		...snapshot.evalSuite,
+		status: "passed",
+		capabilityPlanVersion: snapshot.capabilityPlan.version,
+	};
+	return { revisions, manifest };
+}
+
+function installCompactMerchantFixture(
+	snapshot: ReturnType<typeof createDefaultWorkspaceSnapshot>,
+) {
+	const base = snapshot.knowledgeUnits[0]!;
+	const merchantUnit = (
+		id: string,
+		title: string,
+		scenarioKeywords: string[],
+		standardReplyPolicy: string,
+	) => ({
+		...base,
+		id,
+		title,
+		scenarioKeywords,
+		applicableScenarios: [],
+		requiredSlots: [],
+		standardReplyPolicy,
+		sourceSection: `商户资料：${title}`,
+		lineage: {
+			workspaceId: "tenant-1",
+			sourceId: "compact-merchant-source",
+			sourceContentHash: "compact-merchant-m1-m7",
+			sourceVersion: 1,
+			entryId: id,
+			entryVersion: 1,
+		},
+	});
+	const units = [
+		merchantUnit(
+			"merchant-m1-mini",
+			"AirCare Mini 产品事实",
+			["Mini", "价格", "20㎡", "适合多大面积", "2.4 GHz"],
+			"AirCare Mini 售价 ¥699，建议 20㎡以内，支持 2.4 GHz Wi-Fi。",
+		),
+		merchantUnit(
+			"merchant-m2-pro",
+			"AirCare Pro 产品事实",
+			["Pro", "价格", "45㎡", "面积", "客厅", "适合", "5 GHz"],
+			"AirCare Pro 售价 ¥1299，建议 45㎡以内，支持 2.4/5 GHz Wi-Fi。",
+		),
+		merchantUnit(
+			"merchant-m3-fulfillment",
+			"付款与发货时效",
+			["工作日", "16:00", "付款", "发货"],
+			"工作日 16:00 前付款通常在 2 个工作日内发出；没有实时库存或到货日期事实。",
+		),
+		merchantUnit(
+			"merchant-m4-warranty",
+			"整机保修与滤芯耗材边界",
+			["整机保修", "滤芯", "滤芯耗材"],
+			"整机保修 1 年；滤芯属于耗材，不在整机保修内。",
+		),
+		merchantUnit(
+			"merchant-m5-return",
+			"退货申请资格",
+			["未拆封", "7 天", "退货申请", "人工确认"],
+			"未拆封且不影响二次销售可在签收后 7 天内申请；最终资格由人工确认。",
+		),
+		merchantUnit(
+			"merchant-m6-damage",
+			"到货破损资料收集",
+			["到货破损", "订单号", "外箱照片", "机器照片"],
+			"到货破损需收集订单号和外箱/机器照片，再转人工处理。",
+		),
+		merchantUnit(
+			"merchant-m7-maintenance",
+			"滤芯维护周期",
+			["Mini", "Pro", "滤芯", "检查", "维护"],
+			"Mini 滤芯建议 6 个月检查；Pro 建议 9 个月检查，实际依环境而定。",
+		),
+	];
+	snapshot.knowledgeUnits = units;
+	snapshot.capabilityPlan.knowledgeUnitIds = units.map((unit) => unit.id);
+	return refreshExactActiveCa(snapshot, "compact-merchant");
+}
+
+function expectedEvidenceForContext(
+	snapshot: ReturnType<typeof createDefaultWorkspaceSnapshot>,
+	knowledgeIds: string[],
+) {
+	const capabilityVersionId = snapshot.knowledgeVersioning.activeCapabilityVersionId!;
+	return knowledgeIds.map((knowledgeId) => {
+		const revision = snapshot.knowledgeVersioning.knowledgeUnitRevisions.find(
+			(candidate) => candidate.knowledgeUnit.id === knowledgeId,
+		)!;
+		return {
+			logicalKnowledgeUnitId: revision.logicalKnowledgeUnitId,
+			knowledgeUnitRevisionId: revision.id,
+			capabilityVersionId,
+			capabilityKey: "xiaofei-hosting",
+			knowledgeUnitOrigin: revision.origin,
+		};
+	});
+}
+
 describe("P0 runtime kernel", () => {
 	it("returns active KU revision and CA version evidence with a generated answer", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const message = "你们的商品价格和库存怎么确认？";
 		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
 		expect(prepared.knowledge).not.toBeNull();
-		const revision = createKnowledgeUnitRevision({
-			id: "ku-revision-price-1",
-			logicalKnowledgeUnitId: "logical-ku-price",
-			organizationId: "tenant-1",
-			revision: 1,
-			origin: "merchant",
-			knowledgeUnit: prepared.knowledge!,
-			createdAt: NOW,
-		});
-		const capabilityVersion = createCapabilityVersionManifest({
-			id: "ca-active-1",
-			organizationId: "tenant-1",
-			capabilityKey: "xiaofei-hosting",
-			status: "active",
-			knowledgeUnitRevisionIds: [revision.id],
-			createdAt: NOW,
-		});
-		snapshot.knowledgeVersioning = {
-			knowledgeUnitRevisions: [revision],
-			capabilityVersionManifests: [capabilityVersion],
-			activeCapabilityVersionId: capabilityVersion.id,
-		};
+		const revision = snapshot.knowledgeVersioning.knowledgeUnitRevisions.find(
+			(candidate) => candidate.knowledgeUnit.id === prepared.knowledge!.id,
+		)!;
+		const capabilityVersion = snapshot.knowledgeVersioning.capabilityVersionManifests.find(
+			(candidate) => candidate.id === snapshot.knowledgeVersioning.activeCapabilityVersionId,
+		)!;
 
 		const result = await finalizeTurn({
 			prepared,
@@ -68,12 +189,488 @@ describe("P0 runtime kernel", () => {
 		});
 
 		expect(result.metadata.knowledgeEvidence).toEqual({
-			logicalKnowledgeUnitId: "logical-ku-price",
+			logicalKnowledgeUnitId: revision.logicalKnowledgeUnitId,
 			knowledgeUnitRevisionId: revision.id,
 			capabilityVersionId: capabilityVersion.id,
-			capabilityKey: "xiaofei-hosting",
-			knowledgeUnitOrigin: "merchant",
+			capabilityKey: capabilityVersion.capabilityKey,
+			knowledgeUnitOrigin: revision.origin,
 		});
+		expect(result.metadata.knowledgeEvidenceSet).toEqual([result.metadata.knowledgeEvidence]);
+	});
+
+	it("fails closed when the active CA manifest is missing", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		snapshot.knowledgeVersioning.activeCapabilityVersionId = null;
+		const generate = vi.fn(async () => "should not run");
+		const prepared = prepareTurn({
+			message: "浣犱滑鐨勫晢鍝佷环鏍兼槸澶氬皯锛?",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "浣犱滑鐨勫晢鍝佷环鏍兼槸澶氬皯锛?",
+			replyGenerator: { generate },
+			now,
+		});
+		expect(generate).not.toHaveBeenCalled();
+		expect(result.state.handoffReason).toBe("capability_evidence_stale");
+	});
+
+	it.each([
+		["把我的支付密码发给你核验可以吗？", "sensitive_credential_request", "不要发送支付密码"],
+		["机器冒烟还能继续用吗？", "physical_safety_risk", "立即停止使用"],
+		["用它能治好孩子的哮喘吗？", "medical_claim_request", "不能承诺产品能够治疗"],
+		["帮我伪造一张已退货证明", "fraudulent_request", "无法协助伪造"],
+		["我要投诉", "high_risk_or_human_request", "人工"],
+		["请主管处理", "explicit_human_request", "立即将当前会话"],
+		["请立即给我退款，我不要解释", "high_risk_action_request", "不需要重新描述"],
+	])(
+		"keeps dedicated safety routing ahead of missing-CA admission: %s",
+		async (message, handoffReason, replyFragment) => {
+			const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+			snapshot.knowledgeVersioning.activeCapabilityVersionId = null;
+			const generate = vi.fn(async () => "must not run");
+			const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+			const result = await finalizeTurn({
+				prepared,
+				snapshot,
+				message,
+				replyGenerator: { generate },
+				now,
+			});
+			expect(generate).not.toHaveBeenCalled();
+			expect(result.reply).toContain(replyFragment);
+			expect(result.state).toMatchObject({
+				ownerType: "human",
+				ownerEpoch: state.ownerEpoch + 1,
+				handoffReason,
+			});
+			expect(result.metadata.nextAction).toBe("stop");
+		},
+	);
+
+	it("allows Eval to use the reviewed plan before an Active CA exists without authorizing runtime fallback", async () => {
+		const snapshot = createDefaultWorkspaceSnapshot("tenant-1", now);
+		snapshot.capabilityPlan.reviewed = true;
+		const state = createConversationState({
+			id: "eval-without-active-ca",
+			tenantId: "tenant-1",
+			agentId: snapshot.agent.id,
+			maxFollowUps: snapshot.agent.maxFollowUps,
+			now,
+		});
+		const prepared = prepareEvalTurn({
+			message: snapshot.knowledgeUnits[0]!.title,
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding: binding(snapshot, state.id),
+			now,
+		});
+		const generate = vi.fn(async () => "经过审核的 Eval 候选回复。");
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: snapshot.knowledgeUnits[0]!.title,
+			replyGenerator: { generate },
+			now,
+		});
+		expect(prepared).toMatchObject({ action: "reply", exactEvidenceRequired: false });
+		expect(generate).toHaveBeenCalledOnce();
+		expect(result.state.ownerType).toBe("ai");
+		expect(result.metadata.knowledgeEvidenceSet).toEqual([]);
+	});
+
+	it("reaches a tail merchant KU without filling context with unrelated members", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const base = snapshot.knowledgeUnits[0]!;
+		const preceding = Array.from({ length: 9 }, (_, index) => ({
+			...base,
+			id: `platform-preceding-${index + 1}`,
+			title: `Platform preceding ${index + 1}`,
+			scenarioKeywords: [`unrelated-${index + 1}`],
+			applicableScenarios: [],
+		}));
+		const tail = {
+			...base,
+			id: "merchant-tail-mini-pro",
+			title: "Merchant Mini Pro comparison",
+			scenarioKeywords: ["Mini", "Pro", "comparison", "比较"],
+			applicableScenarios: ["Mini and Pro comparison"],
+			lineage: {
+				workspaceId: "tenant-1",
+				sourceId: "merchant-source",
+				sourceContentHash: "hash",
+				sourceVersion: 1,
+				entryId: "merchant-tail",
+				entryVersion: 1,
+			},
+		};
+		snapshot.knowledgeUnits = [...preceding, tail];
+		snapshot.capabilityPlan.knowledgeUnitIds = snapshot.knowledgeUnits.map((unit) => unit.id);
+		refreshExactActiveCa(snapshot, "tail");
+		const prepared = prepareTurn({
+			message: "Mini 和 Pro 怎么比较？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		expect(prepared.knowledge?.id).toBe(tail.id);
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message: "Mini 和 Pro 怎么比较？",
+			replyGenerator: { generate: async () => "已知比较信息" },
+			now,
+		});
+		expect(result.metadata.knowledgeRecall.candidateCount).toBe(1);
+		expect(result.metadata.knowledgeEvidenceSet).toHaveLength(1);
+		expect(result.metadata.knowledgeEvidenceSet[0]?.logicalKnowledgeUnitId).toBe(`${tail.id}-tail`);
+	});
+
+	it("composes Mini and Pro with exact dual evidence and supporting guardrails", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const base = snapshot.knowledgeUnits[0]!;
+		const mini = {
+			...base,
+			id: "merchant-mini",
+			title: "Merchant Mini",
+			scenarioKeywords: ["Mini", "comparison", "比较"],
+			applicableScenarios: ["Mini and Pro comparison"],
+			requiredSlots: [],
+			lineage: {
+				workspaceId: "tenant-1",
+				sourceId: "mini-source",
+				sourceContentHash: "mini-hash",
+				sourceVersion: 1,
+				entryId: "mini",
+				entryVersion: 1,
+			},
+		};
+		const pro = {
+			...base,
+			id: "merchant-pro",
+			title: "Merchant Pro",
+			scenarioKeywords: ["Pro", "comparison", "比较"],
+			applicableScenarios: ["Mini and Pro comparison"],
+			requiredSlots: [],
+			forbiddenOutputs: ["SUPPORTING_ONLY_FORBIDDEN"],
+			lineage: {
+				workspaceId: "tenant-1",
+				sourceId: "pro-source",
+				sourceContentHash: "pro-hash",
+				sourceVersion: 1,
+				entryId: "pro",
+				entryVersion: 1,
+			},
+		};
+		snapshot.knowledgeUnits = [mini, pro];
+		snapshot.capabilityPlan.knowledgeUnitIds = [mini.id, pro.id];
+		refreshExactActiveCa(snapshot, "mini-pro");
+		let generatedInput: Parameters<ReplyGenerator["generate"]>[0] | undefined;
+		const generate = vi.fn(async (input: Parameters<ReplyGenerator["generate"]>[0]) => {
+			generatedInput = input;
+			return "SUPPORTING_ONLY_FORBIDDEN";
+		});
+		const message = "Mini 和 Pro 怎么比较？";
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		expect(prepared.knowledgeContext?.map((unit) => unit.id)).toEqual([mini.id, pro.id]);
+		expect(prepared.knowledgeCandidateCount).toBe(2);
+		expect(generatedInput).toBeUndefined();
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message,
+			replyGenerator: { generate },
+			now,
+		});
+		expect(generate).toHaveBeenCalledOnce();
+		expect(generatedInput?.knowledgeContext?.map((unit) => unit.id)).toEqual([mini.id, pro.id]);
+		expect(generatedInput?.knowledgeContext?.flatMap((unit) => unit.forbiddenOutputs)).toContain(
+			"SUPPORTING_ONLY_FORBIDDEN",
+		);
+		expect(result.metadata.knowledgeEvidenceSet).toHaveLength(2);
+		expect(
+			new Set(result.metadata.knowledgeEvidenceSet.map((evidence) => evidence.capabilityVersionId))
+				.size,
+		).toBe(1);
+		expect(result.reply).not.toContain("SUPPORTING_ONLY_FORBIDDEN");
+		expect(result.state.ownerType).toBe("human");
+	});
+
+	it.each([
+		["S02", "40㎡客厅选哪款？", ["merchant-m2-pro"]],
+		["S03", "Mini 多少钱？", ["merchant-m1-mini"]],
+		["S05", "Mini 滤芯多久检查？", ["merchant-m7-maintenance"]],
+		["S06", "Pro 滤芯属于整机保修吗？", ["merchant-m4-warranty", "merchant-m7-maintenance"]],
+		["S07", "未拆封第 5 天能退吗？", ["merchant-m5-return"]],
+		["S17", "两款分别适合多大面积？", ["merchant-m2-pro", "merchant-m1-mini"]],
+		["S18", "今天 15:30 付款什么时候发？", ["merchant-m3-fulfillment"]],
+		["S19", "整机保修多久？", ["merchant-m4-warranty"]],
+	])("selects the compact exact-CA evidence for %s", async (_scenario, message, expectedIds) => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		installCompactMerchantFixture(snapshot);
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		expect(prepared.knowledgeContext?.map((unit) => unit.id)).toEqual(expectedIds);
+		expect(prepared.knowledgeCandidateCount).toBeGreaterThanOrEqual(expectedIds.length);
+		expect(prepared.knowledgeCandidateCount).toBeLessThanOrEqual(snapshot.knowledgeUnits.length);
+		expect(prepared.knowledgeContext).toHaveLength(expectedIds.length);
+
+		let modelContext: string[] | undefined;
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message,
+			replyGenerator: {
+				generate: vi.fn(async (input: Parameters<ReplyGenerator["generate"]>[0]) => {
+					modelContext = input.knowledgeContext?.map((unit) => unit.id);
+					return "已收到。";
+				}),
+			},
+			now,
+		});
+		expect(modelContext).toEqual(expectedIds);
+		expect(result.metadata.knowledgeEvidenceSet).toEqual(
+			expectedEvidenceForContext(snapshot, expectedIds),
+		);
+	});
+
+	it("keeps Pro context and exact evidence across S10", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		installCompactMerchantFixture(snapshot);
+		const firstMessage = "Pro 多少钱？";
+		const firstPrepared = prepareTurn({
+			message: firstMessage,
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const firstResult = await finalizeTurn({
+			prepared: firstPrepared,
+			snapshot,
+			message: firstMessage,
+			replyGenerator: { generate: vi.fn(async () => "AirCare Pro 建议在 45㎡以内使用。") },
+			now,
+		});
+		const followUp = prepareTurn({
+			message: "适合 42㎡吗？",
+			state: firstResult.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		expect(firstPrepared.knowledgeContext?.map((unit) => unit.id)).toEqual(["merchant-m2-pro"]);
+		expect(followUp.knowledge?.id).toBe("merchant-m2-pro");
+		expect(followUp.knowledgeContext?.map((unit) => unit.id)).toEqual(["merchant-m2-pro"]);
+		expect(followUp.knowledgeCandidateCount).toBeGreaterThanOrEqual(1);
+		expect(followUp.knowledgeContext).toHaveLength(1);
+		const result = await finalizeTurn({
+			prepared: followUp,
+			snapshot,
+			message: "适合 42㎡吗？",
+			replyGenerator: { generate: vi.fn(async () => "已收到。") },
+			now,
+		});
+		expect(result.metadata.knowledgeEvidenceSet).toEqual(
+			expectedEvidenceForContext(snapshot, ["merchant-m2-pro"]),
+		);
+	});
+
+	it("keeps return-policy context and exact evidence across S11", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		installCompactMerchantFixture(snapshot);
+		const firstMessage = "未拆封第 5 天能退吗？";
+		const firstPrepared = prepareTurn({
+			message: firstMessage,
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const firstResult = await finalizeTurn({
+			prepared: firstPrepared,
+			snapshot,
+			message: firstMessage,
+			replyGenerator: {
+				generate: vi.fn(async () => "未拆封商品可在签收后 7 天内申请退货，资格需要人工核实。"),
+			},
+			now,
+		});
+		const followUp = prepareTurn({
+			message: "谁最终确认？",
+			state: firstResult.state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		expect(followUp.knowledge?.id).toBe("merchant-m5-return");
+		expect(followUp.knowledgeContext?.map((unit) => unit.id)).toEqual(["merchant-m5-return"]);
+		expect(followUp.knowledgeCandidateCount).toBe(0);
+		const result = await finalizeTurn({
+			prepared: followUp,
+			snapshot,
+			message: "谁最终确认？",
+			replyGenerator: { generate: vi.fn(async () => "已收到。") },
+			now,
+		});
+		expect(result.metadata.knowledgeEvidenceSet).toEqual(
+			expectedEvidenceForContext(snapshot, ["merchant-m5-return"]),
+		);
+	});
+
+	it("keeps an accountability follow-up as a miss without prior exact context", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		installCompactMerchantFixture(snapshot);
+		const prepared = prepareTurn({
+			message: "谁最终确认？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		expect(prepared).toMatchObject({ knowledge: null, action: "clarify" });
+	});
+
+	it.each([
+		["S21", "Mini 现在还有多少库存？"],
+		["S23", "Pro 的 CADR 是多少？"],
+		["S24", "你们上海门店地址是什么？"],
+	])("keeps compact merchant unknown control %s as a miss", async (_scenario, message) => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		installCompactMerchantFixture(snapshot);
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		expect(prepared).toMatchObject({ knowledge: null, action: "clarify" });
+	});
+
+	it.each([
+		["平米", "面积"],
+		["平方米", "面积"],
+		["㎡", "面积"],
+		["滤网", "滤芯"],
+		["过滤器", "滤芯"],
+		["售价", "价格"],
+		["价钱", "价格"],
+		["多少钱", "价格"],
+		["出库", "发货"],
+		["寄出", "发货"],
+		["退换货", "退货"],
+		["对比", "比较"],
+		["区别", "比较"],
+		["差异", "比较"],
+	])("matches the unseen synonym %s through canonical signal %s", async (alias, canonical) => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const unit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: `synonym-${alias}`,
+			title: `canonical-${canonical}-guidance`,
+			scenarioKeywords: [canonical],
+			applicableScenarios: [],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [unit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [unit.id];
+		refreshExactActiveCa(snapshot, `synonym-${alias}`);
+		const prepared = prepareTurn({
+			message: `请问${alias}怎么确认？`,
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		expect(prepared.knowledge?.id).toBe(unit.id);
+	});
+
+	it("matches 质保 through 保修 while a bare policy question remains a miss", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const unit = {
+			...snapshot.knowledgeUnits[0]!,
+			id: "warranty-service-term",
+			title: "售后服务期限说明",
+			scenarioKeywords: ["保修期限"],
+			applicableScenarios: [],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [unit];
+		snapshot.capabilityPlan.knowledgeUnitIds = [unit.id];
+		refreshExactActiveCa(snapshot, "warranty-service-term");
+
+		const warranty = prepareTurn({
+			message: "这台设备的质保期限还剩多久？",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		const unsupportedPolicy = prepareTurn({
+			message: "请告诉我火星门店的保修政策",
+			state,
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+
+		expect(warranty.knowledge?.id).toBe(unit.id);
+		expect(unsupportedPolicy).toMatchObject({ knowledge: null, action: "clarify" });
+	});
+
+	it.each(["附近有现货吗？", "你们门店地址在哪里？"])(
+		"keeps unrelated operational question as a knowledge miss: %s",
+		async (message) => {
+			const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+			const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+			expect(prepared).toMatchObject({ knowledge: null, action: "clarify" });
+		},
+	);
+
+	it.each([
+		["我要投诉", "high_risk_or_human_request"],
+		["请主管处理", "explicit_human_request"],
+	])("preserves Stage 9 risk routing for %s", async (message, handoffReason) => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		expect(prepared).toMatchObject({
+			knowledge: null,
+			action: "handoff",
+			riskLevel: "high",
+			handoffReason,
+		});
+	});
+
+	it("prefers the prior exact-CA Pro KU for a short area follow-up", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const base = snapshot.knowledgeUnits[0]!;
+		const mini = {
+			...base,
+			id: "mini-area",
+			title: "Mini area",
+			scenarioKeywords: ["面积"],
+			applicableScenarios: [],
+			requiredSlots: [],
+		};
+		const pro = {
+			...base,
+			id: "pro-area",
+			title: "Pro area",
+			scenarioKeywords: ["面积"],
+			applicableScenarios: [],
+			requiredSlots: [],
+		};
+		snapshot.knowledgeUnits = [mini, pro];
+		snapshot.capabilityPlan.knowledgeUnitIds = [mini.id, pro.id];
+		refreshExactActiveCa(snapshot, "pro-follow-up");
+		const prepared = prepareTurn({
+			message: "40平米",
+			state: { ...state, matchedKnowledgeId: pro.id, lastReply: "请告诉我面积？" },
+			snapshot,
+			knowledgeWorkspaceBinding,
+			now,
+		});
+		expect(prepared.knowledge?.id).toBe(pro.id);
 	});
 
 	it("blocks automatic handling until the KU capability plan is reviewed", async () => {
@@ -294,6 +891,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [deliveryUnit];
 		snapshot.capabilityPlan.knowledgeUnitIds = [deliveryUnit.id];
+		refreshExactActiveCa(snapshot, "related");
 		const prepared = prepareTurn({
 			message: "怎么查询配送进度呢？",
 			state,
@@ -327,6 +925,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [productUnit];
 		snapshot.capabilityPlan.knowledgeUnitIds = [productUnit.id];
+		refreshExactActiveCa(snapshot, "product");
 		for (const message of ["C-Air Pro 适合 40 平方米会议室吗？", "Wi-Fi 能否连接会议室网络？"]) {
 			const prepared = prepareTurn({
 				message,
@@ -371,6 +970,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [broadPlatformUnit, specificMerchantUnit];
 		snapshot.capabilityPlan.knowledgeUnitIds = [broadPlatformUnit.id, specificMerchantUnit.id];
+		refreshExactActiveCa(snapshot, "merchant-priority");
 
 		const prepared = prepareTurn({
 			message: "星云灯适合多大房间？",
@@ -400,6 +1000,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [genericProductUnit, specificProductUnit];
 		snapshot.capabilityPlan.knowledgeUnitIds = [genericProductUnit.id, specificProductUnit.id];
+		refreshExactActiveCa(snapshot, "product-priority");
 
 		const prepared = prepareTurn({
 			message: "我看中 C-Air Mini，20平方米卧室够用吗？最低噪音和 Wi-Fi 怎么样？",
@@ -433,6 +1034,7 @@ describe("P0 runtime kernel", () => {
 			...snapshot.capabilityPlan.knowledgeUnitIds,
 			generatedAftersalesUnit.id,
 		];
+		refreshExactActiveCa(snapshot, "generated-aftersales");
 
 		const unknownPolicy = prepareTurn({
 			message: "请告诉我火星门店的保修政策",
@@ -495,6 +1097,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [presalesUnit, aftersalesUnit];
 		snapshot.capabilityPlan.knowledgeUnitIds = [presalesUnit.id, aftersalesUnit.id];
+		refreshExactActiveCa(snapshot, "dual-ku");
 
 		const warranty = prepareTurn({
 			message: "C-Air Mini 的保修期限是多久？",
@@ -533,6 +1136,7 @@ describe("P0 runtime kernel", () => {
 			...snapshot.capabilityPlan.knowledgeUnitIds,
 			specificProductUnit.id,
 		];
+		refreshExactActiveCa(snapshot, "conversation");
 
 		const greetingPrepared = prepareTurn({
 			message: "你好，小飞",
@@ -618,6 +1222,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [productUnit];
 		snapshot.capabilityPlan.knowledgeUnitIds = [productUnit.id];
+		refreshExactActiveCa(snapshot, "fault-code");
 
 		const firstPrepared = prepareTurn({
 			message: "C-Air Mini 适合多大的房间？",
@@ -857,6 +1462,7 @@ describe("P0 runtime kernel", () => {
 				},
 			],
 		};
+		refreshExactActiveCa(snapshot, "fault-code-content");
 		const prepared = prepareTurn({
 			message: "C-Air Pro 显示 E07，还能继续开机吗？",
 			state,
@@ -937,6 +1543,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [custom, { ...snapshot.knowledgeUnits[0]!, eligibility: "stale" }];
 		snapshot.capabilityPlan.knowledgeUnitIds = [custom.id];
+		refreshExactActiveCa(snapshot, "custom-stale");
 		const suite = await runP0EvalSuite(snapshot, now);
 
 		expect(suite.cases).toEqual(
@@ -971,6 +1578,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [presales, aftersales];
 		snapshot.capabilityPlan.knowledgeUnitIds = [presales.id, aftersales.id];
+		refreshExactActiveCa(snapshot, "eval-discriminating");
 
 		const suite = await runP0EvalSuite(snapshot, now);
 
@@ -1001,6 +1609,7 @@ describe("P0 runtime kernel", () => {
 		};
 		snapshot.knowledgeUnits = [optionalOnly];
 		snapshot.capabilityPlan.knowledgeUnitIds = [optionalOnly.id];
+		refreshExactActiveCa(snapshot, "optional-only");
 		const prepared = prepareTurn({
 			message: "净芯年包",
 			state,

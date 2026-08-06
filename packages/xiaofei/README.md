@@ -123,6 +123,24 @@ message
 The domain returns decisions and evidence. It does not write to the database or
 send a customer message itself.
 
+## Compact exact-CA recall
+
+Runtime recall materializes only the complete ordered Revision membership of
+the active `xiaofei-hosting` Capability Version manifest. It pre-screens that
+exact set deterministically before ranking and caps only the selected model
+context at two competitively scored KUs. `candidateCount` is the number of
+deterministic pre-screen matches, not manifest size or context size. Every
+selected KU must resolve to an exact Revision in that same active CA; otherwise
+admission fails closed. Runtime metadata records only selected source
+identifiers plus aggregate candidate count and timing.
+
+The final Guardrail unions forbidden outputs from every selected KU. A context
+follow-up can reuse only the previously matched exact-CA KU after normal
+admission; it cannot bypass eligibility, operator-attention, or active-CA
+checks. Bounded area/slot replies and short accountability questions may use
+that context, while the same message without a matched KU remains a knowledge
+miss.
+
 ## Knowledge Unit source
 
 The P0 parser treats each Markdown `##` section as one KU. The enhanced default

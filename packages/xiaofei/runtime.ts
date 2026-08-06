@@ -20,6 +20,7 @@ export interface ReplyGenerationInput {
 	message: string;
 	agentInstructions: string;
 	knowledge: KnowledgeUnit;
+	knowledgeContext?: KnowledgeUnit[];
 	state: ConversationState;
 }
 
@@ -30,6 +31,10 @@ export interface ReplyGenerator {
 export interface PreparedTurn {
 	state: ConversationState;
 	knowledge: KnowledgeUnit | null;
+	knowledgeContext?: KnowledgeUnit[];
+	knowledgeCandidateCount?: number;
+	knowledgeAggregationMs?: number;
+	exactEvidenceRequired?: boolean;
 	action: NextAction;
 	riskLevel: RiskLevel;
 	reply: string;
@@ -44,7 +49,7 @@ export function prepareTurn(input: {
 	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
 	now?: () => string;
 }): PreparedTurn {
-	return prepareTurnInternal(input, true);
+	return prepareTurnInternal(input, true, false);
 }
 
 /** Eval uses the reviewed capability boundary to produce the evidence required at runtime. */
@@ -55,7 +60,7 @@ export function prepareEvalTurn(input: {
 	knowledgeWorkspaceBinding: KnowledgeWorkspaceBinding;
 	now?: () => string;
 }): PreparedTurn {
-	return prepareTurnInternal(input, false);
+	return prepareTurnInternal(input, false, true);
 }
 
 function prepareTurnInternal(
@@ -67,6 +72,7 @@ function prepareTurnInternal(
 		now?: () => string;
 	},
 	requireEvalEvidence: boolean,
+	useReviewedPlanForEval: boolean,
 ): PreparedTurn {
 	const now = input.now ?? (() => new Date().toISOString());
 	const at = now();
@@ -97,6 +103,10 @@ function prepareTurnInternal(
 				updatedAt: at,
 			}),
 			knowledge: null,
+			knowledgeContext: [],
+			knowledgeCandidateCount: 0,
+			knowledgeAggregationMs: 0,
+			exactEvidenceRequired: !useReviewedPlanForEval,
 			action: "stop",
 			riskLevel: state.riskLevel,
 			reply: "当前会话已由人工接管，AI 不再自动处理。",
@@ -104,6 +114,29 @@ function prepareTurnInternal(
 				...traces,
 				trace(state.id, "admission", at, "Admission 阻塞", `当前处理权为 ${state.ownerType}。`),
 			],
+		};
+	}
+
+	const risk = detectRisk(input.message, input.snapshot);
+	if (risk.level === "high") {
+		return {
+			state: withDecision(state, {
+				knowledge: null,
+				riskLevel: "high",
+				action: "handoff",
+				handoffReason: risk.reason,
+				at,
+			}),
+			knowledge: null,
+			knowledgeContext: [],
+			knowledgeCandidateCount: 0,
+			knowledgeAggregationMs: 0,
+			exactEvidenceRequired: !useReviewedPlanForEval,
+			action: "handoff",
+			riskLevel: "high",
+			reply: risk.reply ?? input.snapshot.agent.fallbackPolicy.handoffReply,
+			handoffReason: risk.reason,
+			traces: [trace(state.id, "policy", at, "高风险或人工请求", risk.reason)],
 		};
 	}
 
@@ -116,19 +149,31 @@ function prepareTurnInternal(
 		);
 	}
 
-	const risk = detectRisk(input.message, input.snapshot);
+	const recallStarted = Date.now();
+	const sourceKnowledge = useReviewedPlanForEval
+		? input.snapshot.knowledgeUnits
+		: exactCapabilityKnowledge(input.snapshot);
+	if (sourceKnowledge === null) {
+		return blockedAdmission(
+			state,
+			at,
+			"capability_evidence_stale",
+			"Active capability manifest is missing, incomplete, or contains an ineligible revision.",
+		);
+	}
 	const callableKnowledgeIds = new Set(input.snapshot.capabilityPlan.knowledgeUnitIds);
-	const selection =
-		risk.level === "high"
-			? null
-			: selectKnowledge(
-					input.message,
-					state,
-					input.snapshot.knowledgeUnits.filter(
-						(unit) => callableKnowledgeIds.has(unit.id) && isKnowledgeUnitEligible(unit),
-					),
-				);
+	const selection = selectKnowledge(
+		input.message,
+		state,
+		sourceKnowledge.filter(
+			(unit) => callableKnowledgeIds.has(unit.id) && isKnowledgeUnitEligible(unit),
+		),
+	);
 	const knowledge = selection?.knowledge ?? null;
+	const knowledgeContext = selection?.context ?? [];
+	const knowledgeCandidateCount = selection?.candidateCount ?? 0;
+	const knowledgeAggregationMs = Date.now() - recallStarted;
+	const exactEvidenceRequired = !useReviewedPlanForEval;
 	traces.push(
 		trace(
 			state.id,
@@ -141,24 +186,6 @@ function prepareTurnInternal(
 			{ knowledgeId: knowledge?.id, matchScore: selection?.score },
 		),
 	);
-
-	if (risk.level === "high") {
-		return {
-			state: withDecision(state, {
-				knowledge,
-				riskLevel: "high",
-				action: "handoff",
-				handoffReason: risk.reason,
-				at,
-			}),
-			knowledge,
-			action: "handoff",
-			riskLevel: "high",
-			reply: risk.reply ?? input.snapshot.agent.fallbackPolicy.handoffReply,
-			handoffReason: risk.reason,
-			traces,
-		};
-	}
 
 	if (!knowledge) {
 		const missCount = state.consecutiveKnowledgeMisses + 1;
@@ -179,6 +206,10 @@ function prepareTurnInternal(
 					operatorAttention,
 				}),
 				knowledge: null,
+				knowledgeContext: [],
+				knowledgeCandidateCount,
+				knowledgeAggregationMs,
+				exactEvidenceRequired,
 				action: "clarify",
 				riskLevel: "low",
 				reply: input.snapshot.agent.fallbackPolicy.clarificationReply,
@@ -204,6 +235,10 @@ function prepareTurnInternal(
 				operatorAttention,
 			}),
 			knowledge: null,
+			knowledgeContext: [],
+			knowledgeCandidateCount,
+			knowledgeAggregationMs,
+			exactEvidenceRequired,
 			action: "fallback",
 			riskLevel: "low",
 			reply: input.snapshot.agent.fallbackPolicy.attentionReply,
@@ -251,6 +286,10 @@ function prepareTurnInternal(
 			reply: knowledge.fallbackReply,
 			handoffReason: `slot_${blockedSlot[1].status}:${blockedSlot[0]}`,
 			traces,
+			knowledgeContext,
+			knowledgeCandidateCount,
+			knowledgeAggregationMs,
+			exactEvidenceRequired,
 		};
 	}
 
@@ -272,6 +311,10 @@ function prepareTurnInternal(
 				reply: knowledge.fallbackReply,
 				handoffReason: "follow_up_limit_reached",
 				traces,
+				knowledgeContext,
+				knowledgeCandidateCount,
+				knowledgeAggregationMs,
+				exactEvidenceRequired,
 			};
 		}
 
@@ -291,6 +334,10 @@ function prepareTurnInternal(
 			riskLevel: "low",
 			reply: nextSlot?.askText ?? "请补充必要信息，方便人工客服后续核实。",
 			traces,
+			knowledgeContext,
+			knowledgeCandidateCount,
+			knowledgeAggregationMs,
+			exactEvidenceRequired,
 		};
 	}
 
@@ -311,6 +358,10 @@ function prepareTurnInternal(
 			reply: knowledge.fallbackReply,
 			handoffReason: "required_information_collected",
 			traces,
+			knowledgeContext,
+			knowledgeCandidateCount,
+			knowledgeAggregationMs,
+			exactEvidenceRequired,
 		};
 	}
 
@@ -328,6 +379,10 @@ function prepareTurnInternal(
 		riskLevel: "low",
 		reply: "",
 		traces,
+		knowledgeContext,
+		knowledgeCandidateCount,
+		knowledgeAggregationMs,
+		exactEvidenceRequired,
 	};
 }
 
@@ -348,6 +403,7 @@ export async function finalizeTurn(input: {
 			message: input.message,
 			agentInstructions: input.snapshot.agent.instructions,
 			knowledge: input.prepared.knowledge,
+			knowledgeContext: input.prepared.knowledgeContext,
 			state: input.prepared.state,
 		});
 	}
@@ -356,8 +412,24 @@ export async function finalizeTurn(input: {
 		reply,
 		input.snapshot,
 		input.prepared.knowledge,
+		input.prepared.knowledgeContext,
 		input.prepared.action === "reply",
 	);
+	const selectedKnowledge =
+		input.prepared.knowledgeContext ?? (input.prepared.knowledge ? [input.prepared.knowledge] : []);
+	const selectedEvidence = selectedKnowledge.map((unit) =>
+		resolveRuntimeKnowledgeEvidence(input.snapshot.knowledgeVersioning, unit.id),
+	);
+	const completeEvidence = selectedEvidence.every(
+		(evidence): evidence is NonNullable<typeof evidence> => Boolean(evidence),
+	)
+		? selectedEvidence
+		: [];
+	if (
+		input.prepared.exactEvidenceRequired !== false &&
+		completeEvidence.length !== selectedEvidence.length
+	)
+		blockedReasons.push("selected knowledge lacks exact active-CA evidence");
 	if (blockedReasons.length > 0) {
 		reply = input.snapshot.agent.fallbackPolicy.handoffReply;
 	}
@@ -424,6 +496,11 @@ export async function finalizeTurn(input: {
 				input.snapshot.knowledgeVersioning,
 				input.prepared.knowledge?.id ?? null,
 			),
+			knowledgeEvidenceSet: completeEvidence,
+			knowledgeRecall: {
+				candidateCount: input.prepared.knowledgeCandidateCount ?? 0,
+				aggregationMs: input.prepared.knowledgeAggregationMs ?? 0,
+			},
 			nextAction: state.nextAction,
 			riskLevel: state.riskLevel,
 			ownerType: state.ownerType,
@@ -482,33 +559,85 @@ function selectKnowledge(
 	message: string,
 	state: ConversationState,
 	units: KnowledgeUnit[],
-): { knowledge: KnowledgeUnit; score: number; reason: "exact" | "related" | "context" } | null {
+): {
+	knowledge: KnowledgeUnit;
+	score: number;
+	reason: "exact" | "related" | "context";
+	context: KnowledgeUnit[];
+	candidateCount: number;
+} | null {
 	const released = units.filter(isKnowledgeUnitEligible);
 	const normalizedMessage = normalizeSearchText(message);
+	const canUseConversationContext = shouldUseConversationContext(message, state);
 	const ranked = released
 		.flatMap((knowledge) => {
 			const match = bestKnowledgeTermMatch(normalizedMessage, knowledge);
-			return match ? [{ knowledge, ...match }] : [];
+			if (!match) return [];
+			const contextBonus =
+				canUseConversationContext && knowledge.id === state.matchedKnowledgeId ? 25 : 0;
+			return [{ knowledge, ...match, score: match.score + contextBonus }];
 		})
-		.sort((left, right) => right.score - left.score);
-	if (ranked[0]) return ranked[0];
+		.sort(
+			(left, right) =>
+				right.score - left.score || left.knowledge.id.localeCompare(right.knowledge.id),
+		);
+	if (ranked[0]) {
+		const contextCandidates = ranked.filter((item) => item.score >= ranked[0]!.score - 25);
+		return {
+			...ranked[0],
+			context: contextCandidates.slice(0, 2).map((item) => item.knowledge),
+			candidateCount: ranked.length,
+		};
+	}
 
-	const canUseConversationContext = shouldUseConversationContext(message, state);
 	const contextual = canUseConversationContext
 		? released.find((unit) => unit.id === state.matchedKnowledgeId)
 		: undefined;
-	return contextual ? { knowledge: contextual, score: 1, reason: "context" } : null;
+	return contextual
+		? {
+				knowledge: contextual,
+				score: 1,
+				reason: "context",
+				context: [contextual],
+				candidateCount: 0,
+			}
+		: null;
+}
+
+/** Materialize only the exact active CA manifest membership, preserving its order. */
+function exactCapabilityKnowledge(snapshot: XiaofeiWorkspaceSnapshot): KnowledgeUnit[] | null {
+	const versioning = snapshot.knowledgeVersioning;
+	const manifest = versioning.capabilityVersionManifests.find(
+		(candidate) =>
+			candidate.id === versioning.activeCapabilityVersionId && candidate.status === "active",
+	);
+	if (!manifest) return null;
+	const byRevisionId = new Map(
+		versioning.knowledgeUnitRevisions.map((revision) => [revision.id, revision]),
+	);
+	const units: KnowledgeUnit[] = [];
+	for (const revisionId of manifest.knowledgeUnitRevisionIds) {
+		const revision = byRevisionId.get(revisionId);
+		if (!revision || !isKnowledgeUnitEligible(revision.knowledgeUnit)) return null;
+		units.push(revision.knowledgeUnit);
+	}
+	return units;
 }
 
 function shouldUseConversationContext(message: string, state: ConversationState): boolean {
 	if (!state.matchedKnowledgeId) return false;
+	if (state.operatorAttention) return false;
 	if (state.nextAction === "ask_followup" || state.missingSlots.length > 0) return true;
 
 	const normalizedMessage = normalizeSearchText(message);
-	if (!normalizedMessage || normalizedMessage.length > 80 || !state.lastReply) return false;
+	if (!normalizedMessage || normalizedMessage.length > 80) return false;
+
+	const isAccountabilityFollowUp = /(?:谁|何人|哪个部门).{0,8}(?:确认|负责|处理)/iu.test(message);
+	if (isAccountabilityFollowUp) return true;
+	if (!state.lastReply) return false;
 
 	const hasStrongContextField =
-		/(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(message);
+		/(?:平米|平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(message);
 	if (hasStrongContextField) return true;
 
 	const lastReplyInvitedFollowUp =
@@ -516,10 +645,8 @@ function shouldUseConversationContext(message: string, state: ConversationState)
 		/(请|方便|告诉我|补充|确认|是否|需要|可以继续|想了解)/u.test(state.lastReply);
 	if (!lastReplyInvitedFollowUp) return false;
 
-	if (state.operatorAttention) return false;
-
 	const looksLikeFollowUpAnswer =
-		/(^|[，,。\s])(?:是|不是|要|不要|需要|不需要|可以|不可以|有|没有|大概|左右|这个|那个|它|前面|刚才)|(?:平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(
+		/(^|[，,。\s])(?:是|不是|要|不要|需要|不需要|可以|不可以|有|没有|大概|左右|这个|那个|它|前面|刚才)|(?:平米|平方米|平方|㎡|联网|wi-?fi|预算|用途|房间|面积|型号|订单号)/iu.test(
 			message,
 		);
 	if (looksLikeFollowUpAnswer) return true;
@@ -594,7 +721,7 @@ function bestKnowledgeTermMatch(
 	return best;
 }
 
-const WEAK_STANDALONE_TERMS = new Set(["保修", "人工客服"].map(normalizeSearchText));
+const WEAK_STANDALONE_TERMS = new Set(["保修", "人工客服", "mini", "pro"].map(normalizeSearchText));
 
 function expandKnowledgeSearchTerm(value: string): string[] {
 	const explicitProductTerms = value.match(/[A-Za-z][A-Za-z0-9]*(?:[- ][A-Za-z0-9]+)*/gu) ?? [];
@@ -623,10 +750,19 @@ function characterPairs(value: string): Set<string> {
 }
 
 function normalizeSearchText(value: string): string {
-	return value
+	// NFKC expands the square-metre symbol to `m2`, so replace it before
+	// normalization. The remaining aliases are normalized before matching.
+	const canonical = value
+		.replace(/㎡/gu, "面积")
 		.normalize("NFKC")
-		.toLocaleLowerCase()
-		.replace(/[^\p{Letter}\p{Number}]+/gu, "");
+		.replace(/平米|平方米/gu, "面积")
+		.replace(/滤网|过滤器/gu, "滤芯")
+		.replace(/质保/gu, "保修")
+		.replace(/售价|价钱|多少钱/gu, "价格")
+		.replace(/出库|寄出/gu, "发货")
+		.replace(/退换货/gu, "退货")
+		.replace(/对比|区别|差异/gu, "比较");
+	return canonical.toLocaleLowerCase().replace(/[^\p{Letter}\p{Number}]+/gu, "");
 }
 
 function hasCurrentAdmissionEvidence(
@@ -668,6 +804,9 @@ function blockedAdmission(
 			at,
 		}),
 		knowledge: null,
+		knowledgeContext: [],
+		knowledgeCandidateCount: 0,
+		knowledgeAggregationMs: 0,
 		action: "handoff",
 		riskLevel: "medium",
 		reply: "当前知识能力尚未满足安全准入条件，我会把问题转交人工客服处理。",
@@ -852,6 +991,7 @@ function validateReply(
 	reply: string,
 	snapshot: XiaofeiWorkspaceSnapshot,
 	knowledge: KnowledgeUnit | null,
+	knowledgeContext: KnowledgeUnit[] | undefined,
 	requireKnowledge: boolean,
 ): string[] {
 	if (!reply.trim()) return ["候选回复为空"];
@@ -861,6 +1001,7 @@ function validateReply(
 	const forbidden = new Set([
 		...snapshot.guardrails.forbiddenPhrases,
 		...(knowledge?.forbiddenOutputs ?? []),
+		...(knowledgeContext ?? []).flatMap((unit) => unit.forbiddenOutputs),
 	]);
 	return [...forbidden]
 		.filter((phrase) => reply.toLocaleLowerCase().includes(phrase.toLocaleLowerCase()))

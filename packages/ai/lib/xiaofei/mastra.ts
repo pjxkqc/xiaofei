@@ -14,6 +14,12 @@ class MastraReplyGenerator implements ReplyGenerator {
 				"必须遵守当前 KnowledgeUnit；只回答已确认事实。",
 				"不得声称已经执行退款、赔偿、补发、修改订单或其他业务动作。",
 				"回复应简练，并跟随客户当前使用的语言。",
+				...(input.knowledgeContext ?? [])
+					.slice(1, 2)
+					.map(
+						(context) => `Additional knowledge: ${context.title}\n${context.standardReplyPolicy}`,
+					),
+				`Forbidden outputs (all selected KU): ${[...new Set([...(input.knowledgeContext ?? []).flatMap((unit) => unit.forbiddenOutputs), ...input.knowledge.forbiddenOutputs])].join(", ")}`,
 			].join("\n"),
 			model: createTextModel("reply"),
 		});

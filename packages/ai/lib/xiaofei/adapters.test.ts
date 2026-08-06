@@ -19,6 +19,30 @@ const TENANT_ID = `organization:${ORGANIZATION_ID}`;
 async function setup() {
 	const snapshot = createDefaultWorkspaceSnapshot(TENANT_ID);
 	snapshot.capabilityPlan.reviewed = true;
+	const revisions = snapshot.knowledgeUnits.map((knowledgeUnit, index) =>
+		createKnowledgeUnitRevision({
+			id: `setup-revision-${String(index + 1).padStart(3, "0")}`,
+			logicalKnowledgeUnitId: knowledgeUnit.id,
+			organizationId: null,
+			revision: 1,
+			origin: "platform",
+			knowledgeUnit,
+			createdAt: CREATED_AT,
+		}),
+	);
+	const manifest = createCapabilityVersionManifest({
+		id: "setup-active-ca",
+		organizationId: ORGANIZATION_ID,
+		capabilityKey: "xiaofei-hosting",
+		status: "active",
+		knowledgeUnitRevisionIds: revisions.map((revision) => revision.id),
+		createdAt: CREATED_AT,
+	});
+	snapshot.knowledgeVersioning = {
+		knowledgeUnitRevisions: revisions,
+		capabilityVersionManifests: [manifest],
+		activeCapabilityVersionId: manifest.id,
+	};
 	snapshot.evalSuite = await runP0EvalSuite(snapshot);
 	const state = createConversationState({
 		id: "conversation-unified",

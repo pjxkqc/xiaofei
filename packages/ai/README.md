@@ -56,6 +56,16 @@ bounded contextual follow-up, the adapter includes Xiaofei's previous safe
 reply so a short answer such as room size plus networking preference can be
 understood without asking the customer to repeat the product name.
 
+The adapter receives only the domain-selected context: at most two
+competitively ranked KUs from the complete exact active-CA Revision set. The
+domain's `candidateCount` is a deterministic pre-screen match count, and every
+selected KU carries same-CA Revision evidence. Mastra must incorporate the
+supporting KU's instructions and forbidden outputs; the domain independently
+unions those forbidden outputs in its final Guardrail. Context-only follow-ups
+remain subject to exact-CA admission, eligibility, and owner/lease checks, and
+the adapter must never log raw model I/O, credentials, URLs, headers, or
+environment values.
+
 An adapter may generate a candidate response, but it cannot:
 
 - change ownership outside domain transition functions;
