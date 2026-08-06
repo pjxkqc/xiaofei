@@ -62,9 +62,13 @@ are not retained; `bodyText` is the durable extracted content.
 `listXiaofeiTestSessions` and `getXiaofeiTestSessionDetail` expose bounded,
 Organization-scoped Test CA DTOs for server-side consumers. They preserve every
 stored TestTurn as immutable history, identify the first question, latest time,
-turn count, bound capability version, and whether the session remains writable
-against the current Active/Test pointer. A stale CA session is still readable but
-not writable; a new turn must use a new session. `upsertXiaofeiSyntheticSupportConversation`
+turn count, before/after intervention counts, bound capability version, and whether
+the session remains writable against the current Test pointer only. A session that
+matches Active only (or any stale CA) is historical, readable, and not writable;
+a new turn must use a new session. Session lists default to 20 (maximum 50) and
+use bounded first-row projections plus database-side grouped turn/intervention
+counts; detail returns its newest 100 turns in chronological display order.
+`upsertXiaofeiSyntheticSupportConversation`
 projects acceptance-only state, messages, and traces into the Organization's
 existing conversation aggregate with channel `synthetic_support`; it never opens
 an Email binding, inbound-event, processing-job, or outbound-delivery path.

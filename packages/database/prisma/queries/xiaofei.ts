@@ -354,6 +354,8 @@ export interface XiaofeiTestSessionSummaryDto {
 	firstQuestion: string;
 	latestAt: Date;
 	turnCount: number;
+	beforeInterventionCount: number;
+	afterInterventionCount: number;
 	isCurrent: boolean;
 	writable: boolean;
 }
@@ -1724,7 +1726,7 @@ export async function listInboundEvents(
 	workspaceId: string,
 	options: ListInboundEventsOptions = {},
 ) {
-	const limit = assertXiaofeiTestSessionPageLimit(options.limit);
+	const limit = assertPageLimit(options.limit);
 	const records = await db.xiaofeiInboundEvent.findMany({
 		where: {
 			workspaceId,
@@ -1904,7 +1906,7 @@ export async function listXiaofeiKnowledgeDocuments(
 	workspaceId: string,
 	options: ListXiaofeiKnowledgeDocumentsOptions = {},
 ) {
-	const limit = assertXiaofeiTestSessionPageLimit(options.limit);
+	const limit = assertPageLimit(options.limit);
 	const records = await db.xiaofeiKnowledgeDocument.findMany({
 		where: { workspaceId },
 		select: DOCUMENT_METADATA_SELECT,
@@ -2549,26 +2551,50 @@ export async function listXiaofeiTestSessions(
 	});
 	const result = page(latestTurns, limit);
 	const sessionIds = result.items.map((turn) => turn.testSessionId);
-	const sessionTurns = await db.xiaofeiTestTurn.findMany({
-		where: { organizationId, testSessionId: { in: sessionIds } },
-		select: { testSessionId: true, question: true },
-		orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-	});
-	const groupedTurns = new Map<string, typeof sessionTurns>();
-	for (const turn of sessionTurns) {
-		const group = groupedTurns.get(turn.testSessionId) ?? [];
-		group.push(turn);
-		groupedTurns.set(turn.testSessionId, group);
-	}
+	if (!sessionIds.length) return { items: [], nextCursor: result.nextCursor };
+	const [firstTurns, turnCounts, interventionCounts] = await Promise.all([
+		db.xiaofeiTestTurn.findMany({
+			where: { organizationId, testSessionId: { in: sessionIds } },
+			select: { testSessionId: true, question: true },
+			orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+			distinct: ["testSessionId"],
+			take: sessionIds.length,
+		}),
+		db.xiaofeiTestTurn.groupBy({
+			by: ["testSessionId"],
+			where: { organizationId, testSessionId: { in: sessionIds } },
+			_count: { _all: true },
+		}),
+		db.$queryRaw<Array<{ testSessionId: string; beforeCount: bigint; afterCount: bigint }>>`
+			SELECT t."testSessionId",
+				COUNT(i.id) FILTER (WHERE i."beforeResponse" IS NOT NULL) AS "beforeCount",
+				COUNT(i.id) FILTER (WHERE i."afterResponse" IS NOT NULL) AS "afterCount"
+			FROM "xiaofei_test_turn" t
+			LEFT JOIN "xiaofei_response_intervention" i
+				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
+			WHERE t."organizationId" = ${organizationId}
+				AND t."testSessionId" IN (${Prisma.join(sessionIds)})
+			GROUP BY t."testSessionId"
+		`,
+	]);
+	const firstBySession = new Map(firstTurns.map((turn) => [turn.testSessionId, turn.question]));
+	const countBySession = new Map(
+		turnCounts.map((count) => [count.testSessionId, count._count._all]),
+	);
+	const interventionsBySession = new Map(
+		interventionCounts.map((count) => [count.testSessionId, count]),
+	);
 	const items = result.items.map((latest) => {
-		const turns = groupedTurns.get(latest.testSessionId) ?? [];
+		const interventions = interventionsBySession.get(latest.testSessionId);
 		const isCurrent = latest.capabilityVersionId === binding?.testCapabilityVersionId;
 		return {
 			id: latest.testSessionId,
 			capabilityVersionId: latest.capabilityVersionId,
-			firstQuestion: turns[0]?.question ?? "",
+			firstQuestion: firstBySession.get(latest.testSessionId) ?? "",
 			latestAt: latest.completedAt,
-			turnCount: turns.length,
+			turnCount: countBySession.get(latest.testSessionId) ?? 0,
+			beforeInterventionCount: Number(interventions?.beforeCount ?? 0),
+			afterInterventionCount: Number(interventions?.afterCount ?? 0),
 			isCurrent,
 			writable: isCurrent,
 		} satisfies XiaofeiTestSessionSummaryDto;
@@ -2581,7 +2607,7 @@ export async function getXiaofeiTestSessionDetail(
 	organizationId: string,
 	testSessionId: string,
 ): Promise<XiaofeiTestSessionDetailDto | null> {
-	const [binding, turns, first, latest, turnCount] = await Promise.all([
+	const [binding, turns, first, latest, turnCount, interventionCounts] = await Promise.all([
 		db.xiaofeiCapabilityBinding.findUnique({
 			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
 			select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
@@ -2616,6 +2642,15 @@ export async function getXiaofeiTestSessionDetail(
 			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
 		}),
 		db.xiaofeiTestTurn.count({ where: { organizationId, testSessionId } }),
+		db.$queryRaw<Array<{ beforeCount: bigint; afterCount: bigint }>>`
+			SELECT
+				COUNT(i.id) FILTER (WHERE i."beforeResponse" IS NOT NULL) AS "beforeCount",
+				COUNT(i.id) FILTER (WHERE i."afterResponse" IS NOT NULL) AS "afterCount"
+			FROM "xiaofei_test_turn" t
+			LEFT JOIN "xiaofei_response_intervention" i
+				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
+			WHERE t."organizationId" = ${organizationId} AND t."testSessionId" = ${testSessionId}
+		`,
 	]);
 	if (!turns.length || !first || !latest) return null;
 	const isCurrent = latest.capabilityVersionId === binding?.testCapabilityVersionId;
@@ -2625,9 +2660,11 @@ export async function getXiaofeiTestSessionDetail(
 		firstQuestion: first.question,
 		latestAt: latest.completedAt,
 		turnCount,
+		beforeInterventionCount: Number(interventionCounts[0]?.beforeCount ?? 0),
+		afterInterventionCount: Number(interventionCounts[0]?.afterCount ?? 0),
 		isCurrent,
 		writable: isCurrent,
-		turns: turns.map((turn) => ({
+		turns: [...turns].reverse().map((turn) => ({
 			...turn,
 			conversationState: turn.conversationState
 				? ConversationStateSchema.parse(turn.conversationState)

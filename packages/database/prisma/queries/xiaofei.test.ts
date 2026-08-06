@@ -422,6 +422,7 @@ describe("Xiaofei immutable knowledge version persistence", () => {
 vi.mock("../client", () => ({
 	db: {
 		$transaction: queryMocks.transaction,
+		$queryRaw: queryMocks.queryRaw,
 		organization: {
 			findMany: queryMocks.listAdminOrganizations,
 			count: queryMocks.countAdminOrganizations,
@@ -477,6 +478,7 @@ vi.mock("../client", () => ({
 import {
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeDocumentWithEntries,
+	DEFAULT_XIAOFEI_TEST_SESSION_PAGE_SIZE,
 	createXiaofeiKnowledgeEntry,
 	createXiaofeiKnowledgeUnit,
 	deleteXiaofeiKnowledgeEntry,
@@ -522,6 +524,7 @@ import {
 	XiaofeiTestTurnFeedbackConflictError,
 	XiaofeiTestSessionCapabilityConflictError,
 	XiaofeiTestSessionConflictError,
+	XiaofeiSyntheticSupportConversationConflictError,
 } from "./xiaofei";
 
 const conversationState = createConversationState({
@@ -666,12 +669,15 @@ describe("Xiaofei Organization queries", () => {
 					completedAt: new Date("2026-08-04T00:00:01.000Z"),
 				},
 			])
-			.mockResolvedValueOnce([
-				{ testSessionId: "session-a", question: "First question" },
-				{ testSessionId: "session-a", question: "Second question" },
-			]);
+			.mockResolvedValueOnce([{ testSessionId: "session-a", question: "First question" }]);
+		queryMocks.groupTestTurns.mockResolvedValueOnce([
+			{ testSessionId: "session-a", _count: { _all: 2 } },
+		]);
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{ testSessionId: "session-a", beforeCount: BigInt(1), afterCount: BigInt(0) },
+		]);
 
-		await expect(listXiaofeiTestSessions("organization-a", { limit: 1 })).resolves.toEqual({
+		await expect(listXiaofeiTestSessions("organization-a")).resolves.toEqual({
 			items: [
 				{
 					id: "session-a",
@@ -679,6 +685,8 @@ describe("Xiaofei Organization queries", () => {
 					firstQuestion: "First question",
 					latestAt: new Date("2026-08-04T00:00:01.000Z"),
 					turnCount: 2,
+					beforeInterventionCount: 1,
+					afterInterventionCount: 0,
 					isCurrent: true,
 					writable: true,
 				},
@@ -689,8 +697,11 @@ describe("Xiaofei Organization queries", () => {
 			expect.objectContaining({
 				where: { organizationId: "organization-a" },
 				distinct: ["testSessionId"],
-				take: 2,
+				take: DEFAULT_XIAOFEI_TEST_SESSION_PAGE_SIZE + 1,
 			}),
+		);
+		await expect(listXiaofeiTestSessions("organization-a", { limit: 51 })).rejects.toThrow(
+			"Test session page limit must be between 1 and 50.",
 		);
 	});
 
@@ -731,6 +742,7 @@ describe("Xiaofei Organization queries", () => {
 				completedAt: new Date("2026-08-04T00:00:01.000Z"),
 			});
 		queryMocks.countTestTurns.mockResolvedValueOnce(1);
+		queryMocks.queryRaw.mockResolvedValueOnce([{ beforeCount: BigInt(0), afterCount: BigInt(0) }]);
 
 		await expect(getXiaofeiTestSessionDetail("organization-a", "session-a")).resolves.toMatchObject(
 			{
@@ -775,6 +787,45 @@ describe("Xiaofei Organization queries", () => {
 		);
 		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
 		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+	});
+
+	it("returns an existing synthetic retry without overwriting later state", async () => {
+		const existing = {
+			id: "conversation-a",
+			channel: "synthetic_support",
+			state: { owner: "human", ownerEpoch: 2 },
+			messages: [{ content: "Later message" }],
+			traceEvents: [{ type: "later.trace" }],
+		};
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce(existing);
+
+		await expect(
+			upsertXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-a",
+				externalId: "synthetic-acceptance-a",
+				state: { owner: "ai", ownerEpoch: 1 },
+				messages: [],
+				traceEvents: [],
+			}),
+		).resolves.toBe(existing);
+		expect(queryMocks.createConversation).not.toHaveBeenCalled();
+	});
+
+	it("rejects a non-synthetic same-key conversation instead of relabeling it", async () => {
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce({ channel: "email" });
+
+		await expect(
+			upsertXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-a",
+				externalId: "existing-email",
+				state: {},
+				messages: [],
+				traceEvents: [],
+			}),
+		).rejects.toBeInstanceOf(XiaofeiSyntheticSupportConversationConflictError);
+		expect(queryMocks.createConversation).not.toHaveBeenCalled();
 	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {
