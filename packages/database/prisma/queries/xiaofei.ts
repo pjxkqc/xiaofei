@@ -2811,46 +2811,49 @@ export async function getXiaofeiTestSessionDetail(
 	organizationId: string,
 	testSessionId: string,
 ): Promise<XiaofeiTestSessionDetailDto | null> {
-	const [binding, session, turns, first, latest, turnCount, interventionCounts] = await Promise.all([
-		db.xiaofeiCapabilityBinding.findUnique({
-			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
-			select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
-		}),
-		db.xiaofeiTestSession?.findUnique({
-			where: { organizationId_id: { organizationId, id: testSessionId } },
-			select: { capabilityVersionId: true, createdAt: true },
-		}),
-		db.xiaofeiTestTurn.findMany({
-			where: { organizationId, testSessionId },
-			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-			take: 100,
-			select: {
-				id: true,
-				question: true,
-				answer: true,
-				capabilityVersionId: true,
-				conversationState: true,
-				runtimeMetadata: true,
-				evidenceRevisionId: true,
-				sourceTestTurnId: true,
-				interventionId: true,
-				requestedAt: true,
-				completedAt: true,
-				createdAt: true,
-			},
-		}),
-		db.xiaofeiTestTurn.findFirst({
-			where: { organizationId, testSessionId },
-			select: { question: true },
-			orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-		}),
-		db.xiaofeiTestTurn.findFirst({
-			where: { organizationId, testSessionId },
-			select: { capabilityVersionId: true, completedAt: true },
-			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-		}),
-		db.xiaofeiTestTurn.count({ where: { organizationId, testSessionId } }),
-		db.$queryRaw<Array<{ beforeCount: bigint; afterCount: bigint }>>`
+	const [binding, session, turns, first, latest, turnCount, interventionCounts] = await Promise.all(
+		[
+			db.xiaofeiCapabilityBinding.findUnique({
+				where: {
+					organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" },
+				},
+				select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
+			}),
+			db.xiaofeiTestSession?.findUnique({
+				where: { organizationId_id: { organizationId, id: testSessionId } },
+				select: { capabilityVersionId: true, createdAt: true },
+			}),
+			db.xiaofeiTestTurn.findMany({
+				where: { organizationId, testSessionId },
+				orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+				take: 100,
+				select: {
+					id: true,
+					question: true,
+					answer: true,
+					capabilityVersionId: true,
+					conversationState: true,
+					runtimeMetadata: true,
+					evidenceRevisionId: true,
+					sourceTestTurnId: true,
+					interventionId: true,
+					requestedAt: true,
+					completedAt: true,
+					createdAt: true,
+				},
+			}),
+			db.xiaofeiTestTurn.findFirst({
+				where: { organizationId, testSessionId },
+				select: { question: true },
+				orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+			}),
+			db.xiaofeiTestTurn.findFirst({
+				where: { organizationId, testSessionId },
+				select: { capabilityVersionId: true, completedAt: true },
+				orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+			}),
+			db.xiaofeiTestTurn.count({ where: { organizationId, testSessionId } }),
+			db.$queryRaw<Array<{ beforeCount: bigint; afterCount: bigint }>>`
 			SELECT
 				COUNT(i.id) FILTER (WHERE i."beforeResponse" IS NOT NULL) AS "beforeCount",
 				COUNT(i.id) FILTER (WHERE i."afterResponse" IS NOT NULL) AS "afterCount"
@@ -2859,7 +2862,8 @@ export async function getXiaofeiTestSessionDetail(
 				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
 			WHERE t."organizationId" = ${organizationId} AND t."testSessionId" = ${testSessionId}
 		`,
-	]);
+		],
+	);
 	if (!session && (!turns.length || !first || !latest)) return null;
 	const capabilityVersionId = session?.capabilityVersionId ?? latest!.capabilityVersionId;
 	const isCurrent = capabilityVersionId === binding?.testCapabilityVersionId;
