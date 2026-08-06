@@ -140,17 +140,64 @@ function materializeExactCapabilitySnapshot(
 		...deriveCapabilityPlan(knowledgeUnits, input.manifest.createdAt),
 		reviewed: true,
 	};
+	const evalSuite = canTransferEvalEvidence(input.base, knowledgeUnits, capabilityPlan)
+		? {
+				...input.base.evalSuite,
+				// The immutable manifest creates a new runtime plan version. The
+				// evidence is transferable only when the reviewed logical KU set and
+				// content are unchanged, so bind the passed Eval to that version.
+				capabilityPlanVersion: capabilityPlan.version,
+			}
+		: input.base.evalSuite;
 	const runtimeManifest = { ...input.manifest, status: "active" as const };
 	return XiaofeiWorkspaceSnapshotSchema.parse({
 		...input.base,
 		knowledgeUnits,
 		capabilityPlan,
+		evalSuite,
 		knowledgeVersioning: {
 			knowledgeUnitRevisions: exact,
 			capabilityVersionManifests: [runtimeManifest],
 			activeCapabilityVersionId: runtimeManifest.id,
 		},
 	});
+}
+
+/**
+ * Eval evidence follows an immutable CA only when it still describes the same
+ * reviewed logical knowledge and content. A changed source stays fail-closed.
+ */
+function canTransferEvalEvidence(
+	base: import("./contracts").XiaofeiWorkspaceSnapshot,
+	knowledgeUnits: KnowledgeUnit[],
+	capabilityPlan: import("./contracts").CapabilityPlan,
+): boolean {
+	if (
+		base.evalSuite.status !== "passed" ||
+		base.evalSuite.capabilityPlanVersion !== base.capabilityPlan.version ||
+		!base.capabilityPlan.reviewed ||
+		base.capabilityPlan.status !== "review_ready"
+	)
+		return false;
+	const baseIds = [...base.capabilityPlan.knowledgeUnitIds].sort();
+	const materializedIds = [...capabilityPlan.knowledgeUnitIds].sort();
+	if (
+		baseIds.length !== materializedIds.length ||
+		baseIds.some((id, index) => id !== materializedIds[index])
+	)
+		return false;
+	const baseUnits = new Map(base.knowledgeUnits.map((unit) => [unit.id, unit]));
+	return knowledgeUnits.every((unit) => {
+		const previous = baseUnits.get(unit.id);
+		return (
+			previous !== undefined &&
+			knowledgeUnitContentHash(previous) === knowledgeUnitContentHash(unit)
+		);
+	});
+}
+
+function knowledgeUnitContentHash(knowledgeUnit: KnowledgeUnit): string {
+	return stableHash(knowledgeUnitContentSnapshot(knowledgeUnit));
 }
 
 /** Creates an isolated Test CA runtime snapshot without changing the live active pointer. */
