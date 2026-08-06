@@ -36,6 +36,7 @@ vi.mock("@repo/database", () => ({
 	createXiaofeiTestTurnRerun: mocks.createRerun,
 	getXiaofeiOrganizationConfig: mocks.getConfig,
 	getXiaofeiOrganizationHostingBinding: mocks.getBinding,
+	getXiaofeiVersioningOverviewData: vi.fn(),
 	getXiaofeiTestSessionDetail: mocks.getDetail,
 	getXiaofeiWorkspace: mocks.getWorkspace,
 	listXiaofeiKnowledgeUnits: mocks.listKnowledge,

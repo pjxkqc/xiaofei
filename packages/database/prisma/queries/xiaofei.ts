@@ -2382,6 +2382,63 @@ export function listXiaofeiKnowledgeUnitRevisions(organizationId: string) {
 	});
 }
 
+/**
+ * Returns the metadata-only projection used by the versioning overview.
+ * Runtime materialization continues to use getXiaofeiOrganizationHostingBinding,
+ * which intentionally loads content; the overview never needs that JSON.
+ */
+export function getXiaofeiVersioningOverviewData(organizationId: string) {
+	const versionSelect = {
+		id: true,
+		capabilityKey: true,
+		status: true,
+		manifestHash: true,
+		createdAt: true,
+		knowledgeUnits: {
+			orderBy: [{ priority: "desc" }, { id: "asc" }],
+			select: {
+				id: true,
+				capabilityVersionId: true,
+				knowledgeUnitRevisionId: true,
+				role: true,
+				priority: true,
+				knowledgeUnitRevision: {
+					select: { id: true, logicalKnowledgeUnitId: true, origin: true },
+				},
+			},
+		},
+	} satisfies Prisma.XiaofeiCapabilityVersionSelect;
+	return Promise.all([
+		db.xiaofeiKnowledgeUnitRevision.findMany({
+			where: { OR: [{ organizationId }, { organizationId: null }] },
+			orderBy: [{ logicalKnowledgeUnitId: "asc" }, { revision: "desc" }],
+			select: {
+				id: true,
+				organizationId: true,
+				scopeKey: true,
+				logicalKnowledgeUnitId: true,
+				knowledgeUnitId: true,
+				origin: true,
+				revision: true,
+				contentHash: true,
+				createdAt: true,
+			},
+		}),
+		db.xiaofeiCapabilityBinding.findUnique({
+			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+			select: {
+				id: true,
+				organizationId: true,
+				capabilityKey: true,
+				activeCapabilityVersionId: true,
+				testCapabilityVersionId: true,
+				activeCapabilityVersion: { select: versionSelect },
+				testCapabilityVersion: { select: versionSelect },
+			},
+		}),
+	]);
+}
+
 /** Creates a frozen CA manifest and its real M:N KU-revision memberships. */
 export function createXiaofeiCapabilityVersion(input: CreateXiaofeiCapabilityVersionInput) {
 	if (input.knowledgeUnits.length === 0)

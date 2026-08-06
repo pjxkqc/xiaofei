@@ -8,8 +8,8 @@ import {
 	createXiaofeiTestSession,
 	getXiaofeiOrganizationConfig,
 	getXiaofeiOrganizationHostingBinding,
+	getXiaofeiVersioningOverviewData,
 	loadXiaofeiRuntimeHostingCapability,
-	listXiaofeiKnowledgeUnitRevisions,
 	listXiaofeiTestSessions,
 	getXiaofeiTestSessionDetail,
 	upsertXiaofeiOrganizationConfig,
@@ -35,9 +35,8 @@ const questionSchema = z.string().trim().min(1).max(10_000);
 
 export const getXiaofeiVersioningOverview = supportProcedure.handler(async ({ context }) => {
 	const organizationId = await getXiaofeiOrganizationId(context);
-	const [revisions, binding, config] = await Promise.all([
-		listXiaofeiKnowledgeUnitRevisions(organizationId),
-		getXiaofeiOrganizationHostingBinding(organizationId),
+	const [[revisions, binding], config] = await Promise.all([
+		getXiaofeiVersioningOverviewData(organizationId),
 		getXiaofeiOrganizationConfig(organizationId),
 	]);
 	return { revisions, binding, xiaofeiEnabled: config?.xiaofeiEnabled ?? false };
