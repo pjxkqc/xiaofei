@@ -2710,11 +2710,16 @@ export async function listXiaofeiTestSessions(
 		}>
 	>`
 		WITH "latest" AS (
-			SELECT DISTINCT ON (t."testSessionId")
+			(SELECT DISTINCT ON (t."testSessionId")
 				t.id, t."testSessionId", t."capabilityVersionId", t."completedAt", t."createdAt"
 			FROM "xiaofei_test_turn" t
 			WHERE t."organizationId" = ${organizationId}
-			ORDER BY t."testSessionId", t."createdAt" DESC, t.id DESC
+			ORDER BY t."testSessionId", t."createdAt" DESC, t.id DESC)
+			UNION ALL
+			SELECT s.id, s.id AS "testSessionId", s."capabilityVersionId", s."createdAt" AS "completedAt", s."createdAt"
+			FROM "xiaofei_test_session" s
+			WHERE s."organizationId" = ${organizationId}
+				AND NOT EXISTS (SELECT 1 FROM "xiaofei_test_turn" t WHERE t."organizationId" = s."organizationId" AND t."testSessionId" = s.id)
 		), "selected" AS (
 			SELECT * FROM "latest"
 			WHERE ${options.cursor ?? null}::text IS NULL OR ("createdAt", id) < (
@@ -2730,9 +2735,9 @@ export async function listXiaofeiTestSessions(
 			ORDER BY t."testSessionId", t."createdAt" ASC, t.id ASC
 		)
 		SELECT s.id, s."testSessionId", s."capabilityVersionId", s."completedAt",
-			f.question AS "firstQuestion"
+			COALESCE(f.question, '') AS "firstQuestion"
 		FROM "selected" s
-		INNER JOIN "first" f ON f."testSessionId" = s."testSessionId"
+		LEFT JOIN "first" f ON f."testSessionId" = s."testSessionId"
 		ORDER BY s."createdAt" DESC, s.id DESC
 	`;
 	const result = page(latestTurns, limit);
