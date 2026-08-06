@@ -342,6 +342,50 @@ export interface CreateXiaofeiTestTurnRerunInput {
 	completedAt: Date;
 }
 
+export interface ListXiaofeiTestSessionsOptions {
+	cursor?: string;
+	limit?: number;
+}
+
+/** A bounded, safe-to-list Test CA session projection; turn bodies stay in the detail DTO. */
+export interface XiaofeiTestSessionSummaryDto {
+	id: string;
+	capabilityVersionId: string;
+	firstQuestion: string;
+	latestAt: Date;
+	turnCount: number;
+	isCurrent: boolean;
+	writable: boolean;
+}
+
+export interface XiaofeiTestSessionDetailDto extends XiaofeiTestSessionSummaryDto {
+	turns: Array<{
+		id: string;
+		question: string;
+		answer: string;
+		capabilityVersionId: string;
+		conversationState: ConversationState | null;
+		runtimeMetadata: RuntimeMetadata;
+		evidenceRevisionId: string | null;
+		sourceTestTurnId: string | null;
+		interventionId: string | null;
+		requestedAt: Date;
+		completedAt: Date;
+		createdAt: Date;
+	}>;
+}
+
+export interface UpsertXiaofeiSyntheticSupportConversationInput {
+	organizationId: string;
+	externalId: string;
+	customerName?: string | null;
+	state: Prisma.InputJsonValue;
+	messages: Prisma.InputJsonValue;
+	traceEvents: Prisma.InputJsonValue;
+	lastCustomerSeenAt?: Date | null;
+	lastMessageAt?: Date | null;
+}
+
 export interface XiaofeiRuntimeCapabilityDto {
 	manifest: CapabilityVersionManifest;
 	revisions: KnowledgeUnitRevision[];
@@ -955,6 +999,47 @@ export async function upsertXiaofeiOrganizationConversation(input: {
 				channel: conversation.channel,
 				state: conversation.state,
 				traceEvents: conversation.traceEvents,
+			},
+		});
+	});
+}
+
+/**
+ * Projects a synthetic acceptance conversation into the Organization workspace.
+ * This deliberately does not create an inbound event, processing job, channel
+ * binding, or outbound delivery: it is not an Email transport operation.
+ */
+export function upsertXiaofeiSyntheticSupportConversation(
+	input: UpsertXiaofeiSyntheticSupportConversationInput,
+) {
+	return db.$transaction(async (transaction) => {
+		const workspace = await transaction.xiaofeiWorkspace.findUnique({
+			where: { tenantKey: organizationTenantKey(input.organizationId) },
+		});
+		if (!workspace) throw new XiaofeiOrganizationWorkspaceNotFoundError(input.organizationId);
+		return transaction.xiaofeiConversation.upsert({
+			where: {
+				workspaceId_externalId: { workspaceId: workspace.id, externalId: input.externalId },
+			},
+			create: {
+				workspaceId: workspace.id,
+				externalId: input.externalId,
+				channel: "synthetic_support",
+				customerName: input.customerName ?? "Synthetic support acceptance",
+				state: input.state,
+				messages: input.messages,
+				traceEvents: input.traceEvents,
+				lastCustomerSeenAt: input.lastCustomerSeenAt ?? null,
+				lastMessageAt: input.lastMessageAt ?? null,
+			},
+			update: {
+				channel: "synthetic_support",
+				customerName: input.customerName ?? "Synthetic support acceptance",
+				state: input.state,
+				messages: input.messages,
+				traceEvents: input.traceEvents,
+				lastCustomerSeenAt: input.lastCustomerSeenAt ?? null,
+				lastMessageAt: input.lastMessageAt ?? null,
 			},
 		});
 	});
@@ -2424,6 +2509,115 @@ export async function getXiaofeiTestSession(organizationId: string, testSessionI
 		id: turn.id,
 		capabilityVersionId: turn.capabilityVersionId,
 		conversationState: ConversationStateSchema.parse(turn.conversationState),
+	};
+}
+
+/** Lists at most 50 Organization-local sessions; a session from another tenant cannot be a cursor. */
+export async function listXiaofeiTestSessions(
+	organizationId: string,
+	options: ListXiaofeiTestSessionsOptions = {},
+) {
+	const limit = assertPageLimit(options.limit);
+	const binding = await db.xiaofeiCapabilityBinding.findUnique({
+		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+		select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
+	});
+	const currentCapabilityIds = new Set(
+		[binding?.activeCapabilityVersionId, binding?.testCapabilityVersionId].filter(
+			(id): id is string => Boolean(id),
+		),
+	);
+	const latestTurns = await db.xiaofeiTestTurn.findMany({
+		where: { organizationId },
+		select: { id: true, testSessionId: true, capabilityVersionId: true, completedAt: true },
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		distinct: ["testSessionId"],
+		take: limit + 1,
+		...(options.cursor
+			? { cursor: { organizationId_id: { organizationId, id: options.cursor } }, skip: 1 }
+			: {}),
+	});
+	const result = page(latestTurns, limit);
+	const items = await Promise.all(
+		result.items.map(async (latest) => {
+			const [first, turnCount] = await Promise.all([
+				db.xiaofeiTestTurn.findFirst({
+					where: { organizationId, testSessionId: latest.testSessionId },
+					select: { question: true },
+					orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+				}),
+				db.xiaofeiTestTurn.count({
+					where: { organizationId, testSessionId: latest.testSessionId },
+				}),
+			]);
+			const isCurrent = currentCapabilityIds.has(latest.capabilityVersionId);
+			return {
+				id: latest.testSessionId,
+				capabilityVersionId: latest.capabilityVersionId,
+				firstQuestion: first?.question ?? "",
+				latestAt: latest.completedAt,
+				turnCount,
+				isCurrent,
+				writable: isCurrent,
+			} satisfies XiaofeiTestSessionSummaryDto;
+		}),
+	);
+	return { items, nextCursor: result.nextCursor };
+}
+
+/** Returns a bounded immutable history and reports whether that session may receive another turn. */
+export async function getXiaofeiTestSessionDetail(
+	organizationId: string,
+	testSessionId: string,
+): Promise<XiaofeiTestSessionDetailDto | null> {
+	const [binding, turns, turnCount] = await Promise.all([
+		db.xiaofeiCapabilityBinding.findUnique({
+			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+			select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
+		}),
+		db.xiaofeiTestTurn.findMany({
+			where: { organizationId, testSessionId },
+			orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+			take: 100,
+			select: {
+				id: true,
+				question: true,
+				answer: true,
+				capabilityVersionId: true,
+				conversationState: true,
+				runtimeMetadata: true,
+				evidenceRevisionId: true,
+				sourceTestTurnId: true,
+				interventionId: true,
+				requestedAt: true,
+				completedAt: true,
+				createdAt: true,
+			},
+		}),
+		db.xiaofeiTestTurn.count({ where: { organizationId, testSessionId } }),
+	]);
+	if (!turns.length) return null;
+	const first = turns[0];
+	const latest = turns[turns.length - 1];
+	if (!first || !latest) return null;
+	const isCurrent =
+		latest.capabilityVersionId === binding?.activeCapabilityVersionId ||
+		latest.capabilityVersionId === binding?.testCapabilityVersionId;
+	return {
+		id: testSessionId,
+		capabilityVersionId: latest.capabilityVersionId,
+		firstQuestion: first.question,
+		latestAt: latest.completedAt,
+		turnCount,
+		isCurrent,
+		writable: isCurrent,
+		turns: turns.map((turn) => ({
+			...turn,
+			conversationState: turn.conversationState
+				? ConversationStateSchema.parse(turn.conversationState)
+				: null,
+			runtimeMetadata: RuntimeMetadataSchema.parse(turn.runtimeMetadata),
+		})),
 	};
 }
 

@@ -95,6 +95,8 @@ const queryMocks = vi.hoisted(() => {
 		createTestTurn: transactionClient.xiaofeiTestTurn.create,
 		findLatestTestTurn: transactionClient.xiaofeiTestTurn.findFirst,
 		findTestTurn: transactionClient.xiaofeiTestTurn.findUnique,
+		listTestTurns: vi.fn(),
+		countTestTurns: vi.fn(),
 		updateTestTurn: transactionClient.xiaofeiTestTurn.update,
 		createResponseIntervention: transactionClient.xiaofeiResponseIntervention.create,
 		findResponseIntervention: transactionClient.xiaofeiResponseIntervention.findUnique,
@@ -440,7 +442,11 @@ vi.mock("../client", () => ({
 		},
 		xiaofeiCapabilityVersion: { findUnique: queryMocks.findCapabilityVersion },
 		xiaofeiCapabilityBinding: { findUnique: queryMocks.getHostingBinding },
-		xiaofeiTestTurn: { findFirst: queryMocks.findLatestTestTurn },
+		xiaofeiTestTurn: {
+			findFirst: queryMocks.findLatestTestTurn,
+			findMany: queryMocks.listTestTurns,
+			count: queryMocks.countTestTurns,
+		},
 		xiaofeiInboundEvent: {
 			findMany: queryMocks.listInboundEvents,
 			findUnique: queryMocks.getInboundEvent,
@@ -501,7 +507,10 @@ import {
 	createXiaofeiTestTurn,
 	createXiaofeiTestTurnRerun,
 	getXiaofeiTestSession,
+	getXiaofeiTestSessionDetail,
+	listXiaofeiTestSessions,
 	loadXiaofeiRuntimeHostingCapability,
+	upsertXiaofeiSyntheticSupportConversation,
 	XiaofeiCapabilityPartitionError,
 	XiaofeiDuplicateLogicalKnowledgeUnitError,
 	XiaofeiVersioningNotFoundError,
@@ -637,6 +646,121 @@ describe("Xiaofei Organization queries", () => {
 				where: expect.objectContaining({ conversationState: { not: expect.anything() } }),
 			}),
 		);
+	});
+
+	it("lists Organization-local sessions with a bounded cursor and current writability", async () => {
+		queryMocks.getHostingBinding.mockResolvedValueOnce({
+			activeCapabilityVersionId: "active-version",
+			testCapabilityVersionId: "test-version",
+		});
+		queryMocks.listTestTurns.mockResolvedValueOnce([
+			{
+				id: "latest-turn",
+				testSessionId: "session-a",
+				capabilityVersionId: "test-version",
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			},
+		]);
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce({ question: "First question" });
+		queryMocks.countTestTurns.mockResolvedValueOnce(2);
+
+		await expect(listXiaofeiTestSessions("organization-a", { limit: 1 })).resolves.toEqual({
+			items: [
+				{
+					id: "session-a",
+					capabilityVersionId: "test-version",
+					firstQuestion: "First question",
+					latestAt: new Date("2026-08-04T00:00:01.000Z"),
+					turnCount: 2,
+					isCurrent: true,
+					writable: true,
+				},
+			],
+			nextCursor: null,
+		});
+		expect(queryMocks.listTestTurns).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { organizationId: "organization-a" },
+				distinct: ["testSessionId"],
+				take: 2,
+			}),
+		);
+	});
+
+	it("keeps historical TestTurns readable but marks a stale CA session non-writable", async () => {
+		queryMocks.getHostingBinding.mockResolvedValueOnce({
+			activeCapabilityVersionId: "active-version",
+			testCapabilityVersionId: "current-test-version",
+		});
+		queryMocks.listTestTurns.mockResolvedValueOnce([
+			{
+				id: "turn-a",
+				question: "First question",
+				answer: "Saved answer",
+				capabilityVersionId: "historic-version",
+				conversationState,
+				runtimeMetadata: {
+					knowledgeTitle: null,
+					knowledgeEvidence: null,
+					nextAction: "reply",
+					riskLevel: "low",
+					ownerType: "ai",
+					stage: "admission",
+					missingSlots: [],
+					traces: [],
+				},
+				evidenceRevisionId: null,
+				sourceTestTurnId: null,
+				interventionId: null,
+				requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+				createdAt: new Date("2026-08-04T00:00:01.000Z"),
+			},
+		]);
+		queryMocks.countTestTurns.mockResolvedValueOnce(1);
+
+		await expect(getXiaofeiTestSessionDetail("organization-a", "session-a")).resolves.toMatchObject(
+			{
+				id: "session-a",
+				capabilityVersionId: "historic-version",
+				turnCount: 1,
+				isCurrent: false,
+				writable: false,
+				turns: [{ id: "turn-a", answer: "Saved answer" }],
+			},
+		);
+		expect(queryMocks.listTestTurns).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { organizationId: "organization-a", testSessionId: "session-a" },
+				take: 100,
+			}),
+		);
+	});
+
+	it("projects synthetic support only into its Organization conversation aggregate", async () => {
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.upsertConversation.mockResolvedValueOnce({ id: "conversation-a" });
+
+		await upsertXiaofeiSyntheticSupportConversation({
+			organizationId: "organization-a",
+			externalId: "synthetic-acceptance-a",
+			state: { owner: "support" },
+			messages: [{ direction: "inbound", content: "Synthetic question" }],
+			traceEvents: [{ type: "synthetic.acceptance" }],
+		});
+
+		expect(queryMocks.upsertConversation).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					workspaceId: "workspace-a",
+					channel: "synthetic_support",
+					messages: [{ direction: "inbound", content: "Synthetic question" }],
+					traceEvents: [{ type: "synthetic.acceptance" }],
+				}),
+			}),
+		);
+		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
+		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
 	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {

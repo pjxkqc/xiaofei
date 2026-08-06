@@ -59,6 +59,16 @@ are not retained; `bodyText` is the durable extracted content.
 - Organization-scoped Active/Test hosting bindings, exact runtime materialization,
   immutable feedback interventions, and durable TestTurn records.
 
+`listXiaofeiTestSessions` and `getXiaofeiTestSessionDetail` expose bounded,
+Organization-scoped Test CA DTOs for server-side consumers. They preserve every
+stored TestTurn as immutable history, identify the first question, latest time,
+turn count, bound capability version, and whether the session remains writable
+against the current Active/Test pointer. A stale CA session is still readable but
+not writable; a new turn must use a new session. `upsertXiaofeiSyntheticSupportConversation`
+projects acceptance-only state, messages, and traces into the Organization's
+existing conversation aggregate with channel `synthetic_support`; it never opens
+an Email binding, inbound-event, processing-job, or outbound-delivery path.
+
 ### Governed answer-feedback-rerun bridge
 
 `getXiaofeiOrganizationHostingBinding` and
