@@ -60,6 +60,15 @@ interface TestSessionSummary {
 	isCurrent: boolean;
 }
 
+type SessionDetailState = "idle" | "loading" | "ready" | "error";
+
+/** A loading state is reserved for a real, non-empty session detail request. */
+export function sessionDetailStateAfterRecoverySelection(
+	selected: Pick<TestSessionSummary, "turnCount"> | undefined,
+): Extract<SessionDetailState, "loading" | "ready"> {
+	return selected && selected.turnCount > 0 ? "loading" : "ready";
+}
+
 export function KnowledgeVersioningPanel({
 	section = "all",
 }: {
@@ -74,9 +83,7 @@ export function KnowledgeVersioningPanel({
 	const [rerun, setRerun] = useState<Correction | null>(null);
 	const [sessions, setSessions] = useState<TestSessionSummary[]>([]);
 	const [interventionEvidence, setInterventionEvidence] = useState<InterventionEvidence[]>([]);
-	const [sessionDetailState, setSessionDetailState] = useState<
-		"idle" | "loading" | "ready" | "error"
-	>("idle");
+	const [sessionDetailState, setSessionDetailState] = useState<SessionDetailState>("idle");
 	const recoveryRequest = useRef(0);
 	const mounted = useRef(false);
 	const [busy, setBusy] = useState(false);
@@ -112,28 +119,38 @@ export function KnowledgeVersioningPanel({
 			mounted.current = false;
 		};
 	}, []);
-	const loadSession = useCallback(async (next: string) => {
-		const request = ++recoveryRequest.current;
-		beginOperation("会话列表已恢复；正在读取历史轮次与干预证据…");
-		setTestSessionId(next);
-		setTurns([]);
-		setInterventionEvidence([]);
-		setSelectedTurnId(null);
-		setSessionDetailState("loading");
-		try {
-			const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
-			if (!mounted.current || request !== recoveryRequest.current) return;
-			setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
-			setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
-			setSessionDetailState("ready");
-			completeOperation();
-		} catch (error) {
-			if (!mounted.current || request !== recoveryRequest.current) return;
-			setSessionDetailState("error");
-			failOperation(error);
-			throw error;
-		}
-	}, []);
+	const loadSession = useCallback(
+		async (next: string) => {
+			const request = ++recoveryRequest.current;
+			beginOperation("会话列表已恢复；正在读取历史轮次与干预证据…");
+			setTestSessionId(next);
+			setTurns([]);
+			setInterventionEvidence([]);
+			setSelectedTurnId(null);
+			const selected = sessions.find((session) => session.id === next);
+			const detailState = sessionDetailStateAfterRecoverySelection(selected);
+			if (selected && detailState === "ready") {
+				setSessionDetailState("ready");
+				completeOperation();
+				return;
+			}
+			setSessionDetailState("loading");
+			try {
+				const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
+				if (!mounted.current || request !== recoveryRequest.current) return;
+				setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
+				setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
+				setSessionDetailState("ready");
+				completeOperation();
+			} catch (error) {
+				if (!mounted.current || request !== recoveryRequest.current) return;
+				setSessionDetailState("error");
+				failOperation(error);
+				throw error;
+			}
+		},
+		[sessions],
+	);
 	const refreshSessions = useCallback(async () => {
 		const result = await orpcClient.xiaofei.listTestSessions({ limit: 20 });
 		const items = (result.items as unknown[]).map(normalizeTestSessionSummary);
@@ -155,8 +172,7 @@ export function KnowledgeVersioningPanel({
 					setTurns([]);
 					setInterventionEvidence([]);
 					setSelectedTurnId(null);
-					setSessionDetailState("loading");
-					if (selected.writable && selected.turnCount === 0) completeOperation();
+					setSessionDetailState(sessionDetailStateAfterRecoverySelection(selected));
 				},
 				isCurrent: () => mounted.current && request === recoveryRequest.current,
 			});

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { acceptanceGate } from "./acceptance-gate";
 import {
 	canCreateSupportAcceptance,
+	sessionDetailStateAfterRecoverySelection,
 	symmetricDifferenceSize,
 	toInterventionEvidence,
 } from "./KnowledgeVersioningPanel";
@@ -84,16 +85,18 @@ describe("symmetricDifferenceSize", () => {
 	it("does not request detail for a writable zero-turn session", async () => {
 		const detail = vi.fn(async () => ({ id: "empty" }));
 		const selected = vi.fn();
-		await expect(
-			recoverTestSession({
-				list: async () => ({ items: [{ id: "empty", writable: true, turnCount: 0 }] }),
-				detail,
-				onSelected: selected,
-			}),
-		).resolves.toMatchObject({
+		const recovery = recoverTestSession({
+			list: async () => ({ items: [{ id: "empty", writable: true, turnCount: 0 }] }),
+			detail,
+			onSelected: selected,
+		});
+		await expect(recovery).resolves.toMatchObject({
 			selected: { id: "empty" },
 			detail: undefined,
 		});
+		expect(sessionDetailStateAfterRecoverySelection({ turnCount: 0 })).toBe("ready");
+		expect(sessionDetailStateAfterRecoverySelection({ turnCount: 1 })).toBe("loading");
+		expect(sessionDetailStateAfterRecoverySelection(undefined)).toBe("ready");
 		expect(selected).toHaveBeenCalledWith({ id: "empty", writable: true, turnCount: 0 }, [
 			{ id: "empty", writable: true, turnCount: 0 },
 		]);
