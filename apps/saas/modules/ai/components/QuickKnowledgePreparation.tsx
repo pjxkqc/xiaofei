@@ -20,6 +20,20 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 type Entry = Awaited<ReturnType<typeof orpcClient.xiaofei.listKnowledgeEntries>>["items"][number];
 type Document = Awaited<ReturnType<typeof orpcClient.xiaofei.createKnowledgeDocument>>;
 type Preparation = Awaited<ReturnType<typeof orpcClient.xiaofei.prepareKnowledge>>;
+type PreparationPhase =
+	| "idle"
+	| "uploading"
+	| "validating"
+	| "activating_entries"
+	| "preparing_entries"
+	| "failed";
+
+const PREPARATION_STEPS = [
+	{ id: "uploading", label: "上传并解析资料" },
+	{ id: "validating", label: "校验当前条目" },
+	{ id: "activating_entries", label: "激活可用条目" },
+	{ id: "preparing_entries", label: "生成/复用 KU、发布并创建 Test CA" },
+] as const;
 
 export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => void }) {
 	const [document, setDocument] = useState<Document | null>(null);
@@ -27,7 +41,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 	const [busy, setBusy] = useState(false);
 	const [prepared, setPrepared] = useState(false);
 	const [preparation, setPreparation] = useState<Preparation | null>(null);
-	const [phase, setPhase] = useState<"idle" | "uploading" | "preparing" | "failed">("idle");
+	const [phase, setPhase] = useState<PreparationPhase>("idle");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [startedAt, setStartedAt] = useState<number | null>(null);
 	const elapsedSeconds = useElapsedSeconds(startedAt);
@@ -78,7 +92,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 
 	async function prepareTestCa() {
 		if (!document) return;
-		setPhase("preparing");
+		setPhase("validating");
 		setErrorMessage(null);
 		setStartedAt(Date.now());
 		setBusy(true);
@@ -88,6 +102,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 			).filter((entry) => entry.sourceId === document.id && entry.eligible);
 			if (!sourceEntries.length)
 				throw new Error("这份资料没有可用于 Test CA 的当前条目，请先在高级治理中检查解析结果。");
+			setPhase("activating_entries");
 			await Promise.all(
 				sourceEntries
 					.filter((entry) => entry.status === "draft")
@@ -101,6 +116,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 				(entry) => entry.sourceId === document.id && entry.eligible && entry.status === "active",
 			);
 			if (!currentEntries.length) throw new Error("这份资料没有可用的当前条目，无法准备 Test CA。");
+			setPhase("preparing_entries");
 			const result = await orpcClient.xiaofei.prepareKnowledge({
 				entryIds: currentEntries.map((entry) => entry.id),
 			});
@@ -132,12 +148,40 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 			</CardHeader>
 			<CardContent className="gap-5 flex flex-col">
 				{busy ? (
-					<div className="gap-1 text-sm text-muted-foreground" aria-live="polite">
-						<output className="block">
+					<div className="gap-2 text-sm flex flex-col text-muted-foreground" aria-live="polite">
+						<output className="font-medium block">
 							{phase === "uploading"
 								? "上传 → 校验 → 解析中，请保持页面打开…"
 								: "校验条目 → 生成/复用 KU → 发布 → 创建 Test CA → 建立会话中…"}
 						</output>
+						<ol
+							className="gap-1 sm:gap-2 sm:flex-row sm:flex-wrap flex flex-col"
+							aria-label="知识准备阶段"
+						>
+							{PREPARATION_STEPS.map((step, index) => {
+								const activeIndex = PREPARATION_STEPS.findIndex((item) => item.id === phase);
+								const status =
+									phase === "uploading" && index === 0
+										? "进行中"
+										: index < activeIndex
+											? "已完成"
+											: index === activeIndex
+												? "进行中"
+												: "待处理";
+								return (
+									<li key={step.id} className="gap-1.5 text-xs flex items-center">
+										<span
+											className={`size-5 flex items-center justify-center rounded-full border ${status === "进行中" ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}
+										>
+											{status === "已完成" ? "✓" : index + 1}
+										</span>
+										<span>
+											{step.label} · {status}
+										</span>
+									</li>
+								);
+							})}
+						</ol>
 						{elapsedSeconds >= 2 ? (
 							<p>已等待 {elapsedSeconds} 秒，完成后会显示各阶段耗时。</p>
 						) : null}

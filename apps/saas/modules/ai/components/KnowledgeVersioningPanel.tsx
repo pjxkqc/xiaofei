@@ -208,7 +208,20 @@ export function KnowledgeVersioningPanel({
 		try {
 			const next = await orpcClient.xiaofei.newTestSession();
 			storeSession(next.testSessionId);
-			await refreshSessions();
+			setSessions((current) => [
+				{
+					id: next.testSessionId,
+					turnCount: 0,
+					writable: true,
+					firstQuestion: null,
+					latestAt: new Date().toISOString(),
+					capabilityVersionId: next.capabilityVersionId,
+					beforeInterventionCount: 0,
+					afterInterventionCount: 0,
+					isCurrent: true,
+				},
+				...current.filter((session) => session.id !== next.testSessionId),
+			]);
 			setTurns([]);
 			setInterventionEvidence([]);
 			setSelectedTurnId(null);
@@ -216,6 +229,7 @@ export function KnowledgeVersioningPanel({
 			setCorrection("");
 			completeOperation();
 			toastSuccess("已开始新的 Test CA 会话");
+			void refreshSessions().catch(() => undefined);
 		} catch (error) {
 			failOperation(error);
 			toastError("无法重置会话", message(error));
@@ -233,10 +247,22 @@ export function KnowledgeVersioningPanel({
 				testSessionId,
 			});
 			storeSession(result.testSessionId);
-			await refreshSessions();
+			setSessions((current) =>
+				current.map((session) =>
+					session.id === result.testSessionId
+						? {
+								...session,
+								turnCount: session.turnCount + 1,
+								firstQuestion: session.firstQuestion ?? result.turn.question,
+								latestAt: new Date().toISOString(),
+							}
+						: session,
+				),
+			);
 			setTurns((history) => [...history, toTestTurnView(result)]);
 			setQuestion("");
 			completeOperation();
+			void refreshSessions().catch(() => undefined);
 		} catch (error) {
 			failOperation(error);
 			toastError("测试失败", message(error));
@@ -257,9 +283,9 @@ export function KnowledgeVersioningPanel({
 			setCorrection("");
 			setSelectedTurnId(null);
 			await refresh();
-			await refreshSessions();
 			await loadSession(result.rerun.testSessionId);
 			completeOperation();
+			void refreshSessions().catch(() => undefined);
 			toastSuccess("已生成 Test CA 并完成同题复测；后续测试已切换为新会话");
 		} catch (error) {
 			failOperation(error);
@@ -639,9 +665,43 @@ function OperationFeedback({
 }) {
 	const elapsedSeconds = useElapsedSeconds(operation.startedAt);
 	if (!operation.label && !operation.error) return null;
+	const steps = operation.label
+		? operation.label
+				.replace(/…$/u, "")
+				.split("→")
+				.map((step) => step.trim())
+				.filter(Boolean)
+		: [];
 	return (
 		<div className="gap-2 p-3 text-sm rounded-lg border bg-muted/30" aria-live="polite">
-			{operation.label ? <p>{operation.label}</p> : null}
+			{operation.label ? (
+				<div className="gap-2 flex flex-col">
+					<p className="font-medium">服务端处理链路</p>
+					{steps.length > 1 ? (
+						<ol
+							className="gap-1 sm:gap-2 sm:flex-row sm:flex-wrap flex flex-col"
+							aria-label="服务端按顺序执行的操作阶段"
+						>
+							{steps.map((step, index) => (
+								<li
+									key={`${step}-${index}`}
+									className="gap-1.5 text-xs flex items-center text-muted-foreground"
+									aria-current={index === 0 ? "step" : undefined}
+								>
+									<span
+										className={`size-5 flex items-center justify-center rounded-full border text-[11px] ${index === 0 ? "border-primary bg-primary text-primary-foreground" : "bg-background"}`}
+									>
+										{index === 0 ? "…" : index + 1}
+									</span>
+									<span>{step}</span>
+								</li>
+							))}
+						</ol>
+					) : (
+						<p>{operation.label}</p>
+					)}
+				</div>
+			) : null}
 			{operation.label && elapsedSeconds >= 2 ? (
 				<p className="text-muted-foreground">
 					已等待 {elapsedSeconds} 秒；服务端仍在处理当前阶段，完成后会保留确定结果。
@@ -717,7 +777,7 @@ function TestConversation({
 						onClick={() => void onReset()}
 					>
 						<RefreshCcwIcon className="mr-2 size-4" />
-						重置测试会话
+						{busy ? "正在处理当前操作…" : "重置测试会话"}
 					</Button>
 				</div>
 			</CardHeader>
@@ -783,7 +843,7 @@ function TestConversation({
 							/>
 						</Label>
 						<Button disabled={busy || !ready || !question.trim()} onClick={() => void onTest()}>
-							发送到 Test CA
+							{busy ? "正在生成候选并保存…" : "发送到 Test CA"}
 						</Button>
 						{!ready ? (
 							<output className="text-sm block text-muted-foreground">
@@ -840,9 +900,11 @@ function TestConversation({
 							/>
 						</Label>
 						<Button disabled={busy || !correction.trim()} onClick={() => void onCorrect(selected)}>
-							{selected.feedbackMode === "revise"
-								? "生成新 KU Revision 并同题复测"
-								: "生成商户 KU 并同题复测"}
+							{busy
+								? "正在保存干预并复测…"
+								: selected.feedbackMode === "revise"
+									? "生成新 KU Revision 并同题复测"
+									: "生成商户 KU 并同题复测"}
 						</Button>
 					</div>
 				)}
