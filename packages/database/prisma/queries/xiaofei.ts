@@ -386,7 +386,8 @@ export interface UpsertXiaofeiSyntheticSupportConversationInput {
 	organizationId: string;
 	externalId: string;
 	customerName?: string | null;
-	state: ConversationState;
+	/** Serialized API state is validated at this persistence boundary. */
+	state: Prisma.InputJsonValue;
 	messages: Prisma.InputJsonValue;
 	traceEvents: Prisma.InputJsonValue;
 	lastCustomerSeenAt?: Date | null;
@@ -399,7 +400,8 @@ export interface CommitXiaofeiSyntheticSupportConversationInput {
 	expectedRevision: number;
 	expectedOwnerType: string | null;
 	expectedOwnerEpoch: number | null;
-	state: ConversationState;
+	/** Serialized API state is validated at this persistence boundary. */
+	state: Prisma.InputJsonValue;
 	messages: Prisma.InputJsonValue;
 	traceEvents: Prisma.InputJsonValue;
 	lastCustomerSeenAt?: Date | null;
@@ -2644,7 +2646,9 @@ async function createXiaofeiTestTurnInTransaction(
 		where: { organizationId_id: { organizationId, id: input.testSessionId } },
 		select: { capabilityVersionId: true },
 	});
-	if (session && session.capabilityVersionId !== input.capabilityVersionId)
+	// A turn must always belong to a durable, CA-pinned session. In particular,
+	// do not allow the first turn to create an unpinned implicit session.
+	if (!session || session.capabilityVersionId !== input.capabilityVersionId)
 		throw new XiaofeiTestSessionCapabilityConflictError(organizationId, input.testSessionId);
 	const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
 		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },

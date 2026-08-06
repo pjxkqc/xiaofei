@@ -16,6 +16,7 @@ const queryMocks = vi.hoisted(() => {
 			create: vi.fn(),
 			findUnique: vi.fn(),
 			findUniqueOrThrow: vi.fn(),
+			update: vi.fn(),
 			updateMany: vi.fn(),
 			upsert: vi.fn(),
 		},
@@ -135,6 +136,7 @@ const queryMocks = vi.hoisted(() => {
 		findConversationInTransaction: transactionClient.xiaofeiConversation.findUnique,
 		findConversationOrThrowInTransaction: transactionClient.xiaofeiConversation.findUniqueOrThrow,
 		updateSyntheticConversation: transactionClient.xiaofeiConversation.updateMany,
+		updateConversationInTransaction: transactionClient.xiaofeiConversation.update,
 		createTestSession: transactionClient.xiaofeiTestSession.create,
 		findTestSession: transactionClient.xiaofeiTestSession.findUnique,
 	};
@@ -532,6 +534,7 @@ import {
 	loadXiaofeiRuntimeHostingCapability,
 	upsertXiaofeiSyntheticSupportConversation,
 	commitXiaofeiSyntheticSupportConversation,
+	updateXiaofeiSupportConversation,
 	createOrReturnXiaofeiKnowledgeUnit,
 	createXiaofeiTestSession,
 	XiaofeiCapabilityPartitionError,
@@ -597,6 +600,7 @@ describe("Xiaofei Organization queries", () => {
 	});
 
 	it("persists a no-hit test turn without accepting a caller-selected revision", async () => {
+		queryMocks.findTestSession.mockResolvedValueOnce({ capabilityVersionId: "active-version" });
 		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
 			activeCapabilityVersion: {
 				id: "active-version",
@@ -1035,6 +1039,152 @@ describe("Xiaofei Organization queries", () => {
 		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
 	});
 
+	it("projects an AI guarded commit, increments revision, and leaves transport tables untouched", async () => {
+		const aiState = { ...conversationState, ownerEpoch: 2 };
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce({
+			id: "conversation-a",
+			channel: "synthetic_support",
+			revision: 4,
+			ownerType: "ai",
+			ownerEpoch: 2,
+		});
+		queryMocks.updateSyntheticConversation.mockResolvedValueOnce({ count: 1 });
+		queryMocks.findConversationOrThrowInTransaction.mockResolvedValueOnce({
+			id: "conversation-a",
+			revision: 5,
+			ownerType: "ai",
+			ownerEpoch: 2,
+		});
+
+		await expect(
+			commitXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-a",
+				externalId: "synthetic-ai",
+				expectedRevision: 4,
+				expectedOwnerType: "ai",
+				expectedOwnerEpoch: 2,
+				state: aiState,
+				messages: [],
+				traceEvents: [],
+			}),
+		).resolves.toMatchObject({ revision: 5, ownerType: "ai", ownerEpoch: 2 });
+		expect(queryMocks.updateSyntheticConversation).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					revision: { increment: 1 },
+					ownerType: "ai",
+					ownerEpoch: 2,
+				}),
+			}),
+		);
+		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
+		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+	});
+
+	it("invalidates a captured AI lease after the actual Inbox update primitive advances revision", async () => {
+		queryMocks.findConversationOrThrowInTransaction.mockResolvedValueOnce({
+			state: conversationState,
+		});
+		queryMocks.updateConversationInTransaction.mockResolvedValueOnce({ revision: 2 });
+		await updateXiaofeiSupportConversation("workspace-a", "synthetic-ai", {
+			state: conversationState,
+		});
+		expect(queryMocks.updateConversationInTransaction).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					revision: { increment: 1 },
+					ownerType: "ai",
+					ownerEpoch: 0,
+				}),
+			}),
+		);
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce({
+			id: "conversation-a",
+			channel: "synthetic_support",
+			revision: 2,
+			ownerType: "human",
+			ownerEpoch: 1,
+		});
+		await expect(
+			commitXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-a",
+				externalId: "synthetic-ai",
+				expectedRevision: 1,
+				expectedOwnerType: "ai",
+				expectedOwnerEpoch: 0,
+				state: conversationState,
+				messages: [],
+				traceEvents: [],
+			}),
+		).rejects.toBeInstanceOf(XiaofeiSyntheticSupportCommitConflictError);
+	});
+
+	it("allows exactly one of two concurrent guarded commits for one captured lease", async () => {
+		queryMocks.findWorkspaceInTransaction.mockResolvedValue({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValue({
+			id: "conversation-a",
+			channel: "synthetic_support",
+			revision: 1,
+			ownerType: "ai",
+			ownerEpoch: 0,
+		});
+		queryMocks.updateSyntheticConversation
+			.mockResolvedValueOnce({ count: 1 })
+			.mockResolvedValueOnce({ count: 0 });
+		queryMocks.findConversationOrThrowInTransaction.mockResolvedValue({
+			id: "conversation-a",
+			revision: 2,
+		});
+		const input = {
+			organizationId: "organization-a",
+			externalId: "synthetic-ai",
+			expectedRevision: 1,
+			expectedOwnerType: "ai",
+			expectedOwnerEpoch: 0,
+			state: conversationState,
+			messages: [],
+			traceEvents: [],
+		};
+		const results = await Promise.allSettled([
+			commitXiaofeiSyntheticSupportConversation(input),
+			commitXiaofeiSyntheticSupportConversation(input),
+		]);
+		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+	});
+
+	it("keeps synthetic sessions and conversations Organization-scoped", async () => {
+		queryMocks.findWorkspaceInTransaction
+			.mockResolvedValueOnce({ id: "workspace-a" })
+			.mockResolvedValueOnce({ id: "workspace-b" });
+		queryMocks.findConversationInTransaction.mockResolvedValue(null);
+		queryMocks.createConversation.mockResolvedValue({ id: "conversation" });
+		await upsertXiaofeiSyntheticSupportConversation({
+			organizationId: "organization-a",
+			externalId: "same-id",
+			state: conversationState,
+			messages: [],
+			traceEvents: [],
+		});
+		await upsertXiaofeiSyntheticSupportConversation({
+			organizationId: "organization-b",
+			externalId: "same-id",
+			state: conversationState,
+			messages: [],
+			traceEvents: [],
+		});
+		expect(queryMocks.createConversation).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ data: expect.objectContaining({ workspaceId: "workspace-a" }) }),
+		);
+		expect(queryMocks.createConversation).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ data: expect.objectContaining({ workspaceId: "workspace-b" }) }),
+		);
+	});
+
 	it("creates a zero-turn Test session only for the current Test capability", async () => {
 		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
 			testCapabilityVersionId: "test-ca",
@@ -1059,6 +1209,35 @@ describe("Xiaofei Organization queries", () => {
 		});
 	});
 
+	it("returns a writable zero-turn detail and makes it historical after the Test pointer moves", async () => {
+		const createdAt = new Date("2026-08-05T00:00:00.000Z");
+		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "test-ca" });
+		queryMocks.getTestSession.mockResolvedValueOnce({ capabilityVersionId: "test-ca", createdAt });
+		queryMocks.listTestTurns.mockResolvedValueOnce([]);
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+		queryMocks.countTestTurns.mockResolvedValueOnce(0);
+		queryMocks.queryRaw.mockResolvedValueOnce([{ beforeCount: BigInt(0), afterCount: BigInt(0) }]);
+		await expect(
+			getXiaofeiTestSessionDetail("organization-a", "session-zero"),
+		).resolves.toMatchObject({
+			id: "session-zero",
+			firstQuestion: "",
+			latestAt: createdAt,
+			turnCount: 0,
+			writable: true,
+			turns: [],
+		});
+		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "new-test-ca" });
+		queryMocks.getTestSession.mockResolvedValueOnce({ capabilityVersionId: "test-ca", createdAt });
+		queryMocks.listTestTurns.mockResolvedValueOnce([]);
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+		queryMocks.countTestTurns.mockResolvedValueOnce(0);
+		queryMocks.queryRaw.mockResolvedValueOnce([{ beforeCount: BigInt(0), afterCount: BigInt(0) }]);
+		await expect(
+			getXiaofeiTestSessionDetail("organization-a", "session-zero"),
+		).resolves.toMatchObject({ isCurrent: false, writable: false });
+	});
+
 	it("reuses a current KU with exact lineage instead of creating a duplicate", async () => {
 		queryMocks.findEntryInTransaction.mockResolvedValueOnce({
 			sourceId: "source-1",
@@ -1080,6 +1259,45 @@ describe("Xiaofei Organization queries", () => {
 			}),
 		).resolves.toEqual({ knowledgeUnit: { id: "current-ku" }, created: false });
 		expect(queryMocks.createUnit).not.toHaveBeenCalled();
+	});
+
+	it("converges concurrent current-KU retries to one create and one reuse", async () => {
+		const entry = {
+			sourceId: "source-1",
+			sourceContentHash: "hash-1",
+			sourceVersion: 2,
+			entryVersion: 3,
+		};
+		queryMocks.findEntryInTransaction.mockResolvedValue(entry);
+		queryMocks.findDocumentInTransaction.mockResolvedValue({
+			contentHash: "hash-1",
+			sourceVersion: 2,
+		});
+		let stored: { id: string } | null = null;
+		let releaseFirst: (() => void) | undefined;
+		const lock = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		queryMocks.executeRaw
+			.mockResolvedValueOnce(undefined)
+			.mockImplementationOnce(async () => await lock);
+		queryMocks.findCurrentUnit.mockImplementation(async () => stored);
+		queryMocks.createUnit.mockImplementation(async () => {
+			stored = { id: "created-ku" };
+			releaseFirst?.();
+			return stored;
+		});
+		const input = { workspaceId: "workspace-a", entryId: "entry-1", title: "Draft", content: {} };
+		await expect(
+			Promise.all([
+				createOrReturnXiaofeiKnowledgeUnit(input),
+				createOrReturnXiaofeiKnowledgeUnit(input),
+			]),
+		).resolves.toEqual([
+			{ knowledgeUnit: { id: "created-ku" }, created: true },
+			{ knowledgeUnit: { id: "created-ku" }, created: false },
+		]);
+		expect(queryMocks.createUnit).toHaveBeenCalledTimes(1);
 	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {
@@ -1200,6 +1418,26 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 		traces: [],
 	};
 
+	it("requires a durable session pinned to the requested Test CA before the first turn", async () => {
+		queryMocks.findLatestTestTurn.mockResolvedValueOnce(null);
+		queryMocks.findTestSession.mockResolvedValueOnce(null);
+		await expect(
+			createXiaofeiTestTurn("organization-a", {
+				testSessionId: "missing-session",
+				expectedPreviousTestTurnId: null,
+				question: "Question",
+				answer: "Answer",
+				capabilityVersionId: "test-ca",
+				conversationState,
+				runtimeMetadata,
+				requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+				completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			}),
+		).rejects.toBeInstanceOf(XiaofeiTestSessionCapabilityConflictError);
+		expect(queryMocks.findHostingBindingInTransaction).not.toHaveBeenCalled();
+		expect(queryMocks.createTestTurn).not.toHaveBeenCalled();
+	});
+
 	it("fails closed when an existing session is submitted against another Test CA", async () => {
 		queryMocks.findLatestTestTurn.mockResolvedValueOnce({
 			id: "turn-a",
@@ -1245,6 +1483,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 	});
 
 	it("rejects evidence whose exact member metadata does not match", async () => {
+		queryMocks.findTestSession.mockResolvedValueOnce({ capabilityVersionId: "active-version" });
 		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
 			activeCapabilityVersion: {
 				id: "active-version",
@@ -1300,6 +1539,7 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 			},
 		});
 		queryMocks.findTestTurn.mockResolvedValueOnce(null);
+		queryMocks.findTestSession.mockResolvedValueOnce({ capabilityVersionId: "result-version" });
 		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
 			activeCapabilityVersion: null,
 			testCapabilityVersion: {
