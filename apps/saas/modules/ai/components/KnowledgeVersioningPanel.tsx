@@ -127,6 +127,8 @@ export function KnowledgeVersioningPanel({
 			setTurns([]);
 			setInterventionEvidence([]);
 			setSelectedTurnId(null);
+			setRerun(null);
+			setCorrection("");
 			const selected = sessions.find((session) => session.id === next);
 			const detailState = sessionDetailStateAfterRecoverySelection(selected);
 			if (selected && detailState === "ready") {
@@ -172,6 +174,8 @@ export function KnowledgeVersioningPanel({
 					setTurns([]);
 					setInterventionEvidence([]);
 					setSelectedTurnId(null);
+					setRerun(null);
+					setCorrection("");
 					setSessionDetailState(sessionDetailStateAfterRecoverySelection(selected));
 				},
 				isCurrent: () => mounted.current && request === recoveryRequest.current,

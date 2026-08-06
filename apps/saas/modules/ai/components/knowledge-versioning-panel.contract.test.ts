@@ -59,6 +59,22 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).toContain("recoveryRequest.current");
 	});
 
+	it("clears transient correction evidence when switching or recovering a session", () => {
+		const loadSession = panel.slice(
+			panel.indexOf("const loadSession"),
+			panel.indexOf("const refreshSessions"),
+		);
+		const recoverySelectionStart = panel.indexOf("onSelected:");
+		const recoverySelection = panel.slice(
+			recoverySelectionStart,
+			panel.indexOf("isCurrent:", recoverySelectionStart),
+		);
+		for (const transition of [loadSession, recoverySelection]) {
+			expect(transition).toContain("setRerun(null)");
+			expect(transition).toContain('setCorrection("")');
+		}
+	});
+
 	it("shows semantic pending and retry feedback for every long action", () => {
 		for (const value of [
 			"正在审核当前能力方案…",
