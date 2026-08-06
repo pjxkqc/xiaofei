@@ -51,4 +51,18 @@ describe("Email integration UI contract", () => {
 		for (const page of [guidePage, inboundPage, deliveryPage])
 			expect(page).toContain("OrganizationRequired");
 	});
+
+	it("shows action-specific pending feedback for Inbox mutations", () => {
+		for (const value of [
+			'setBusyAction("owner")',
+			'setBusyAction("reply")',
+			'setBusyAction("email")',
+			"正在接管会话并刷新 Owner 状态…",
+			"正在交还小飞并刷新 Owner 状态…",
+			"真人回复已提交，正在持久化并刷新会话…",
+			"正在让小飞处理并刷新 Email 回递状态…",
+			"正在发送客服回复…",
+		])
+			expect(inbox).toContain(value);
+	});
 });

@@ -44,6 +44,8 @@ import {
 	nextSelectedConversationId,
 } from "../lib/support-inbox-state";
 
+type SupportInboxBusyAction = "email" | "owner" | "reply" | null;
+
 export function SupportInbox() {
 	const searchParams = useSearchParams();
 	const requestedConversationId = searchParams.get("conversationId");
@@ -59,7 +61,8 @@ export function SupportInbox() {
 	>(null);
 	const [input, setInput] = useState("");
 	const [loading, setLoading] = useState(true);
-	const [busy, setBusy] = useState(false);
+	const [busyAction, setBusyAction] = useState<SupportInboxBusyAction>(null);
+	const busy = busyAction !== null;
 	const [customerFilter, setCustomerFilter] = useState("");
 	const [channelFilter, setChannelFilter] = useState("all");
 	const [ownerFilter, setOwnerFilter] = useState("all");
@@ -131,7 +134,7 @@ export function SupportInbox() {
 
 	const setOwner = async (owner: "ai" | "human") => {
 		if (!conversation) return;
-		setBusy(true);
+		setBusyAction("owner");
 		try {
 			const updated = await orpcClient.xiaofei.setAgentConversationOwner({
 				conversationId: conversation.id,
@@ -148,7 +151,7 @@ export function SupportInbox() {
 			await refreshList().catch(() => undefined);
 			toastError("会话已变化，已刷新最新接管状态");
 		} finally {
-			setBusy(false);
+			setBusyAction(null);
 		}
 	};
 
@@ -157,7 +160,7 @@ export function SupportInbox() {
 		if (!conversation || !input.trim()) return;
 		const text = input.trim();
 		setInput("");
-		setBusy(true);
+		setBusyAction("reply");
 		try {
 			const updated = await orpcClient.xiaofei.sendAgentMessage({
 				conversationId: conversation.id,
@@ -174,12 +177,12 @@ export function SupportInbox() {
 			await refreshList().catch(() => undefined);
 			toastError("会话已变化，已刷新；请确认后重新发送");
 		} finally {
-			setBusy(false);
+			setBusyAction(null);
 		}
 	};
 	const processEmail = async () => {
 		if (!conversation?.processingJobId) return;
-		setBusy(true);
+		setBusyAction("email");
 		try {
 			const result = await orpcClient.xiaofei.processMirroredEmailJob({
 				jobId: conversation.processingJobId,
@@ -196,7 +199,7 @@ export function SupportInbox() {
 		} catch {
 			toastError("小飞处理失败，请检查知识能力、商户托管和回递设置");
 		} finally {
-			setBusy(false);
+			setBusyAction(null);
 		}
 	};
 	const filteredConversations = useMemo(
@@ -385,6 +388,17 @@ export function SupportInbox() {
 												? `转人工原因：${visibleConversation.handoffReason}`
 												: "Organization 消息接入"}
 									</CardDescription>
+									{busyAction ? (
+										<output className="mt-1 text-xs block text-muted-foreground">
+											{busyAction === "owner"
+												? visibleConversation.ownerType === "ai"
+													? "正在接管会话并刷新 Owner 状态…"
+													: "正在交还小飞并刷新 Owner 状态…"
+												: busyAction === "reply"
+													? "真人回复已提交，正在持久化并刷新会话…"
+													: "正在让小飞处理并刷新 Email 回递状态…"}
+										</output>
+									) : null}
 									{visibleConversation.syntheticAcceptance ? (
 										<p className="mt-1 text-xs text-muted-foreground">
 											Preview {visibleConversation.syntheticAcceptance.previewHeadSha.slice(0, 8)} ·
@@ -405,8 +419,12 @@ export function SupportInbox() {
 											disabled={busy || visibleConversation.ownerType !== "ai"}
 											onClick={() => void processEmail()}
 										>
-											<BotIcon className="mr-2 size-4" />
-											让小飞处理并回递
+											{busyAction === "email" ? (
+												<LoaderCircleIcon className="mr-2 size-4 animate-spin" />
+											) : (
+												<BotIcon className="mr-2 size-4" />
+											)}
+											{busyAction === "email" ? "正在让小飞处理并回递…" : "让小飞处理并回递"}
 										</Button>
 									) : null}
 									<Button
@@ -417,12 +435,20 @@ export function SupportInbox() {
 											void setOwner(visibleConversation.ownerType === "ai" ? "human" : "ai")
 										}
 									>
-										{visibleConversation.ownerType === "ai" ? (
+										{busyAction === "owner" ? (
+											<LoaderCircleIcon className="mr-2 size-4 animate-spin" />
+										) : visibleConversation.ownerType === "ai" ? (
 											<UserRoundCheckIcon className="mr-2 size-4" />
 										) : (
 											<BotIcon className="mr-2 size-4" />
 										)}
-										{visibleConversation.ownerType === "ai" ? "人工接管" : "交还小飞"}
+										{busyAction === "owner"
+											? visibleConversation.ownerType === "ai"
+												? "正在接管…"
+												: "正在交还小飞…"
+											: visibleConversation.ownerType === "ai"
+												? "人工接管"
+												: "交还小飞"}
 									</Button>
 								</div>
 							</CardHeader>
@@ -460,9 +486,9 @@ export function SupportInbox() {
 										size="icon"
 										className="right-7 bottom-7 absolute"
 										disabled={!input.trim() || busy || visibleConversation.ownerType !== "human"}
-										aria-label="发送客服回复"
+										aria-label={busyAction === "reply" ? "正在发送客服回复…" : "发送客服回复"}
 									>
-										{busy ? (
+										{busyAction === "reply" ? (
 											<LoaderCircleIcon className="size-4 animate-spin" />
 										) : (
 											<ArrowUpIcon className="size-4" />
