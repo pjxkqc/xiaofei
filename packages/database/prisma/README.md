@@ -66,8 +66,11 @@ turn count, before/after intervention counts, bound capability version, and whet
 the session remains writable against the current Test pointer only. A session that
 matches Active only (or any stale CA) is historical, readable, and not writable;
 a new turn must use a new session. Session lists default to 20 (maximum 50) and
-use bounded first-row projections plus database-side grouped turn/intervention
-counts; detail returns its newest 100 turns in chronological display order.
+use PostgreSQL `DISTINCT ON` to select one latest turn per session before global
+`(createdAt DESC, id DESC)` cursoring and `limit + 1`; that bounded selected
+relation also supplies at most one first-question row per session. Grouped
+turn/intervention counts then run only for that selected page. Detail returns its
+newest 100 turns in chronological display order.
 `upsertXiaofeiSyntheticSupportConversation`
 projects acceptance-only state, messages, and traces into the Organization's
 existing conversation aggregate with channel `synthetic_support`; it never opens

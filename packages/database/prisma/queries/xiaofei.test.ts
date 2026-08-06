@@ -478,7 +478,6 @@ vi.mock("../client", () => ({
 import {
 	createXiaofeiKnowledgeDocument,
 	createXiaofeiKnowledgeDocumentWithEntries,
-	DEFAULT_XIAOFEI_TEST_SESSION_PAGE_SIZE,
 	createXiaofeiKnowledgeEntry,
 	createXiaofeiKnowledgeUnit,
 	deleteXiaofeiKnowledgeEntry,
@@ -660,21 +659,21 @@ describe("Xiaofei Organization queries", () => {
 			activeCapabilityVersionId: "active-version",
 			testCapabilityVersionId: "test-version",
 		});
-		queryMocks.listTestTurns
+		queryMocks.queryRaw
 			.mockResolvedValueOnce([
 				{
 					id: "latest-turn",
 					testSessionId: "session-a",
 					capabilityVersionId: "test-version",
 					completedAt: new Date("2026-08-04T00:00:01.000Z"),
+					firstQuestion: "First question",
 				},
 			])
-			.mockResolvedValueOnce([{ testSessionId: "session-a", question: "First question" }]);
+			.mockResolvedValueOnce([
+				{ testSessionId: "session-a", beforeCount: BigInt(1), afterCount: BigInt(0) },
+			]);
 		queryMocks.groupTestTurns.mockResolvedValueOnce([
 			{ testSessionId: "session-a", _count: { _all: 2 } },
-		]);
-		queryMocks.queryRaw.mockResolvedValueOnce([
-			{ testSessionId: "session-a", beforeCount: BigInt(1), afterCount: BigInt(0) },
 		]);
 
 		await expect(listXiaofeiTestSessions("organization-a")).resolves.toEqual({
@@ -693,13 +692,12 @@ describe("Xiaofei Organization queries", () => {
 			],
 			nextCursor: null,
 		});
-		expect(queryMocks.listTestTurns).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { organizationId: "organization-a" },
-				distinct: ["testSessionId"],
-				take: DEFAULT_XIAOFEI_TEST_SESSION_PAGE_SIZE + 1,
-			}),
-		);
+		const sessionSql = String(queryMocks.queryRaw.mock.calls[0]?.[0]);
+		expect(sessionSql).toContain('SELECT DISTINCT ON (t."testSessionId")');
+		expect(sessionSql).toContain('ORDER BY "createdAt" DESC, id DESC');
+		expect(sessionSql).toContain("LIMIT");
+		expect(sessionSql).toContain('INNER JOIN "selected" s');
+		expect(queryMocks.listTestTurns).not.toHaveBeenCalled();
 		await expect(listXiaofeiTestSessions("organization-a", { limit: 51 })).rejects.toThrow(
 			"Test session page limit must be between 1 and 50.",
 		);
@@ -767,21 +765,21 @@ describe("Xiaofei Organization queries", () => {
 			activeCapabilityVersionId: "active-version",
 			testCapabilityVersionId: "test-version",
 		});
-		queryMocks.listTestTurns
+		queryMocks.queryRaw
 			.mockResolvedValueOnce([
 				{
 					id: "active-turn",
 					testSessionId: "active-only-session",
 					capabilityVersionId: "active-version",
 					completedAt: new Date("2026-08-04T00:00:01.000Z"),
+					firstQuestion: "Saved",
 				},
 			])
-			.mockResolvedValueOnce([{ testSessionId: "active-only-session", question: "Saved" }]);
+			.mockResolvedValueOnce([
+				{ testSessionId: "active-only-session", beforeCount: BigInt(0), afterCount: BigInt(0) },
+			]);
 		queryMocks.groupTestTurns.mockResolvedValueOnce([
 			{ testSessionId: "active-only-session", _count: { _all: 1 } },
-		]);
-		queryMocks.queryRaw.mockResolvedValueOnce([
-			{ testSessionId: "active-only-session", beforeCount: BigInt(0), afterCount: BigInt(0) },
 		]);
 
 		await expect(listXiaofeiTestSessions("organization-a", { limit: 1 })).resolves.toMatchObject({
@@ -865,6 +863,12 @@ describe("Xiaofei Organization queries", () => {
 		);
 		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
 		expect(queryMocks.createResponseIntervention).not.toHaveBeenCalled();
+		expect(queryMocks.executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+			queryMocks.findConversationInTransaction.mock.invocationCallOrder[0] ?? Infinity,
+		);
+		expect(queryMocks.findConversationInTransaction.mock.invocationCallOrder[0]).toBeLessThan(
+			queryMocks.createConversation.mock.invocationCallOrder[0] ?? Infinity,
+		);
 	});
 
 	it("returns an existing synthetic retry without overwriting later state", async () => {
@@ -888,6 +892,44 @@ describe("Xiaofei Organization queries", () => {
 			}),
 		).resolves.toBe(existing);
 		expect(queryMocks.createConversation).not.toHaveBeenCalled();
+	});
+
+	it("serializes same-key synthetic creates so only one transaction inserts", async () => {
+		const created = { id: "conversation-a", channel: "synthetic_support" };
+		let stored: typeof created | null = null;
+		let releaseFirstCreate: (() => void) | undefined;
+		const firstCreate = new Promise<void>((resolve) => {
+			releaseFirstCreate = resolve;
+		});
+		queryMocks.findWorkspaceInTransaction.mockResolvedValue({ id: "workspace-a" });
+		queryMocks.executeRaw
+			.mockResolvedValueOnce(undefined)
+			.mockImplementationOnce(async () => await firstCreate);
+		queryMocks.findConversationInTransaction.mockImplementation(async () => stored);
+		queryMocks.createConversation.mockImplementation(async () => {
+			stored = created;
+			releaseFirstCreate?.();
+			return created;
+		});
+
+		const input = {
+			organizationId: "organization-a",
+			externalId: "synthetic-acceptance-a",
+			state: {},
+			messages: [],
+			traceEvents: [],
+		};
+		await expect(
+			Promise.all([
+				upsertXiaofeiSyntheticSupportConversation(input),
+				upsertXiaofeiSyntheticSupportConversation(input),
+			]),
+		).resolves.toEqual([created, created]);
+		expect(queryMocks.createConversation).toHaveBeenCalledTimes(1);
+		expect(queryMocks.executeRaw).toHaveBeenCalledTimes(2);
+		expect(queryMocks.executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+			queryMocks.findConversationInTransaction.mock.invocationCallOrder[0] ?? Infinity,
+		);
 	});
 
 	it("rejects a non-synthetic same-key conversation instead of relabeling it", async () => {
@@ -1679,6 +1721,12 @@ describe("Xiaofei knowledge document queries", () => {
 		});
 	});
 
+	it("keeps the ordinary knowledge-document default page size at 25", async () => {
+		queryMocks.listDocuments.mockResolvedValueOnce([]);
+		await listXiaofeiKnowledgeDocuments("workspace-a");
+		expect(queryMocks.listDocuments).toHaveBeenCalledWith(expect.objectContaining({ take: 26 }));
+	});
+
 	it("rejects list limits outside the database maximum", async () => {
 		await expect(
 			listXiaofeiKnowledgeDocuments("workspace-a", { limit: 51 }),
@@ -2112,5 +2160,13 @@ describe("Xiaofei inbound event queries", () => {
 		expect(queryMocks.getInboundEvent).toHaveBeenCalledWith({
 			where: { workspaceId_id: { workspaceId: "workspace-a", id: "inbound-1" } },
 		});
+	});
+
+	it("keeps the ordinary inbound-event default page size at 25", async () => {
+		queryMocks.listInboundEvents.mockResolvedValueOnce([]);
+		await listInboundEvents("workspace-a");
+		expect(queryMocks.listInboundEvents).toHaveBeenCalledWith(
+			expect.objectContaining({ take: 26 }),
+		);
 	});
 });

@@ -2539,27 +2539,47 @@ export async function listXiaofeiTestSessions(
 		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
 		select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
 	});
-	const latestTurns = await db.xiaofeiTestTurn.findMany({
-		where: { organizationId },
-		select: { id: true, testSessionId: true, capabilityVersionId: true, completedAt: true },
-		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-		distinct: ["testSessionId"],
-		take: limit + 1,
-		...(options.cursor
-			? { cursor: { organizationId_id: { organizationId, id: options.cursor } }, skip: 1 }
-			: {}),
-	});
+	// Prisma Client `distinct` is in-memory. Keep pagination in PostgreSQL:
+	// choose one latest turn/session before global ordering, cursoring, and limiting.
+	const latestTurns = await db.$queryRaw<
+		Array<{
+			id: string;
+			testSessionId: string;
+			capabilityVersionId: string;
+			completedAt: Date;
+			firstQuestion: string;
+		}>
+	>`
+		WITH "latest" AS (
+			SELECT DISTINCT ON (t."testSessionId")
+				t.id, t."testSessionId", t."capabilityVersionId", t."completedAt", t."createdAt"
+			FROM "xiaofei_test_turn" t
+			WHERE t."organizationId" = ${organizationId}
+			ORDER BY t."testSessionId", t."createdAt" DESC, t.id DESC
+		), "selected" AS (
+			SELECT * FROM "latest"
+			WHERE ${options.cursor ?? null}::text IS NULL OR ("createdAt", id) < (
+				SELECT "createdAt", id FROM "latest" WHERE id = ${options.cursor ?? null}
+			)
+			ORDER BY "createdAt" DESC, id DESC
+			LIMIT ${limit + 1}
+		), "first" AS (
+			SELECT DISTINCT ON (t."testSessionId") t."testSessionId", t.question
+			FROM "xiaofei_test_turn" t
+			INNER JOIN "selected" s ON s."testSessionId" = t."testSessionId"
+			WHERE t."organizationId" = ${organizationId}
+			ORDER BY t."testSessionId", t."createdAt" ASC, t.id ASC
+		)
+		SELECT s.id, s."testSessionId", s."capabilityVersionId", s."completedAt",
+			f.question AS "firstQuestion"
+		FROM "selected" s
+		INNER JOIN "first" f ON f."testSessionId" = s."testSessionId"
+		ORDER BY s."createdAt" DESC, s.id DESC
+	`;
 	const result = page(latestTurns, limit);
 	const sessionIds = result.items.map((turn) => turn.testSessionId);
 	if (!sessionIds.length) return { items: [], nextCursor: result.nextCursor };
-	const [firstTurns, turnCounts, interventionCounts] = await Promise.all([
-		db.xiaofeiTestTurn.findMany({
-			where: { organizationId, testSessionId: { in: sessionIds } },
-			select: { testSessionId: true, question: true },
-			orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-			distinct: ["testSessionId"],
-			take: sessionIds.length,
-		}),
+	const [turnCounts, interventionCounts] = await Promise.all([
 		db.xiaofeiTestTurn.groupBy({
 			by: ["testSessionId"],
 			where: { organizationId, testSessionId: { in: sessionIds } },
@@ -2577,7 +2597,6 @@ export async function listXiaofeiTestSessions(
 			GROUP BY t."testSessionId"
 		`,
 	]);
-	const firstBySession = new Map(firstTurns.map((turn) => [turn.testSessionId, turn.question]));
 	const countBySession = new Map(
 		turnCounts.map((count) => [count.testSessionId, count._count._all]),
 	);
@@ -2590,7 +2609,7 @@ export async function listXiaofeiTestSessions(
 		return {
 			id: latest.testSessionId,
 			capabilityVersionId: latest.capabilityVersionId,
-			firstQuestion: firstBySession.get(latest.testSessionId) ?? "",
+			firstQuestion: latest.firstQuestion,
 			latestAt: latest.completedAt,
 			turnCount: countBySession.get(latest.testSessionId) ?? 0,
 			beforeInterventionCount: Number(interventions?.beforeCount ?? 0),
