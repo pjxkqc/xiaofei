@@ -2817,10 +2817,6 @@ export async function listXiaofeiTestSessions(
 	options: ListXiaofeiTestSessionsOptions = {},
 ) {
 	const limit = assertXiaofeiTestSessionPageLimit(options.limit);
-	const binding = await db.xiaofeiCapabilityBinding.findUnique({
-		where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
-		select: { activeCapabilityVersionId: true, testCapabilityVersionId: true },
-	});
 	// Prisma Client `distinct` is in-memory. Keep pagination in PostgreSQL:
 	// choose one latest turn/session before global ordering, cursoring, and limiting.
 	const latestTurns = await db.$queryRaw<
@@ -2828,8 +2824,12 @@ export async function listXiaofeiTestSessions(
 			id: string;
 			testSessionId: string;
 			capabilityVersionId: string;
+			testCapabilityVersionId: string | null;
 			completedAt: Date;
 			firstQuestion: string;
+			turnCount: bigint;
+			beforeInterventionCount: bigint;
+			afterInterventionCount: bigint;
 		}>
 	>`
 		WITH "latest" AS (
@@ -2850,6 +2850,16 @@ export async function listXiaofeiTestSessions(
 			)
 			ORDER BY "createdAt" DESC, id DESC
 			LIMIT ${limit + 1}
+		), "counts" AS (
+			SELECT t."testSessionId", COUNT(DISTINCT t.id) AS "turnCount",
+				COUNT(i.id) FILTER (WHERE i."beforeResponse" IS NOT NULL) AS "beforeInterventionCount",
+				COUNT(i.id) FILTER (WHERE i."afterResponse" IS NOT NULL) AS "afterInterventionCount"
+			FROM "xiaofei_test_turn" t
+			INNER JOIN "selected" s ON s."testSessionId" = t."testSessionId"
+			LEFT JOIN "xiaofei_response_intervention" i
+				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
+			WHERE t."organizationId" = ${organizationId}
+			GROUP BY t."testSessionId"
 		), "first" AS (
 			SELECT DISTINCT ON (t."testSessionId") t."testSessionId", t.question
 			FROM "xiaofei_test_turn" t
@@ -2858,49 +2868,29 @@ export async function listXiaofeiTestSessions(
 			ORDER BY t."testSessionId", t."createdAt" ASC, t.id ASC
 		)
 		SELECT s.id, s."testSessionId", s."capabilityVersionId", s."completedAt",
-			COALESCE(f.question, '') AS "firstQuestion"
+			COALESCE(f.question, '') AS "firstQuestion",
+			b."testCapabilityVersionId",
+			COALESCE(c."turnCount", 0) AS "turnCount",
+			COALESCE(c."beforeInterventionCount", 0) AS "beforeInterventionCount",
+			COALESCE(c."afterInterventionCount", 0) AS "afterInterventionCount"
 		FROM "selected" s
 		LEFT JOIN "first" f ON f."testSessionId" = s."testSessionId"
+		LEFT JOIN "counts" c ON c."testSessionId" = s."testSessionId"
+		LEFT JOIN "xiaofei_capability_binding" b
+			ON b."organizationId" = ${organizationId} AND b."capabilityKey" = 'xiaofei-hosting'
 		ORDER BY s."createdAt" DESC, s.id DESC
 	`;
 	const result = page(latestTurns, limit);
-	const sessionIds = result.items.map((turn) => turn.testSessionId);
-	if (!sessionIds.length) return { items: [], nextCursor: result.nextCursor };
-	const [turnCounts, interventionCounts] = await Promise.all([
-		db.xiaofeiTestTurn.groupBy({
-			by: ["testSessionId"],
-			where: { organizationId, testSessionId: { in: sessionIds } },
-			_count: { _all: true },
-		}),
-		db.$queryRaw<Array<{ testSessionId: string; beforeCount: bigint; afterCount: bigint }>>`
-			SELECT t."testSessionId",
-				COUNT(i.id) FILTER (WHERE i."beforeResponse" IS NOT NULL) AS "beforeCount",
-				COUNT(i.id) FILTER (WHERE i."afterResponse" IS NOT NULL) AS "afterCount"
-			FROM "xiaofei_test_turn" t
-			LEFT JOIN "xiaofei_response_intervention" i
-				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
-			WHERE t."organizationId" = ${organizationId}
-				AND t."testSessionId" IN (${Prisma.join(sessionIds)})
-			GROUP BY t."testSessionId"
-		`,
-	]);
-	const countBySession = new Map(
-		turnCounts.map((count) => [count.testSessionId, count._count._all]),
-	);
-	const interventionsBySession = new Map(
-		interventionCounts.map((count) => [count.testSessionId, count]),
-	);
 	const items = result.items.map((latest) => {
-		const interventions = interventionsBySession.get(latest.testSessionId);
-		const isCurrent = latest.capabilityVersionId === binding?.testCapabilityVersionId;
+		const isCurrent = latest.capabilityVersionId === latest.testCapabilityVersionId;
 		return {
 			id: latest.testSessionId,
 			capabilityVersionId: latest.capabilityVersionId,
 			firstQuestion: latest.firstQuestion,
 			latestAt: latest.completedAt,
-			turnCount: countBySession.get(latest.testSessionId) ?? 0,
-			beforeInterventionCount: Number(interventions?.beforeCount ?? 0),
-			afterInterventionCount: Number(interventions?.afterCount ?? 0),
+			turnCount: Number(latest.turnCount),
+			beforeInterventionCount: Number(latest.beforeInterventionCount),
+			afterInterventionCount: Number(latest.afterInterventionCount),
 			isCurrent,
 			writable: isCurrent,
 		} satisfies XiaofeiTestSessionSummaryDto;

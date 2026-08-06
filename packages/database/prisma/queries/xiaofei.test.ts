@@ -531,6 +531,7 @@ import {
 	getXiaofeiTestSession,
 	getXiaofeiTestSessionDetail,
 	listXiaofeiTestSessions,
+	getXiaofeiVersioningOverviewData,
 	loadXiaofeiRuntimeHostingCapability,
 	upsertXiaofeiSyntheticSupportConversation,
 	commitXiaofeiSyntheticSupportConversation,
@@ -564,6 +565,27 @@ const organizationBConversationState = createConversationState({
 
 describe("Xiaofei Organization queries", () => {
 	beforeEach(() => vi.clearAllMocks());
+
+	it("projects overview metadata without revision content and keeps both reads Organization-scoped", async () => {
+		queryMocks.findRevisions.mockResolvedValueOnce([]);
+		queryMocks.getHostingBinding.mockResolvedValueOnce(null);
+		await expect(getXiaofeiVersioningOverviewData("organization-a")).resolves.toEqual([[], null]);
+		expect(queryMocks.findRevisions).toHaveBeenCalledWith({
+			where: { OR: [{ organizationId: "organization-a" }, { organizationId: null }] },
+			orderBy: [{ logicalKnowledgeUnitId: "asc" }, { revision: "desc" }],
+			select: expect.not.objectContaining({ content: true }),
+		});
+		expect(queryMocks.getHostingBinding).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					organizationId_capabilityKey: {
+						organizationId: "organization-a",
+						capabilityKey: "xiaofei-hosting",
+					},
+				},
+			}),
+		);
+	});
 
 	it("normalizes persisted hashes and maps the selected hosting pointer to domain status", async () => {
 		queryMocks.getHostingBinding.mockResolvedValueOnce({
@@ -695,8 +717,12 @@ describe("Xiaofei Organization queries", () => {
 					id: "latest-turn",
 					testSessionId: "session-a",
 					capabilityVersionId: "test-version",
+					testCapabilityVersionId: "test-version",
 					completedAt: new Date("2026-08-04T00:00:01.000Z"),
 					firstQuestion: "First question",
+					turnCount: BigInt(2),
+					beforeInterventionCount: BigInt(1),
+					afterInterventionCount: BigInt(0),
 				},
 			])
 			.mockResolvedValueOnce([
@@ -727,6 +753,10 @@ describe("Xiaofei Organization queries", () => {
 		expect(sessionSql).toContain('ORDER BY "createdAt" DESC, id DESC');
 		expect(sessionSql).toContain("LIMIT");
 		expect(sessionSql).toContain('INNER JOIN "selected" s');
+		expect(sessionSql).toContain('"testCapabilityVersionId"');
+		expect(sessionSql).toContain("COUNT(DISTINCT t.id)");
+		expect(queryMocks.getHostingBinding).not.toHaveBeenCalled();
+		expect(queryMocks.groupTestTurns).not.toHaveBeenCalled();
 		expect(queryMocks.listTestTurns).not.toHaveBeenCalled();
 		await expect(listXiaofeiTestSessions("organization-a", { limit: 51 })).rejects.toThrow(
 			"Test session page limit must be between 1 and 50.",
@@ -801,8 +831,12 @@ describe("Xiaofei Organization queries", () => {
 					id: "active-turn",
 					testSessionId: "active-only-session",
 					capabilityVersionId: "active-version",
+					testCapabilityVersionId: "test-version",
 					completedAt: new Date("2026-08-04T00:00:01.000Z"),
 					firstQuestion: "Saved",
+					turnCount: BigInt(1),
+					beforeInterventionCount: BigInt(0),
+					afterInterventionCount: BigInt(0),
 				},
 			])
 			.mockResolvedValueOnce([
@@ -1341,18 +1375,19 @@ describe("Xiaofei Organization queries", () => {
 
 	it("lists a zero-turn Organization-local session with empty evidence and writability", async () => {
 		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "test-ca" });
-		queryMocks.queryRaw
-			.mockResolvedValueOnce([
-				{
-					id: "session-zero",
-					testSessionId: "session-zero",
-					capabilityVersionId: "test-ca",
-					completedAt: new Date("2026-08-05T00:00:00.000Z"),
-					firstQuestion: "",
-				},
-			])
-			.mockResolvedValueOnce([]);
-		queryMocks.groupTestTurns.mockResolvedValueOnce([]);
+		queryMocks.queryRaw.mockResolvedValueOnce([
+			{
+				id: "session-zero",
+				testSessionId: "session-zero",
+				capabilityVersionId: "test-ca",
+				testCapabilityVersionId: "test-ca",
+				completedAt: new Date("2026-08-05T00:00:00.000Z"),
+				firstQuestion: "",
+				turnCount: BigInt(0),
+				beforeInterventionCount: BigInt(0),
+				afterInterventionCount: BigInt(0),
+			},
+		]);
 
 		await expect(listXiaofeiTestSessions("organization-a")).resolves.toEqual({
 			items: [
@@ -1370,11 +1405,7 @@ describe("Xiaofei Organization queries", () => {
 			],
 			nextCursor: null,
 		});
-		expect(queryMocks.groupTestTurns).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { organizationId: "organization-a", testSessionId: { in: ["session-zero"] } },
-			}),
-		);
+		expect(queryMocks.groupTestTurns).not.toHaveBeenCalled();
 
 		queryMocks.getHostingBinding.mockResolvedValueOnce({ testCapabilityVersionId: "new-test-ca" });
 		queryMocks.queryRaw.mockResolvedValueOnce([
@@ -1382,12 +1413,14 @@ describe("Xiaofei Organization queries", () => {
 				id: "session-zero",
 				testSessionId: "session-zero",
 				capabilityVersionId: "test-ca",
+				testCapabilityVersionId: "new-test-ca",
 				completedAt: new Date("2026-08-05T00:00:00.000Z"),
 				firstQuestion: "",
+				turnCount: BigInt(0),
+				beforeInterventionCount: BigInt(0),
+				afterInterventionCount: BigInt(0),
 			},
 		]);
-		queryMocks.queryRaw.mockResolvedValueOnce([]);
-		queryMocks.groupTestTurns.mockResolvedValueOnce([]);
 		await expect(listXiaofeiTestSessions("organization-a")).resolves.toMatchObject({
 			items: [
 				{ id: "session-zero", firstQuestion: "", turnCount: 0, isCurrent: false, writable: false },
