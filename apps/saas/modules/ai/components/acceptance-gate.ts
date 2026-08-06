@@ -1,17 +1,15 @@
+import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
+
+import { isAdmitted } from "./KnowledgeCapabilities";
+
 export function acceptanceGate({
-	reviewed,
-	evalPassed,
-	evalVersion,
-	planVersion,
+	capability,
 	isCurrentTestActive,
 }: {
-	reviewed: boolean;
-	evalPassed: boolean;
-	evalVersion: string | number | null;
-	planVersion: string | number;
+	capability: XiaofeiWorkspaceSnapshot;
 	isCurrentTestActive: boolean;
 }) {
-	const admitted = reviewed && evalPassed && evalVersion === planVersion;
+	const admitted = isAdmitted(capability);
 	return {
 		admitted,
 		canActivate: admitted && !isCurrentTestActive,

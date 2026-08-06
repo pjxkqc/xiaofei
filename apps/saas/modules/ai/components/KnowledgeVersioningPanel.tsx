@@ -313,10 +313,7 @@ function VersionOverview({
 	}, [refreshCapability]);
 	const gate = capability
 		? acceptanceGate({
-				reviewed: capability.capabilityPlan.reviewed,
-				evalPassed: capability.evalSuite.status === "passed",
-				evalVersion: capability.evalSuite.capabilityPlanVersion,
-				planVersion: capability.capabilityPlan.version,
+				capability,
 				isCurrentTestActive,
 			})
 		: null;

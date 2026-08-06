@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
 
 import { acceptanceGate } from "./acceptance-gate";
 import {
@@ -80,51 +81,54 @@ describe("symmetricDifferenceSize", () => {
 		expect(result.detail).toEqual({ id: "selected" });
 	});
 
-	it("requires review, current Eval, Active, then Support creation", () => {
+	it("requires canonical admission and current Test Active", () => {
 		expect(
 			acceptanceGate({
-				reviewed: false,
-				evalPassed: false,
-				evalVersion: 1,
-				planVersion: 1,
+				capability: capabilitySnapshot({ reviewed: false }),
 				isCurrentTestActive: false,
 			}).canActivate,
 		).toBe(false);
 		expect(
 			acceptanceGate({
-				reviewed: true,
-				evalPassed: true,
-				evalVersion: 1,
-				planVersion: 1,
+				capability: capabilitySnapshot(),
 				isCurrentTestActive: false,
 			}).canActivate,
 		).toBe(true);
 		expect(
 			acceptanceGate({
-				reviewed: true,
-				evalPassed: true,
-				evalVersion: 1,
-				planVersion: 1,
+				capability: capabilitySnapshot(),
 				isCurrentTestActive: true,
 			}).canCreate,
 		).toBe(true);
 		expect(
 			acceptanceGate({
-				reviewed: true,
-				evalPassed: true,
-				evalVersion: 1,
-				planVersion: 2,
+				capability: capabilitySnapshot({ evalVersion: 2 }),
 				isCurrentTestActive: true,
 			}).canCreate,
 		).toBe(false);
 		expect(
 			acceptanceGate({
-				reviewed: true,
-				evalPassed: true,
-				evalVersion: 1,
-				planVersion: 1,
+				capability: capabilitySnapshot({ planStatus: "blocked" }),
 				isCurrentTestActive: false,
 			}).canCreate,
+		).toBe(false);
+		expect(
+			acceptanceGate({
+				capability: capabilitySnapshot({ planStatus: "blocked" }),
+				isCurrentTestActive: true,
+			}).canActivate,
+		).toBe(false);
+		expect(
+			acceptanceGate({
+				capability: capabilitySnapshot({ knowledgeUnitIds: [] }),
+				isCurrentTestActive: true,
+			}).canCreate,
+		).toBe(false);
+		expect(
+			acceptanceGate({
+				capability: capabilitySnapshot({ knowledgeUnitIds: [] }),
+				isCurrentTestActive: false,
+			}).canActivate,
 		).toBe(false);
 	});
 
@@ -145,6 +149,26 @@ describe("symmetricDifferenceSize", () => {
 		).toBe(true);
 	});
 });
+
+function capabilitySnapshot(overrides: {
+	reviewed?: boolean;
+	evalVersion?: number;
+	planStatus?: string;
+	knowledgeUnitIds?: string[];
+} = {}): XiaofeiWorkspaceSnapshot {
+	return {
+		capabilityPlan: {
+			reviewed: overrides.reviewed ?? true,
+			status: overrides.planStatus ?? "review_ready",
+			version: 1,
+			knowledgeUnitIds: overrides.knowledgeUnitIds ?? ["ku-1"],
+		},
+		evalSuite: {
+			status: "passed",
+			capabilityPlanVersion: overrides.evalVersion ?? 1,
+		},
+	} as unknown as XiaofeiWorkspaceSnapshot;
+}
 
 function persistedTurn(id: string, testSessionId: string) {
 	return {
