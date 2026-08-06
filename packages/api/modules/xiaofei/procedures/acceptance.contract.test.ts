@@ -152,7 +152,10 @@ describe("synthetic support acceptance procedure", () => {
 			},
 		);
 		mocks.runTurn.mockImplementation(async ({ state }: { state: ConversationState }) => ({
-			state,
+			state: {
+				...state,
+				remainingFollowUps: state.remainingFollowUps - 1,
+			},
 			reply: `reply:${state.id}:${state.ownerEpoch}`,
 			metadata: { traces: [] },
 		}));
@@ -188,6 +191,10 @@ describe("synthetic support acceptance procedure", () => {
 			ownerType: "ai",
 			ownerEpoch: 0,
 		});
+		expect(mocks.runTurn.mock.calls.map(([input]) => input.state.remainingFollowUps)).toEqual([
+			5, 4, 3,
+		]);
+		expect(committedStates.map((state) => state.remainingFollowUps)).toEqual([4, 3, 2]);
 		expect(mocks.runTurn.mock.calls[1]?.[0].state).toEqual(committedStates[0]);
 		expect(mocks.runTurn.mock.calls[2]?.[0].state).toEqual(committedStates[1]);
 		expect(mocks.commit.mock.calls.map(([input]) => input.expectedRevision)).toEqual([0, 1, 2]);
@@ -275,6 +282,17 @@ describe("synthetic support acceptance procedure", () => {
 		expect(outcomes.find((outcome) => outcome.status === "rejected")).toMatchObject({
 			reason: { code: "CONFLICT" },
 		});
+		expect(
+			rows.get(rowKey(ORGANIZATION_A, syntheticSupportConversationId("race")))?.messages,
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ role: "customer", text: "second" }),
+				expect.objectContaining({ role: "ai" }),
+			]),
+		);
+		expect(
+			rows.get(rowKey(ORGANIZATION_A, syntheticSupportConversationId("race")))?.messages,
+		).toHaveLength(2);
 
 		await send("tenant", "a", ORGANIZATION_A);
 		await send("tenant", "b", ORGANIZATION_B);
