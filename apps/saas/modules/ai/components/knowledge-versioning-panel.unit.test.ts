@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
+import { describe, expect, it, vi } from "vitest";
 
 import { acceptanceGate } from "./acceptance-gate";
 import {
@@ -150,12 +150,14 @@ describe("symmetricDifferenceSize", () => {
 	});
 });
 
-function capabilitySnapshot(overrides: {
-	reviewed?: boolean;
-	evalVersion?: number;
-	planStatus?: string;
-	knowledgeUnitIds?: string[];
-} = {}): XiaofeiWorkspaceSnapshot {
+function capabilitySnapshot(
+	overrides: {
+		reviewed?: boolean;
+		evalVersion?: number;
+		planStatus?: string;
+		knowledgeUnitIds?: string[];
+	} = {},
+): XiaofeiWorkspaceSnapshot {
 	return {
 		capabilityPlan: {
 			reviewed: overrides.reviewed ?? true,
