@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { acceptanceGate } from "./acceptance-gate";
 import { symmetricDifferenceSize, toInterventionEvidence } from "./KnowledgeVersioningPanel";
 import { recoverTestSession } from "./test-session-recovery";
 
@@ -73,6 +74,45 @@ describe("symmetricDifferenceSize", () => {
 		expect(detail).toHaveBeenCalledOnce();
 		expect(detail).toHaveBeenCalledWith("selected");
 		expect(result.detail).toEqual({ id: "selected" });
+	});
+
+	it("requires review, current Eval, Active, then Support creation", () => {
+		expect(
+			acceptanceGate({
+				reviewed: false,
+				evalPassed: false,
+				evalVersion: 1,
+				planVersion: 1,
+				hasActive: false,
+			}).canActivate,
+		).toBe(false);
+		expect(
+			acceptanceGate({
+				reviewed: true,
+				evalPassed: true,
+				evalVersion: 1,
+				planVersion: 1,
+				hasActive: false,
+			}).canActivate,
+		).toBe(true);
+		expect(
+			acceptanceGate({
+				reviewed: true,
+				evalPassed: true,
+				evalVersion: 1,
+				planVersion: 1,
+				hasActive: true,
+			}).canCreate,
+		).toBe(true);
+		expect(
+			acceptanceGate({
+				reviewed: true,
+				evalPassed: true,
+				evalVersion: 1,
+				planVersion: 2,
+				hasActive: true,
+			}).canCreate,
+		).toBe(false);
 	});
 });
 
