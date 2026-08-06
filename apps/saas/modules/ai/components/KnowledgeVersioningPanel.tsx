@@ -20,7 +20,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { acceptanceGate } from "./acceptance-gate";
-import { isAdmitted } from "./KnowledgeCapabilities";
 import { recoverTestSession } from "./test-session-recovery";
 
 type Overview = Awaited<ReturnType<typeof orpcClient.xiaofei.getVersioningOverview>>;
@@ -29,6 +28,7 @@ type MembershipRow = CapabilityVersion["knowledgeUnits"][number];
 type TestTurn = Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>;
 type Correction = Awaited<ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>>;
 type TestSessionDetail = Awaited<ReturnType<typeof orpcClient.xiaofei.getTestSession>>;
+type CapabilitySnapshot = Awaited<ReturnType<typeof orpcClient.xiaofei.getConfig>>;
 export interface TestTurnView {
 	turn: {
 		id: string;
@@ -292,26 +292,34 @@ function VersionOverview({
 	onFail: (error: unknown) => void;
 }) {
 	const isPrepare = section === "prepare";
-	const testIsActive = active?.id === testVersion?.id && testVersion !== null;
-	const [capability, setCapability] = useState<Awaited<
-		ReturnType<typeof orpcClient.xiaofei.getConfig>
-	> | null>(null);
-	useEffect(() => {
-		void orpcClient.xiaofei
-			.getConfig()
-			.then(setCapability)
-			.catch(() => undefined);
+	const isCurrentTestActive = active?.id === testVersion?.id && testVersion !== null;
+	const [capability, setCapability] = useState<CapabilitySnapshot | null>(null);
+	const [capabilityError, setCapabilityError] = useState<string | null>(null);
+	const [capabilityLoading, setCapabilityLoading] = useState(true);
+	const refreshCapability = useCallback(async () => {
+		setCapabilityLoading(true);
+		try {
+			setCapability(await orpcClient.xiaofei.getConfig());
+			setCapabilityError(null);
+		} catch (error) {
+			setCapabilityError(message(error));
+			throw error;
+		} finally {
+			setCapabilityLoading(false);
+		}
 	}, []);
+	useEffect(() => {
+		void refreshCapability().catch(() => undefined);
+	}, [refreshCapability]);
 	const gate = capability
 		? acceptanceGate({
 				reviewed: capability.capabilityPlan.reviewed,
 				evalPassed: capability.evalSuite.status === "passed",
 				evalVersion: capability.evalSuite.capabilityPlanVersion,
 				planVersion: capability.capabilityPlan.version,
-				hasActive: testIsActive,
+				isCurrentTestActive,
 			})
 		: null;
-	const admitted = capability ? isAdmitted(capability) && gate?.admitted === true : false;
 	async function act(action: () => Promise<unknown>, success: string) {
 		onStart("校验版本 → 更新托管指针/状态 → 确认生效…");
 		setBusy(true);
@@ -346,7 +354,7 @@ function VersionOverview({
 				</div>
 				{!isPrepare && (
 					<Button
-						disabled={busy || !testVersion || testIsActive || !admitted}
+						disabled={busy || !testVersion || gate?.canActivate !== true}
 						onClick={() =>
 							void act(
 								() => orpcClient.xiaofei.activateHostingVersion(),
@@ -354,20 +362,18 @@ function VersionOverview({
 							)
 						}
 					>
-						{testIsActive ? "Test CA 已验收" : "人工验收 Test CA"}
+						{isCurrentTestActive ? "Test CA 已验收" : "人工验收 Test CA"}
 					</Button>
 				)}
 				<MembershipSummary active={active} testVersion={testVersion} />
 				{!isPrepare ? (
 					<SupportAcceptance
-						admitted={admitted}
-						hasActive={active !== null}
-						onCapabilityChanged={() =>
-							void orpcClient.xiaofei
-								.getConfig()
-								.then(setCapability)
-								.catch(() => undefined)
-						}
+						capability={capability}
+						capabilityError={capabilityError}
+						capabilityLoading={capabilityLoading}
+						isCurrentTestActive={isCurrentTestActive}
+						canCreate={gate?.canCreate === true}
+						onRefreshCapability={refreshCapability}
 						onStart={onStart}
 						onComplete={onComplete}
 						onFail={onFail}
@@ -393,16 +399,22 @@ function VersionOverview({
 }
 
 function SupportAcceptance({
-	admitted,
-	hasActive,
-	onCapabilityChanged,
+	capability,
+	capabilityError,
+	capabilityLoading,
+	isCurrentTestActive,
+	canCreate,
+	onRefreshCapability,
 	onStart,
 	onComplete,
 	onFail,
 }: {
-	admitted: boolean;
-	hasActive: boolean;
-	onCapabilityChanged: () => void;
+	capability: CapabilitySnapshot | null;
+	capabilityError: string | null;
+	capabilityLoading: boolean;
+	isCurrentTestActive: boolean;
+	canCreate: boolean;
+	onRefreshCapability: () => Promise<void>;
 	onStart: (label: string) => void;
 	onComplete: () => void;
 	onFail: (error: unknown) => void;
@@ -410,17 +422,7 @@ function SupportAcceptance({
 	const [text, setText] = useState("请用这份知识回答一个客户问题。");
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
-	const [capability, setCapability] = useState<Awaited<
-		ReturnType<typeof orpcClient.xiaofei.getConfig>
-	> | null>(null);
 	const [externalId] = useState(() => globalThis.crypto.randomUUID());
-	const refreshCapability = useCallback(
-		async () => setCapability(await orpcClient.xiaofei.getConfig()),
-		[],
-	);
-	useEffect(() => {
-		void refreshCapability().catch(() => undefined);
-	}, [refreshCapability]);
 	const reviewed = capability?.capabilityPlan.reviewed === true;
 	const evalPassed =
 		capability?.evalSuite.status === "passed" &&
@@ -430,8 +432,7 @@ function SupportAcceptance({
 		setBusy(true);
 		try {
 			await action();
-			await refreshCapability();
-			onCapabilityChanged();
+			await onRefreshCapability();
 			onComplete();
 			toastSuccess(success);
 		} catch (error) {
@@ -442,7 +443,7 @@ function SupportAcceptance({
 		}
 	}
 	async function create() {
-		if (!hasActive || !text.trim() || conversationId) return;
+		if (!canCreateSupportAcceptance({ canCreate, text, conversationId })) return;
 		onStart("校验 Active CA → 创建合成会话 → 投影首条消息…");
 		setBusy(true);
 		try {
@@ -468,11 +469,27 @@ function SupportAcceptance({
 			<div className="gap-2 text-sm flex flex-col" aria-live="polite">
 				<p>步骤 1：审核当前能力方案 — {reviewed ? "已完成" : "待审核"}</p>
 				<p>步骤 2：运行当前版本 Eval — {evalPassed ? "已通过" : "待运行或未通过"}</p>
-				<p>步骤 3：Test CA 激活 — {hasActive && admitted ? "已 Active" : "待激活"}</p>
+				<p>步骤 3：当前 Test CA — {isCurrentTestActive ? "已 Active" : "待激活"}</p>
 			</div>
+			{capabilityLoading ? (
+				<output className="text-sm block text-muted-foreground">正在读取能力方案…</output>
+			) : null}
+			{capabilityError ? (
+				<div className="gap-2 text-sm flex flex-wrap items-center text-destructive">
+					<span>无法读取能力方案：{capabilityError}</span>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={busy}
+						onClick={() => void onRefreshCapability().catch(() => undefined)}
+					>
+						重试读取
+					</Button>
+				</div>
+			) : null}
 			<div className="gap-2 flex flex-wrap">
 				<Button
-					disabled={busy || reviewed}
+					disabled={busy || capabilityLoading || capabilityError !== null || reviewed}
 					onClick={() =>
 						void capabilityAction(
 							() => orpcClient.xiaofei.reviewCapability({ reviewed: true }),
@@ -484,7 +501,9 @@ function SupportAcceptance({
 				</Button>
 				<Button
 					variant="outline"
-					disabled={busy || !reviewed || evalPassed}
+					disabled={
+						busy || capabilityLoading || capabilityError !== null || !reviewed || evalPassed
+					}
 					onClick={() =>
 						void capabilityAction(() => orpcClient.xiaofei.runEval(), "当前版本 Eval 已通过")
 					}
@@ -498,7 +517,7 @@ function SupportAcceptance({
 					可继续 Test CA 沙盒，或创建当前 Organization 的 Support/Inbox 验收会话。
 				</p>
 			</div>
-			{!hasActive ? (
+			{!isCurrentTestActive ? (
 				<output className="text-sm block text-muted-foreground">
 					请先验收当前 Test CA 为 Active，才能创建 Support 验收会话。
 				</output>
@@ -512,7 +531,7 @@ function SupportAcceptance({
 			</Label>
 			<div className="gap-2 flex flex-wrap">
 				<Button
-					disabled={busy || !admitted || !hasActive || !text.trim() || conversationId !== null}
+					disabled={busy || !canCreateSupportAcceptance({ canCreate, text, conversationId })}
 					onClick={() => void create()}
 				>
 					{busy ? "正在创建验收会话…" : conversationId ? "验收会话已创建" : "创建 Support 验收会话"}
@@ -532,6 +551,18 @@ function SupportAcceptance({
 			) : null}
 		</div>
 	);
+}
+
+export function canCreateSupportAcceptance({
+	canCreate,
+	text,
+	conversationId,
+}: {
+	canCreate: boolean;
+	text: string;
+	conversationId: string | null;
+}) {
+	return canCreate && text.trim().length > 0 && conversationId === null;
 }
 
 function OperationFeedback({

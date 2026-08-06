@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { acceptanceGate } from "./acceptance-gate";
-import { symmetricDifferenceSize, toInterventionEvidence } from "./KnowledgeVersioningPanel";
+import {
+	canCreateSupportAcceptance,
+	symmetricDifferenceSize,
+	toInterventionEvidence,
+} from "./KnowledgeVersioningPanel";
 import { recoverTestSession } from "./test-session-recovery";
 
 describe("symmetricDifferenceSize", () => {
@@ -83,7 +87,7 @@ describe("symmetricDifferenceSize", () => {
 				evalPassed: false,
 				evalVersion: 1,
 				planVersion: 1,
-				hasActive: false,
+				isCurrentTestActive: false,
 			}).canActivate,
 		).toBe(false);
 		expect(
@@ -92,7 +96,7 @@ describe("symmetricDifferenceSize", () => {
 				evalPassed: true,
 				evalVersion: 1,
 				planVersion: 1,
-				hasActive: false,
+				isCurrentTestActive: false,
 			}).canActivate,
 		).toBe(true);
 		expect(
@@ -101,7 +105,7 @@ describe("symmetricDifferenceSize", () => {
 				evalPassed: true,
 				evalVersion: 1,
 				planVersion: 1,
-				hasActive: true,
+				isCurrentTestActive: true,
 			}).canCreate,
 		).toBe(true);
 		expect(
@@ -110,9 +114,35 @@ describe("symmetricDifferenceSize", () => {
 				evalPassed: true,
 				evalVersion: 1,
 				planVersion: 2,
-				hasActive: true,
+				isCurrentTestActive: true,
 			}).canCreate,
 		).toBe(false);
+		expect(
+			acceptanceGate({
+				reviewed: true,
+				evalPassed: true,
+				evalVersion: 1,
+				planVersion: 1,
+				isCurrentTestActive: false,
+			}).canCreate,
+		).toBe(false);
+	});
+
+	it("rejects Support creation when the current Test CA is not admitted", () => {
+		expect(
+			canCreateSupportAcceptance({
+				canCreate: false,
+				text: "synthetic customer message",
+				conversationId: null,
+			}),
+		).toBe(false);
+		expect(
+			canCreateSupportAcceptance({
+				canCreate: true,
+				text: "synthetic customer message",
+				conversationId: null,
+			}),
+		).toBe(true);
 	});
 });
 

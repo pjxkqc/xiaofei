@@ -3,14 +3,18 @@ export function acceptanceGate({
 	evalPassed,
 	evalVersion,
 	planVersion,
-	hasActive,
+	isCurrentTestActive,
 }: {
 	reviewed: boolean;
 	evalPassed: boolean;
 	evalVersion: string | number | null;
 	planVersion: string | number;
-	hasActive: boolean;
+	isCurrentTestActive: boolean;
 }) {
 	const admitted = reviewed && evalPassed && evalVersion === planVersion;
-	return { admitted, canActivate: admitted && !hasActive, canCreate: admitted && hasActive };
+	return {
+		admitted,
+		canActivate: admitted && !isCurrentTestActive,
+		canCreate: admitted && isCurrentTestActive,
+	};
 }
