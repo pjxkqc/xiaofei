@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	createDeliveryCommandInvocation,
 	DELIVERY_COMMANDS,
 	createDeliveryEnvironment,
 	runDeliveryChecks,
@@ -48,4 +49,29 @@ void test("stops at the first failing delivery command", () => {
 
 	assert.equal(status, 2);
 	assert.equal(callCount, 3);
+});
+
+void test("resolves the pnpm launcher without changing fixed gate arguments", () => {
+	const arguments_ = ["--filter", "@repo/database", "generate"];
+	const environment = { TEST_ENV: "present" };
+	const posix = createDeliveryCommandInvocation("pnpm", arguments_, environment, "darwin");
+	const windows = createDeliveryCommandInvocation("pnpm", arguments_, environment, "win32");
+
+	assert.equal(posix.executable, "pnpm");
+	assert.equal(posix.options.shell, false);
+	assert.equal(windows.executable, "pnpm.cmd");
+	assert.equal(windows.options.shell, true);
+	assert.equal(windows.arguments, arguments_);
+	assert.equal(windows.options.env, environment);
+});
+
+void test("reports a non-sensitive diagnostic when a command fails to spawn", () => {
+	const reported = [];
+	const status = runDeliveryChecks({
+		reportError: (command, error) => reported.push({ code: error.code, command }),
+		runCommand: () => ({ error: { code: "EINVAL" }, status: null }),
+	});
+
+	assert.equal(status, 1);
+	assert.deepEqual(reported, [{ code: "EINVAL", command: "node" }]);
 });

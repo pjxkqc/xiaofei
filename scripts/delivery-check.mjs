@@ -41,11 +41,16 @@ export function createDeliveryEnvironment(environment = process.env) {
 export function runDeliveryChecks({
 	environment = createDeliveryEnvironment(),
 	runCommand = runCommandWithInheritedOutput,
+	reportError = reportDeliveryCommandError,
 } = {}) {
 	for (const [command, arguments_] of DELIVERY_COMMANDS) {
 		const result = runCommand(command, arguments_, environment);
 
 		if (result.status !== 0) {
+			if (result.error) {
+				reportError(command, result.error);
+			}
+
 			return result.status ?? 1;
 		}
 	}
@@ -54,12 +59,34 @@ export function runDeliveryChecks({
 }
 
 function runCommandWithInheritedOutput(command, arguments_, environment) {
-	const executable = process.platform === "win32" && command === "pnpm" ? "pnpm.cmd" : command;
+	const invocation = createDeliveryCommandInvocation(command, arguments_, environment);
 
-	return spawnSync(executable, arguments_, {
-		env: environment,
-		stdio: "inherit",
-	});
+	return spawnSync(invocation.executable, invocation.arguments, invocation.options);
+}
+
+export function createDeliveryCommandInvocation(
+	command,
+	arguments_,
+	environment,
+	platform = process.platform,
+) {
+	const usesWindowsPnpmLauncher = platform === "win32" && command === "pnpm";
+
+	return {
+		arguments: arguments_,
+		executable: usesWindowsPnpmLauncher ? "pnpm.cmd" : command,
+		options: {
+			env: environment,
+			shell: usesWindowsPnpmLauncher,
+			stdio: "inherit",
+		},
+	};
+}
+
+function reportDeliveryCommandError(command, error) {
+	const errorCode = typeof error?.code === "string" ? error.code : "UNKNOWN";
+
+	console.error(`Delivery command ${command} failed to start (${errorCode}).`);
 }
 
 function main() {
