@@ -301,9 +301,7 @@ function VersionOverview({
 			.then(setCapability)
 			.catch(() => undefined);
 	}, []);
-	const admitted = capability
-		? isAdmitted(capability) && capability.capabilityPlan.version === testVersion?.version
-		: false;
+	const admitted = capability ? isAdmitted(capability) : false;
 	async function act(action: () => Promise<unknown>, success: string) {
 		onStart("校验版本 → 更新托管指针/状态 → 确认生效…");
 		setBusy(true);
