@@ -776,15 +776,14 @@ function detectRisk(
 		};
 	}
 	const deferredHumanRequest =
-		/(?:不用|不需要|无需|先别|暂不).{0,8}(?:转人工|转给人工|人工处理|人工客服|真人客服|机器人回复)/iu;
+		/(?:不用|不需要|无需|先别|暂不).{0,8}(?:转人工|转给人工|人工处理|人工客服|真人客服)/iu;
 	const humanRoutingQuestion =
 		/(?:什么时候|何时|什么情况|什么条件|怎样|如何|会不会|是否).{0,12}(?:转人工|人工处理|人工客服|真人客服)/iu;
-	if (deferredHumanRequest.test(message) || humanRoutingQuestion.test(message)) {
-		return { level: "low" };
-	}
+	const suppressHumanRouting =
+		deferredHumanRequest.test(message) || humanRoutingQuestion.test(message);
 	const explicitHumanRequest =
 		/(别让机器人回复|不要机器人回复|请主管处理|主管处理|先转人工|转人工|转给人工|人工处理|真人处理|human agent|real person|supervisor)/iu;
-	if (explicitHumanRequest.test(message)) {
+	if (explicitHumanRequest.test(message) && !suppressHumanRouting) {
 		return {
 			level: "high",
 			reason: "explicit_human_request",
@@ -801,8 +800,8 @@ function detectRisk(
 				"修改订单、地址或联系方式需要人工权限核验；我无法直接执行该操作，会立即转交人工客服处理。",
 		};
 	}
-	const alwaysEscalate = /(监管|投诉|起诉|律师|chargeback|complain|人工客服|真人客服)/iu;
-	if (alwaysEscalate.test(message)) {
+	const nonHumanAlwaysEscalate = /(监管|投诉|起诉|律师|chargeback|complain)/iu;
+	if (nonHumanAlwaysEscalate.test(message)) {
 		return { level: "high", reason: "high_risk_or_human_request" };
 	}
 	const informationalQuestion =
@@ -829,9 +828,13 @@ function detectRisk(
 	const match = snapshot.guardrails.handoffKeywords.find((keyword) =>
 		normalized.includes(keyword.toLocaleLowerCase()),
 	);
+	const humanRoutingKeyword = /(人工客服|真人客服|human agent|real person|supervisor)/iu;
 	if (
 		match &&
-		(alwaysEscalate.test(match) || /(冲突|不一致|无法核实)/u.test(match) || actionRequest)
+		((!suppressHumanRouting && humanRoutingKeyword.test(match)) ||
+			nonHumanAlwaysEscalate.test(match) ||
+			/(冲突|不一致|无法核实)/u.test(match) ||
+			actionRequest)
 	) {
 		return { level: "high", reason: `handoff_keyword:${match}` };
 	}

@@ -226,11 +226,12 @@ describe("P0 runtime kernel", () => {
 			now,
 		});
 
+		expect(result.state.handoffPackage?.summary).not.toContain(message);
 		expect(result.state.handoffPackage?.summary).not.toContain(redactionMarker);
 		expect(result.state.handoffPackage?.summary).toContain("未写入交接摘要");
 	});
 
-	it.each(["不用转人工", "不需要人工客服", "先别转人工", "什么情况下会转人工？"])(
+	it.each(["不用转人工", "不需要人工客服", "先别转人工", "什么时候会转人工？"])(
 		"keeps deferred or explanatory human-routing language under AI ownership: %s",
 		async (message) => {
 			const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
@@ -249,6 +250,37 @@ describe("P0 runtime kernel", () => {
 				ownerEpoch: state.ownerEpoch,
 			});
 			expect(result.state.handoffPackage).toBeUndefined();
+		},
+	);
+
+	it.each([
+		["不要机器人回复", "explicit_human_request"],
+		["不用转人工，但帮我改地址", "privileged_action_request"],
+		["先别转人工，我要投诉", "high_risk_or_human_request"],
+	])(
+		"keeps non-human risks authoritative when human routing is deferred: %s",
+		async (message, reason) => {
+			const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+			const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+			const result = await finalizeTurn({
+				prepared,
+				snapshot,
+				message,
+				replyGenerator: { generate: vi.fn() },
+				now,
+			});
+
+			expect(prepared).toMatchObject({
+				action: "handoff",
+				riskLevel: "high",
+				handoffReason: reason,
+			});
+			expect(result.state).toMatchObject({
+				ownerType: "human",
+				ownerEpoch: state.ownerEpoch + 1,
+				handoffReason: reason,
+				nextAction: "stop",
+			});
 		},
 	);
 
