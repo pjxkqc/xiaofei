@@ -650,6 +650,8 @@ describe("Xiaofei Organization queries", () => {
 			runtimeMetadata: {
 				knowledgeTitle: null,
 				knowledgeEvidence: null,
+				knowledgeEvidenceSet: [],
+				knowledgeRecall: null,
 				nextAction: "reply",
 				riskLevel: "low",
 				ownerType: "ai",
@@ -770,6 +772,8 @@ describe("Xiaofei Organization queries", () => {
 				runtimeMetadata: {
 					knowledgeTitle: null,
 					knowledgeEvidence: null,
+					knowledgeEvidenceSet: [],
+					knowledgeRecall: null,
 					nextAction: "reply",
 					riskLevel: "low",
 					ownerType: "ai",
@@ -845,6 +849,8 @@ describe("Xiaofei Organization queries", () => {
 				runtimeMetadata: {
 					knowledgeTitle: null,
 					knowledgeEvidence: null,
+					knowledgeEvidenceSet: [],
+					knowledgeRecall: null,
 					nextAction: "reply",
 					riskLevel: "low",
 					ownerType: "ai",
@@ -894,6 +900,8 @@ describe("Xiaofei Organization queries", () => {
 			runtimeMetadata: {
 				knowledgeTitle: null,
 				knowledgeEvidence: null,
+				knowledgeEvidenceSet: [],
+				knowledgeRecall: null,
 				nextAction: "reply",
 				riskLevel: "low",
 				ownerType: "ai",
@@ -1633,6 +1641,8 @@ describe("Xiaofei governed TestTurn feedback boundary", () => {
 	const runtimeMetadata = {
 		knowledgeTitle: null,
 		knowledgeEvidence: null,
+		knowledgeEvidenceSet: [],
+		knowledgeRecall: null,
 		nextAction: "reply" as const,
 		riskLevel: "low" as const,
 		ownerType: "ai" as const,
