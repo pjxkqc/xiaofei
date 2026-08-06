@@ -18,6 +18,8 @@ import { orpcClient } from "@shared/lib/orpc-client";
 import { RefreshCcwIcon } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { isAdmitted } from "./KnowledgeCapabilities";
+import { recoverTestSession } from "./test-session-recovery";
 
 type Overview = Awaited<ReturnType<typeof orpcClient.xiaofei.getVersioningOverview>>;
 type CapabilityVersion = NonNullable<NonNullable<Overview["binding"]>["activeCapabilityVersion"]>;
@@ -128,15 +130,22 @@ export function KnowledgeVersioningPanel({
 		}
 	}, [refreshSessions]);
 	useEffect(() => {
-		void refreshSessionHistory()
-			.then((result) => {
-				const current = result.items.find((session) => session.writable);
-				if (current) return loadSession(current.id);
+		void recoverTestSession({
+			list: refreshSessions,
+			detail: async (id) => orpcClient.xiaofei.getTestSession({ testSessionId: id }),
+		})
+			.then(({ items, selected, detail }) => {
+			setSessions(items);
+			if (selected && detail) {
+				setTestSessionId(selected.id);
+				setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
+				setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
+			}
 			})
 			.catch((error) => {
-				toastError("无法读取 Test CA 历史", message(error));
+				 toastError("无法读取 Test CA 历史", message(error));
 			});
-	}, [loadSession, refreshSessionHistory]);
+	}, [refreshSessions]);
 
 	function storeSession(next: string) {
 		setTestSessionId(next);
@@ -282,6 +291,11 @@ function VersionOverview({
 }) {
 	const isPrepare = section === "prepare";
 	const testIsActive = active?.id === testVersion?.id && testVersion !== null;
+	const [capability, setCapability] = useState<Awaited<ReturnType<typeof orpcClient.xiaofei.getConfig>> | null>(null);
+	useEffect(() => {
+		void orpcClient.xiaofei.getConfig().then(setCapability).catch(() => undefined);
+	}, []);
+	const admitted = capability ? isAdmitted(capability) && capability.capabilityPlan.version === testVersion?.version : false;
 	async function act(action: () => Promise<unknown>, success: string) {
 		onStart("校验版本 → 更新托管指针/状态 → 确认生效…");
 		setBusy(true);
@@ -316,7 +330,7 @@ function VersionOverview({
 				</div>
 				{!isPrepare && (
 					<Button
-						disabled={busy || !testVersion || testIsActive}
+					 disabled={busy || !testVersion || testIsActive || !admitted}
 						onClick={() =>
 							void act(
 								() => orpcClient.xiaofei.activateHostingVersion(),
@@ -330,7 +344,9 @@ function VersionOverview({
 				<MembershipSummary active={active} testVersion={testVersion} />
 				{!isPrepare ? (
 					<SupportAcceptance
+						admitted={admitted}
 						hasActive={active !== null}
+						onCapabilityChanged={() => void orpcClient.xiaofei.getConfig().then(setCapability).catch(() => undefined)}
 						onStart={onStart}
 						onComplete={onComplete}
 						onFail={onFail}
@@ -356,12 +372,16 @@ function VersionOverview({
 }
 
 function SupportAcceptance({
+	admitted,
 	hasActive,
+	onCapabilityChanged,
 	onStart,
 	onComplete,
 	onFail,
 }: {
+	admitted: boolean;
 	hasActive: boolean;
+	onCapabilityChanged: () => void;
 	onStart: (label: string) => void;
 	onComplete: () => void;
 	onFail: (error: unknown) => void;
@@ -369,7 +389,30 @@ function SupportAcceptance({
 	const [text, setText] = useState("请用这份知识回答一个客户问题。");
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [capability, setCapability] = useState<Awaited<ReturnType<typeof orpcClient.xiaofei.getConfig>> | null>(null);
 	const [externalId] = useState(() => globalThis.crypto.randomUUID());
+	const refreshCapability = useCallback(async () => setCapability(await orpcClient.xiaofei.getConfig()), []);
+	useEffect(() => {
+		void refreshCapability().catch(() => undefined);
+	}, [refreshCapability]);
+	const reviewed = capability?.capabilityPlan.reviewed === true;
+	const evalPassed = capability?.evalSuite.status === "passed" && capability.evalSuite.capabilityPlanVersion === capability.capabilityPlan.version;
+	async function capabilityAction(action: () => Promise<unknown>, success: string) {
+		onStart("正在更新当前能力方案准入状态…");
+		setBusy(true);
+		try {
+			await action();
+			await refreshCapability();
+			onCapabilityChanged();
+			onComplete();
+			toastSuccess(success);
+		} catch (error) {
+			onFail(error);
+			toastError("准入步骤失败", message(error));
+		} finally {
+			setBusy(false);
+		}
+	}
 	async function create() {
 		if (!hasActive || !text.trim() || conversationId) return;
 		onStart("校验 Active CA → 创建合成会话 → 投影首条消息…");
@@ -394,6 +437,15 @@ function SupportAcceptance({
 	}
 	return (
 		<div className="gap-3 p-4 flex flex-col rounded-lg border border-dashed">
+			<div className="gap-2 text-sm flex flex-col" aria-live="polite">
+				<p>步骤 1：审核当前能力方案 — {reviewed ? "已完成" : "待审核"}</p>
+				<p>步骤 2：运行当前版本 Eval — {evalPassed ? "已通过" : "待运行或未通过"}</p>
+				<p>步骤 3：Test CA 激活 — {hasActive && admitted ? "已 Active" : "待激活"}</p>
+			</div>
+			<div className="gap-2 flex flex-wrap">
+				<Button disabled={busy || reviewed} onClick={() => void capabilityAction(() => orpcClient.xiaofei.reviewCapability({ reviewed: true }), "能力方案已审核")}>审核当前能力方案</Button>
+				<Button variant="outline" disabled={busy || !reviewed || evalPassed} onClick={() => void capabilityAction(() => orpcClient.xiaofei.runEval(), "当前版本 Eval 已通过")}>运行当前版本 Eval</Button>
+			</div>
 			<div>
 				<p className="font-medium">选择验收入口</p>
 				<p className="text-sm text-muted-foreground">
@@ -414,7 +466,7 @@ function SupportAcceptance({
 			</Label>
 			<div className="gap-2 flex flex-wrap">
 				<Button
-					disabled={busy || !hasActive || !text.trim() || conversationId !== null}
+					 disabled={busy || !admitted || !hasActive || !text.trim() || conversationId !== null}
 					onClick={() => void create()}
 				>
 					{busy ? "正在创建验收会话…" : conversationId ? "验收会话已创建" : "创建 Support 验收会话"}
