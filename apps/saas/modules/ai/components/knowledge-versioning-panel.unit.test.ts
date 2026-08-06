@@ -83,9 +83,7 @@ describe("symmetricDifferenceSize", () => {
 
 	it("publishes a writable zero-turn selection before its slow detail resolves", async () => {
 		let resolveDetail: ((detail: { id: string }) => void) | undefined;
-		const detail = vi.fn(
-			() => new Promise<{ id: string }>((resolve) => (resolveDetail = resolve)),
-		);
+		const detail = vi.fn(() => new Promise<{ id: string }>((resolve) => (resolveDetail = resolve)));
 		const selected = vi.fn();
 		const recovery = recoverTestSession({
 			list: async () => ({ items: [{ id: "empty", writable: true, turnCount: 0 }] }),
@@ -93,10 +91,17 @@ describe("symmetricDifferenceSize", () => {
 			onSelected: selected,
 		});
 
-		await vi.waitFor(() => expect(selected).toHaveBeenCalledWith({ id: "empty", writable: true, turnCount: 0 }, [{ id: "empty", writable: true, turnCount: 0 }]));
+		await vi.waitFor(() =>
+			expect(selected).toHaveBeenCalledWith({ id: "empty", writable: true, turnCount: 0 }, [
+				{ id: "empty", writable: true, turnCount: 0 },
+			]),
+		);
 		expect(detail).toHaveBeenCalledWith("empty");
 		resolveDetail?.({ id: "empty" });
-		await expect(recovery).resolves.toMatchObject({ selected: { id: "empty" }, detail: { id: "empty" } });
+		await expect(recovery).resolves.toMatchObject({
+			selected: { id: "empty" },
+			detail: { id: "empty" },
+		});
 	});
 
 	it("requires canonical admission and current Test Active", () => {

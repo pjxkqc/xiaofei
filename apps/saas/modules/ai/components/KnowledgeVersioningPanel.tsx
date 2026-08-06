@@ -177,8 +177,8 @@ export function KnowledgeVersioningPanel({
 	}, [refreshSessions]);
 	useEffect(() => {
 		void recoverSessionHistory().catch((error) => {
-				toastError("无法读取 Test CA 历史", message(error));
-			});
+			toastError("无法读取 Test CA 历史", message(error));
+		});
 	}, [recoverSessionHistory]);
 
 	function storeSession(next: string) {
@@ -727,9 +727,14 @@ function TestConversation({
 							</output>
 						) : null}
 						{sessionDetailState === "error" && testSessionId ? (
-							<div className="gap-2 text-sm text-destructive flex items-center">
+							<div className="gap-2 text-sm flex items-center text-destructive">
 								<span>会话列表已恢复；历史轮次读取失败。</span>
-								<Button variant="outline" size="sm" disabled={busy} onClick={() => void onRefreshSessions()}>
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={busy}
+									onClick={() => void onRefreshSessions()}
+								>
 									重新读取历史
 								</Button>
 							</div>
