@@ -148,6 +148,7 @@ model Organization {
   xiaofeiCustomers   XiaofeiCustomer[]
   xiaofeiChannelBindings XiaofeiChannelBinding[]
   xiaofeiTestTurns   XiaofeiTestTurn[]
+  xiaofeiTestSessions XiaofeiTestSession[]
   knowledgeUnitRevisions XiaofeiKnowledgeUnitRevision[]
   capabilityVersions XiaofeiCapabilityVersion[]
   capabilityBindings XiaofeiCapabilityBinding[]
@@ -317,6 +318,9 @@ model XiaofeiConversation {
   status             String           @default("open")
   assignedUserId     String?
   assignedUserName   String?
+  revision           Int              @default(1)
+  ownerType          String?
+  ownerEpoch         Int?
   state              Json
   messages           Json             @default("[]")
   traceEvents        Json             @default("[]")
@@ -335,6 +339,22 @@ model XiaofeiConversation {
   @@index([workspaceId, updatedAt])
   @@index([customerId])
   @@map("xiaofei_conversation")
+}
+
+/// A Test session exists before its first answer. Its pinned CA is immutable;
+/// turns remain the immutable evidence ledger associated with this identity.
+model XiaofeiTestSession {
+  id                  String                   @id @default(cuid())
+  organizationId      String
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capabilityVersionId String
+  capabilityVersion   XiaofeiCapabilityVersion @relation(fields: [organizationId, capabilityVersionId], references: [organizationId, id], onDelete: Restrict)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@unique([organizationId, id])
+  @@index([organizationId, createdAt, id])
+  @@map("xiaofei_test_session")
 }
 
 model XiaofeiChannelBinding {
@@ -629,6 +649,7 @@ model XiaofeiCapabilityVersion {
   beforeInterventions  XiaofeiResponseIntervention[] @relation("InterventionBeforeCapabilityVersion")
   resultInterventions  XiaofeiResponseIntervention[] @relation("InterventionResultCapabilityVersion")
   testTurns            XiaofeiTestTurn[]
+  testSessions         XiaofeiTestSession[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, capabilityKey, manifestHash])

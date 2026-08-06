@@ -12,7 +12,14 @@ const queryMocks = vi.hoisted(() => {
 		},
 		xiaofeiWorkspace: { findUnique: vi.fn() },
 		xiaofeiCustomer: { findUnique: vi.fn() },
-		xiaofeiConversation: { create: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
+		xiaofeiConversation: {
+			create: vi.fn(),
+			findUnique: vi.fn(),
+			findUniqueOrThrow: vi.fn(),
+			updateMany: vi.fn(),
+			upsert: vi.fn(),
+		},
+		xiaofeiTestSession: { create: vi.fn(), findUnique: vi.fn() },
 		xiaofeiKnowledgeDocument: {
 			create: vi.fn(),
 			deleteMany: vi.fn(),
@@ -28,6 +35,7 @@ const queryMocks = vi.hoisted(() => {
 		},
 		xiaofeiKnowledgeUnit: {
 			create: vi.fn(),
+			findFirst: vi.fn(),
 			findMany: vi.fn(),
 			findUnique: vi.fn(),
 			updateMany: vi.fn(),
@@ -76,6 +84,7 @@ const queryMocks = vi.hoisted(() => {
 		listEntries: vi.fn(),
 		updateEntry: transactionClient.xiaofeiKnowledgeEntry.update,
 		createUnit: transactionClient.xiaofeiKnowledgeUnit.create,
+		findCurrentUnit: transactionClient.xiaofeiKnowledgeUnit.findFirst,
 		findUnit: vi.fn(),
 		listUnits: vi.fn(),
 		listAdminOrganizations: vi.fn(),
@@ -123,6 +132,10 @@ const queryMocks = vi.hoisted(() => {
 		upsertConversation: transactionClient.xiaofeiConversation.upsert,
 		createConversation: transactionClient.xiaofeiConversation.create,
 		findConversationInTransaction: transactionClient.xiaofeiConversation.findUnique,
+		findConversationOrThrowInTransaction: transactionClient.xiaofeiConversation.findUniqueOrThrow,
+		updateSyntheticConversation: transactionClient.xiaofeiConversation.updateMany,
+		createTestSession: transactionClient.xiaofeiTestSession.create,
+		findTestSession: transactionClient.xiaofeiTestSession.findUnique,
 	};
 });
 
@@ -516,6 +529,9 @@ import {
 	listXiaofeiTestSessions,
 	loadXiaofeiRuntimeHostingCapability,
 	upsertXiaofeiSyntheticSupportConversation,
+	commitXiaofeiSyntheticSupportConversation,
+	createOrReturnXiaofeiKnowledgeUnit,
+	createXiaofeiTestSession,
 	XiaofeiCapabilityPartitionError,
 	XiaofeiDuplicateLogicalKnowledgeUnitError,
 	XiaofeiVersioningNotFoundError,
@@ -524,6 +540,7 @@ import {
 	XiaofeiTestSessionCapabilityConflictError,
 	XiaofeiTestSessionConflictError,
 	XiaofeiSyntheticSupportConversationConflictError,
+	XiaofeiSyntheticSupportCommitConflictError,
 } from "./xiaofei";
 
 const conversationState = createConversationState({
@@ -946,6 +963,78 @@ describe("Xiaofei Organization queries", () => {
 			}),
 		).rejects.toBeInstanceOf(XiaofeiSyntheticSupportConversationConflictError);
 		expect(queryMocks.createConversation).not.toHaveBeenCalled();
+	});
+
+	it("rejects a stale synthetic AI commit without creating transport artifacts", async () => {
+		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
+		queryMocks.findConversationInTransaction.mockResolvedValueOnce({
+			id: "conversation-a",
+			channel: "synthetic_support",
+			revision: 3,
+			ownerType: "human",
+			ownerEpoch: 2,
+		});
+		await expect(
+			commitXiaofeiSyntheticSupportConversation({
+				organizationId: "organization-a",
+				externalId: "synthetic-acceptance-a",
+				expectedRevision: 2,
+				expectedOwnerType: "ai",
+				expectedOwnerEpoch: 1,
+				state: {},
+				messages: [],
+				traceEvents: [],
+			}),
+		).rejects.toBeInstanceOf(XiaofeiSyntheticSupportCommitConflictError);
+		expect(queryMocks.updateSyntheticConversation).not.toHaveBeenCalled();
+		expect(queryMocks.createInboundEvent).not.toHaveBeenCalled();
+	});
+
+	it("creates a zero-turn Test session only for the current Test capability", async () => {
+		queryMocks.findHostingBindingInTransaction.mockResolvedValueOnce({
+			testCapabilityVersionId: "test-ca",
+		});
+		queryMocks.findTestSession.mockResolvedValueOnce(null);
+		queryMocks.createTestSession.mockResolvedValueOnce({
+			id: "session-zero",
+			capabilityVersionId: "test-ca",
+		});
+		await expect(
+			createXiaofeiTestSession("organization-a", {
+				id: "session-zero",
+				capabilityVersionId: "test-ca",
+			}),
+		).resolves.toMatchObject({ id: "session-zero" });
+		expect(queryMocks.createTestSession).toHaveBeenCalledWith({
+			data: {
+				id: "session-zero",
+				organizationId: "organization-a",
+				capabilityVersionId: "test-ca",
+			},
+		});
+	});
+
+	it("reuses a current KU with exact lineage instead of creating a duplicate", async () => {
+		queryMocks.findEntryInTransaction.mockResolvedValueOnce({
+			sourceId: "source-1",
+			sourceContentHash: "hash-1",
+			sourceVersion: 2,
+			entryVersion: 3,
+		});
+		queryMocks.findDocumentInTransaction.mockResolvedValueOnce({
+			contentHash: "hash-1",
+			sourceVersion: 2,
+		});
+		queryMocks.findCurrentUnit.mockResolvedValueOnce({ id: "current-ku" });
+		await expect(
+			createOrReturnXiaofeiKnowledgeUnit({
+				workspaceId: "workspace-a",
+				entryId: "entry-1",
+				title: "Draft",
+				content: {},
+			}),
+		).resolves.toEqual({ knowledgeUnit: { id: "current-ku" }, created: false });
+		expect(queryMocks.createUnit).not.toHaveBeenCalled();
 	});
 
 	it("keeps configuration and customers within their Organization selectors", async () => {

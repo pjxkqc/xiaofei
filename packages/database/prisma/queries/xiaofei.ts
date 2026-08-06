@@ -324,6 +324,11 @@ export interface CreateXiaofeiTestTurnInput {
 	completedAt: Date;
 }
 
+export interface CreateXiaofeiTestSessionInput {
+	id: string;
+	capabilityVersionId: string;
+}
+
 export interface ApplyXiaofeiTestTurnFeedbackInput {
 	organizationId: string;
 	sourceTestTurnId: string;
@@ -388,6 +393,21 @@ export interface UpsertXiaofeiSyntheticSupportConversationInput {
 	lastMessageAt?: Date | null;
 }
 
+export interface CommitXiaofeiSyntheticSupportConversationInput {
+	organizationId: string;
+	externalId: string;
+	expectedRevision: number;
+	expectedOwnerType: string | null;
+	expectedOwnerEpoch: number | null;
+	state: Prisma.InputJsonValue;
+	messages: Prisma.InputJsonValue;
+	traceEvents: Prisma.InputJsonValue;
+	lastCustomerSeenAt?: Date | null;
+	lastMessageAt?: Date | null;
+}
+
+export interface CreateOrReturnXiaofeiKnowledgeUnitInput extends CreateXiaofeiKnowledgeUnitInput {}
+
 export interface XiaofeiRuntimeCapabilityDto {
 	manifest: CapabilityVersionManifest;
 	revisions: KnowledgeUnitRevision[];
@@ -440,6 +460,17 @@ export class XiaofeiSyntheticSupportConversationConflictError extends Error {
 	) {
 		super("The synthetic support conversation ID is already owned by another channel.");
 		this.name = "XiaofeiSyntheticSupportConversationConflictError";
+	}
+}
+
+/** A lease, Inbox takeover, or another AI turn invalidated a synthetic commit. */
+export class XiaofeiSyntheticSupportCommitConflictError extends Error {
+	readonly code = "SYNTHETIC_SUPPORT_COMMIT_CONFLICT";
+	constructor(
+		readonly organizationId: string,
+		readonly externalId: string,
+	) {
+		super("The synthetic support conversation changed; reload before committing AI state.");
 	}
 }
 
@@ -1059,6 +1090,58 @@ export function upsertXiaofeiSyntheticSupportConversation(
 				lastMessageAt: input.lastMessageAt ?? null,
 			},
 		});
+	});
+}
+
+/**
+ * Commits an AI result only when both the row revision and the captured owner
+ * lease still match. This intentionally touches no transport or Email tables.
+ */
+export function commitXiaofeiSyntheticSupportConversation(
+	input: CommitXiaofeiSyntheticSupportConversationInput,
+) {
+	return db.$transaction(async (transaction) => {
+		const workspace = await transaction.xiaofeiWorkspace.findUnique({
+			where: { tenantKey: organizationTenantKey(input.organizationId) },
+		});
+		if (!workspace) throw new XiaofeiOrganizationWorkspaceNotFoundError(input.organizationId);
+		await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${workspace.id}:${input.externalId}`}, 0))`;
+		const conversation = await transaction.xiaofeiConversation.findUnique({
+			where: {
+				workspaceId_externalId: { workspaceId: workspace.id, externalId: input.externalId },
+			},
+			select: { id: true, channel: true, revision: true, ownerType: true, ownerEpoch: true },
+		});
+		if (!conversation || conversation.channel !== "synthetic_support")
+			throw new XiaofeiSyntheticSupportConversationConflictError(
+				input.organizationId,
+				input.externalId,
+			);
+		if (
+			conversation.revision !== input.expectedRevision ||
+			conversation.ownerType !== input.expectedOwnerType ||
+			conversation.ownerEpoch !== input.expectedOwnerEpoch
+		)
+			throw new XiaofeiSyntheticSupportCommitConflictError(input.organizationId, input.externalId);
+		const updated = await transaction.xiaofeiConversation.updateMany({
+			where: {
+				id: conversation.id,
+				revision: input.expectedRevision,
+				ownerType: input.expectedOwnerType,
+				ownerEpoch: input.expectedOwnerEpoch,
+			},
+			data: {
+				state: input.state,
+				messages: input.messages,
+				traceEvents: input.traceEvents,
+				lastCustomerSeenAt: input.lastCustomerSeenAt ?? null,
+				lastMessageAt: input.lastMessageAt ?? null,
+				revision: { increment: 1 },
+			},
+		});
+		if (updated.count !== 1)
+			throw new XiaofeiSyntheticSupportCommitConflictError(input.organizationId, input.externalId);
+		return transaction.xiaofeiConversation.findUniqueOrThrow({ where: { id: conversation.id } });
 	});
 }
 export function getXiaofeiConversation(workspaceId: string, externalId: string) {
@@ -2143,6 +2226,55 @@ export function createXiaofeiKnowledgeUnit(input: CreateXiaofeiKnowledgeUnitInpu
 	});
 }
 
+/**
+ * Retry-safe current KU materialization. The workspace lock and exact entry /
+ * source lineage mean concurrent callers reuse one current row, while stale
+ * and historical rows are never rewritten.
+ */
+export function createOrReturnXiaofeiKnowledgeUnit(input: CreateOrReturnXiaofeiKnowledgeUnitInput) {
+	return db.$transaction(async (transaction) => {
+		await lockXiaofeiKnowledgeWorkspace(transaction, input.workspaceId);
+		const entry = await transaction.xiaofeiKnowledgeEntry.findUnique({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: input.entryId } },
+			select: { sourceId: true, sourceContentHash: true, sourceVersion: true, entryVersion: true },
+		});
+		if (!entry?.sourceId) throw new Error("Knowledge entry was not eligible in this workspace.");
+		const source = await transaction.xiaofeiKnowledgeDocument.findUnique({
+			where: { workspaceId_id: { workspaceId: input.workspaceId, id: entry.sourceId } },
+			select: { contentHash: true, sourceVersion: true },
+		});
+		if (
+			!source ||
+			source.contentHash !== entry.sourceContentHash ||
+			source.sourceVersion !== entry.sourceVersion
+		)
+			throw new Error("Knowledge entry was not eligible in this workspace.");
+		const existing = await transaction.xiaofeiKnowledgeUnit.findFirst({
+			where: {
+				workspaceId: input.workspaceId,
+				entryId: input.entryId,
+				sourceId: entry.sourceId,
+				sourceContentHash: entry.sourceContentHash,
+				sourceVersion: entry.sourceVersion,
+				entryVersion: entry.entryVersion,
+				eligibility: { not: "stale" },
+			},
+			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		});
+		if (existing) return { knowledgeUnit: existing, created: false };
+		const knowledgeUnit = await transaction.xiaofeiKnowledgeUnit.create({
+			data: {
+				...input,
+				sourceId: entry.sourceId,
+				sourceContentHash: entry.sourceContentHash,
+				sourceVersion: entry.sourceVersion,
+				entryVersion: entry.entryVersion,
+			},
+		});
+		return { knowledgeUnit, created: true };
+	});
+}
+
 export function listXiaofeiKnowledgeUnits(workspaceId: string) {
 	return db.xiaofeiKnowledgeUnit.findMany({
 		where: { workspaceId },
@@ -2437,6 +2569,33 @@ export function createXiaofeiTestTurn(organizationId: string, input: CreateXiaof
 	return db.$transaction((transaction) =>
 		createXiaofeiTestTurnInTransaction(transaction, organizationId, input),
 	);
+}
+
+/** Creates a visible zero-turn session pinned to the current Test hosting CA. */
+export function createXiaofeiTestSession(
+	organizationId: string,
+	input: CreateXiaofeiTestSessionInput,
+) {
+	return db.$transaction(async (transaction) => {
+		await lockXiaofeiVersioningScope(transaction, `test-session:${organizationId}:${input.id}`);
+		const binding = await transaction.xiaofeiCapabilityBinding.findUnique({
+			where: { organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" } },
+			select: { testCapabilityVersionId: true },
+		});
+		if (binding?.testCapabilityVersionId !== input.capabilityVersionId)
+			throw new XiaofeiVersioningNotFoundError(organizationId, input.capabilityVersionId);
+		const existing = await transaction.xiaofeiTestSession.findUnique({
+			where: { organizationId_id: { organizationId, id: input.id } },
+		});
+		if (existing) {
+			if (existing.capabilityVersionId !== input.capabilityVersionId)
+				throw new XiaofeiTestSessionCapabilityConflictError(organizationId, input.id);
+			return existing;
+		}
+		return transaction.xiaofeiTestSession.create({
+			data: { id: input.id, organizationId, capabilityVersionId: input.capabilityVersionId },
+		});
+	});
 }
 
 async function createXiaofeiTestTurnInTransaction(
