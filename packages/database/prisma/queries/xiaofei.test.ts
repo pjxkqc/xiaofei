@@ -868,6 +868,126 @@ describe("Xiaofei Organization queries", () => {
 		expect(detail?.turns[detail.turns.length - 1]?.question).toBe("Question 101");
 	});
 
+	it("projects bounded intervention pairs from either selected CA without session fan-out", async () => {
+		const sourceTurn = {
+			id: "source-turn",
+			question: "Original question",
+			answer: "Before answer",
+			capabilityVersionId: "before-ca",
+			conversationState,
+			runtimeMetadata: {
+				knowledgeTitle: null,
+				knowledgeEvidence: null,
+				nextAction: "reply",
+				riskLevel: "low",
+				ownerType: "ai",
+				stage: "admission",
+				missingSlots: [],
+				traces: [],
+			},
+			evidenceRevisionId: null,
+			sourceTestTurnId: null,
+			interventionId: null,
+			requestedAt: new Date("2026-08-04T00:00:00.000Z"),
+			completedAt: new Date("2026-08-04T00:00:01.000Z"),
+			createdAt: new Date("2026-08-04T00:00:01.000Z"),
+		};
+		const pair = {
+			interventionId: "intervention-a",
+			correction: "Corrected fact",
+			beforeResponse: { answer: "Before answer" },
+			afterResponse: null as { answer: string } | null,
+			beforeId: "source-turn",
+			beforeTestSessionId: "old-ca-session",
+			beforeCapabilityVersionId: "before-ca",
+			beforeAnswer: "Before answer",
+			beforeRuntimeMetadata: sourceTurn.runtimeMetadata,
+			afterId: null as string | null,
+			afterTestSessionId: null as string | null,
+			afterCapabilityVersionId: null as string | null,
+			afterAnswer: null as string | null,
+			afterRuntimeMetadata: null as typeof sourceTurn.runtimeMetadata | null,
+		};
+
+		queryMocks.getHostingBinding.mockResolvedValue({ testCapabilityVersionId: "before-ca" });
+		queryMocks.listTestTurns.mockResolvedValue(sourceTurn ? [sourceTurn] : []);
+		queryMocks.findLatestTestTurn
+			.mockResolvedValueOnce({ question: sourceTurn.question })
+			.mockResolvedValueOnce({
+				capabilityVersionId: sourceTurn.capabilityVersionId,
+				completedAt: sourceTurn.completedAt,
+			});
+		queryMocks.countTestTurns.mockResolvedValueOnce(1);
+		const secondPair = { ...pair, interventionId: "intervention-b", beforeId: "source-turn-b" };
+		queryMocks.queryRaw
+			.mockResolvedValueOnce([{ beforeCount: BigInt(2), afterCount: BigInt(0) }])
+			.mockResolvedValueOnce([pair, secondPair]);
+
+		await expect(
+			getXiaofeiTestSessionDetail("organization-a", "old-ca-session"),
+		).resolves.toMatchObject({
+			interventionPairs: [
+				{
+					interventionId: "intervention-a",
+					isComplete: false,
+					before: { id: "source-turn" },
+					after: null,
+				},
+				{
+					interventionId: "intervention-b",
+					isComplete: false,
+					before: { id: "source-turn-b" },
+					after: null,
+				},
+			],
+		});
+
+		const pairSql = String(queryMocks.queryRaw.mock.calls[1]?.[0]);
+		expect(pairSql).toContain('WITH "selected_turns"');
+		expect(pairSql).toContain("LIMIT 100");
+		expect(pairSql).toContain('after_turn."rerunOfTestTurnId" = before_turn.id');
+		expect(pairSql).toContain('i."organizationId" =');
+		expect(pairSql).toContain('before_turn."organizationId" = i."organizationId"');
+		expect(queryMocks.listTestTurns).toHaveBeenCalledTimes(1);
+
+		pair.afterId = "rerun-turn";
+		pair.afterTestSessionId = "current-ca-session";
+		pair.afterCapabilityVersionId = "after-ca";
+		pair.afterAnswer = "After answer";
+		pair.afterRuntimeMetadata = sourceTurn.runtimeMetadata;
+		pair.afterResponse = { answer: "After answer" };
+		queryMocks.listTestTurns.mockResolvedValueOnce([
+			{ ...sourceTurn, id: "rerun-turn", testSessionId: "current-ca-session" },
+		]);
+		queryMocks.findLatestTestTurn
+			.mockResolvedValueOnce({ question: sourceTurn.question })
+			.mockResolvedValueOnce({
+				capabilityVersionId: "after-ca",
+				completedAt: sourceTurn.completedAt,
+			});
+		queryMocks.countTestTurns.mockResolvedValueOnce(1);
+		queryMocks.queryRaw
+			.mockResolvedValueOnce([{ beforeCount: BigInt(0), afterCount: BigInt(1) }])
+			.mockResolvedValueOnce([pair]);
+
+		await expect(
+			getXiaofeiTestSessionDetail("organization-a", "current-ca-session"),
+		).resolves.toMatchObject({
+			interventionPairs: [
+				{
+					interventionId: "intervention-a",
+					isComplete: true,
+					before: { testSessionId: "old-ca-session", capabilityVersionId: "before-ca" },
+					after: {
+						id: "rerun-turn",
+						testSessionId: "current-ca-session",
+						capabilityVersionId: "after-ca",
+					},
+				},
+			],
+		});
+	});
+
 	it("projects synthetic support only into its Organization conversation aggregate", async () => {
 		queryMocks.findWorkspaceInTransaction.mockResolvedValueOnce({ id: "workspace-a" });
 		queryMocks.findConversationInTransaction.mockResolvedValueOnce(null);

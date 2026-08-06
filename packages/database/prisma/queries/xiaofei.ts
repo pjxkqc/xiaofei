@@ -380,6 +380,27 @@ export interface XiaofeiTestSessionDetailDto extends XiaofeiTestSessionSummaryDt
 		completedAt: Date;
 		createdAt: Date;
 	}>;
+	interventionPairs: Array<{
+		interventionId: string;
+		isComplete: boolean;
+		correction: string;
+		beforeResponse: Prisma.JsonValue | null;
+		afterResponse: Prisma.JsonValue | null;
+		before: {
+			id: string;
+			testSessionId: string;
+			capabilityVersionId: string;
+			answer: string;
+			runtimeMetadata: RuntimeMetadata;
+		};
+		after: {
+			id: string;
+			testSessionId: string;
+			capabilityVersionId: string;
+			answer: string;
+			runtimeMetadata: RuntimeMetadata;
+		} | null;
+	}>;
 }
 
 export interface UpsertXiaofeiSyntheticSupportConversationInput {
@@ -2835,8 +2856,8 @@ export async function getXiaofeiTestSessionDetail(
 	organizationId: string,
 	testSessionId: string,
 ): Promise<XiaofeiTestSessionDetailDto | null> {
-	const [binding, session, turns, first, latest, turnCount, interventionCounts] = await Promise.all(
-		[
+	const [binding, session, turns, first, latest, turnCount, interventionCounts, interventionPairs] =
+		await Promise.all([
 			db.xiaofeiCapabilityBinding.findUnique({
 				where: {
 					organizationId_capabilityKey: { organizationId, capabilityKey: "xiaofei-hosting" },
@@ -2886,8 +2907,55 @@ export async function getXiaofeiTestSessionDetail(
 				ON i."organizationId" = t."organizationId" AND i."sourceTestTurnId" = t.id
 			WHERE t."organizationId" = ${organizationId} AND t."testSessionId" = ${testSessionId}
 		`,
-		],
-	);
+			// This one bounded read pairs the displayed source or rerun turns directly.
+			// It deliberately does not enumerate other sessions to reconstruct a pair.
+			db.$queryRaw<
+				Array<{
+					interventionId: string;
+					correction: string;
+					beforeResponse: Prisma.JsonValue | null;
+					afterResponse: Prisma.JsonValue | null;
+					beforeId: string;
+					beforeTestSessionId: string;
+					beforeCapabilityVersionId: string;
+					beforeAnswer: string;
+					beforeRuntimeMetadata: Prisma.JsonValue;
+					afterId: string | null;
+					afterTestSessionId: string | null;
+					afterCapabilityVersionId: string | null;
+					afterAnswer: string | null;
+					afterRuntimeMetadata: Prisma.JsonValue | null;
+				}>
+			>`
+				WITH "selected_turns" AS (
+					SELECT t.id
+					FROM "xiaofei_test_turn" t
+					WHERE t."organizationId" = ${organizationId} AND t."testSessionId" = ${testSessionId}
+					ORDER BY t."createdAt" DESC, t.id DESC
+					LIMIT 100
+				)
+				SELECT
+					i.id AS "interventionId", i.correction, i."beforeResponse", i."afterResponse",
+					before_turn.id AS "beforeId", before_turn."testSessionId" AS "beforeTestSessionId",
+					before_turn."capabilityVersionId" AS "beforeCapabilityVersionId",
+					before_turn.answer AS "beforeAnswer", before_turn."runtimeMetadata" AS "beforeRuntimeMetadata",
+					after_turn.id AS "afterId", after_turn."testSessionId" AS "afterTestSessionId",
+					after_turn."capabilityVersionId" AS "afterCapabilityVersionId",
+					after_turn.answer AS "afterAnswer", after_turn."runtimeMetadata" AS "afterRuntimeMetadata"
+				FROM "xiaofei_response_intervention" i
+				INNER JOIN "xiaofei_test_turn" before_turn
+					ON before_turn."organizationId" = i."organizationId"
+					AND before_turn.id = i."sourceTestTurnId"
+				LEFT JOIN "xiaofei_test_turn" after_turn
+					ON after_turn."organizationId" = i."organizationId"
+					AND after_turn."rerunOfTestTurnId" = before_turn.id
+					AND after_turn."interventionId" = i.id
+				WHERE i."organizationId" = ${organizationId}
+					AND (before_turn.id IN (SELECT id FROM "selected_turns")
+						OR after_turn.id IN (SELECT id FROM "selected_turns"))
+				ORDER BY i."createdAt" ASC, i.id ASC
+			`,
+		]);
 	if (!session && (!turns.length || !first || !latest)) return null;
 	const capabilityVersionId = session?.capabilityVersionId ?? latest!.capabilityVersionId;
 	const isCurrent = capabilityVersionId === binding?.testCapabilityVersionId;
@@ -2907,6 +2975,29 @@ export async function getXiaofeiTestSessionDetail(
 				? ConversationStateSchema.parse(turn.conversationState)
 				: null,
 			runtimeMetadata: RuntimeMetadataSchema.parse(turn.runtimeMetadata),
+		})),
+		interventionPairs: (interventionPairs ?? []).map((pair) => ({
+			interventionId: pair.interventionId,
+			isComplete: pair.afterId !== null,
+			correction: pair.correction,
+			beforeResponse: pair.beforeResponse,
+			afterResponse: pair.afterId ? pair.afterResponse : null,
+			before: {
+				id: pair.beforeId,
+				testSessionId: pair.beforeTestSessionId,
+				capabilityVersionId: pair.beforeCapabilityVersionId,
+				answer: pair.beforeAnswer,
+				runtimeMetadata: RuntimeMetadataSchema.parse(pair.beforeRuntimeMetadata),
+			},
+			after: pair.afterId
+				? {
+						id: pair.afterId,
+						testSessionId: pair.afterTestSessionId!,
+						capabilityVersionId: pair.afterCapabilityVersionId!,
+						answer: pair.afterAnswer!,
+						runtimeMetadata: RuntimeMetadataSchema.parse(pair.afterRuntimeMetadata),
+					}
+				: null,
 		})),
 	};
 }
