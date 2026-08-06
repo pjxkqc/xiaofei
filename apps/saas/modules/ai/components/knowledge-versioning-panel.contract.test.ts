@@ -44,6 +44,11 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 		expect(panel).not.toContain("sessionStorage");
 		expect(panel).toContain("listTestSessions");
 		expect(panel).toContain("getTestSession");
+		expect(panel).not.toContain("history.items.map((session)");
+		expect(panel).not.toContain("Promise.all(");
+		expect(panel).toContain("toInterventionEvidence(detail.interventionPairs)");
+		expect(panel).toContain("RuntimeMetadataSchema.safeParse");
+		expect(panel).toContain("After 尚未完成");
 		expect(panel).toContain("旧 CA（只读）");
 		expect(panel).toContain("testSessionId,");
 		expect(panel).toContain("setTurns((history) => [...history, toTestTurnView(result)])");

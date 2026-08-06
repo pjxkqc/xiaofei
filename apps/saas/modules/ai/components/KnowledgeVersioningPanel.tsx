@@ -13,6 +13,7 @@ import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Textarea } from "@repo/ui/components/textarea";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
+import { RuntimeMetadataSchema } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
 import { RefreshCcwIcon } from "lucide-react";
 import Link from "next/link";
@@ -40,7 +41,8 @@ export interface TestTurnView {
 export interface InterventionEvidence {
 	interventionId: string;
 	source: TestTurnView;
-	rerun: TestTurnView;
+	rerun: TestTurnView | null;
+	isComplete: boolean;
 }
 interface TestSessionSummary {
 	id: string;
@@ -67,7 +69,7 @@ export function KnowledgeVersioningPanel({
 	const [correction, setCorrection] = useState("");
 	const [rerun, setRerun] = useState<Correction | null>(null);
 	const [sessions, setSessions] = useState<TestSessionSummary[]>([]);
-	const [sessionTurns, setSessionTurns] = useState<Record<string, TestTurnView[]>>({});
+	const [interventionEvidence, setInterventionEvidence] = useState<InterventionEvidence[]>([]);
 	const [busy, setBusy] = useState(false);
 	const [operation, setOperation] = useState<{
 		label: string;
@@ -96,30 +98,12 @@ export function KnowledgeVersioningPanel({
 		void refresh().catch(() => toastError("无法读取版本状态"));
 	}, [refresh]);
 	const loadSession = useCallback(async (next: string) => {
-		beginOperation("正在载入会话元数据 → 恢复有界测试轮次与干预证据…");
+		beginOperation("正在载入所选会话 → 恢复有界测试轮次与干预证据…");
 		try {
-			const result = await orpcClient.xiaofei.listTestSessions({ limit: 20 });
-			const history = {
-				...result,
-				items: (result.items as unknown[]).map(normalizeTestSessionSummary),
-			};
-			setSessions(history.items);
-			const details = await Promise.all(
-				history.items.map((session) =>
-					orpcClient.xiaofei.getTestSession({ testSessionId: session.id }),
-				),
-			);
-			const turnsBySession = Object.fromEntries(
-				details.map((detail) => [
-					detail.id,
-					detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)),
-				]),
-			);
-			const selectedTurns = turnsBySession[next];
-			if (!selectedTurns) throw new Error("所选 Test CA 会话已不在当前历史中。");
+			const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
 			setTestSessionId(next);
-			setSessionTurns(turnsBySession);
-			setTurns(selectedTurns);
+			setTurns(detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)));
+			setInterventionEvidence(toInterventionEvidence(detail.interventionPairs));
 			completeOperation();
 		} catch (error) {
 			failOperation(error);
@@ -165,6 +149,7 @@ export function KnowledgeVersioningPanel({
 			storeSession(next.testSessionId);
 			await refreshSessions();
 			setTurns([]);
+			setInterventionEvidence([]);
 			setSelectedTurnId(null);
 			setRerun(null);
 			setCorrection("");
@@ -211,10 +196,8 @@ export function KnowledgeVersioningPanel({
 			setCorrection("");
 			setSelectedTurnId(null);
 			await refresh();
-			const next = await orpcClient.xiaofei.newTestSession();
-			storeSession(next.testSessionId);
-			setTurns([]);
 			await refreshSessions();
+			await loadSession(result.rerun.testSessionId);
 			completeOperation();
 			toastSuccess("已生成 Test CA 并完成同题复测；后续测试已切换为新会话");
 		} catch (error) {
@@ -226,7 +209,6 @@ export function KnowledgeVersioningPanel({
 	}
 	const active = overview?.binding?.activeCapabilityVersion ?? null;
 	const testVersion = overview?.binding?.testCapabilityVersion ?? null;
-	const interventionEvidence = findInterventionEvidence(sessionTurns, testSessionId);
 	return (
 		<div className="gap-6 flex flex-col">
 			<OperationFeedback operation={operation} />
@@ -677,13 +659,19 @@ function TestConversation({
 									capabilityVersionId={evidence.source.turn.capabilityVersionId}
 									testTurnId={evidence.source.turn.id}
 								/>
-								<AnswerEvidence
-									label="After"
-									answer={evidence.rerun.answer}
-									metadata={evidence.rerun.metadata}
-									capabilityVersionId={evidence.rerun.turn.capabilityVersionId}
-									testTurnId={evidence.rerun.turn.id}
-								/>
+								{evidence.rerun ? (
+									<AnswerEvidence
+										label="After"
+										answer={evidence.rerun.answer}
+										metadata={evidence.rerun.metadata}
+										capabilityVersionId={evidence.rerun.turn.capabilityVersionId}
+										testTurnId={evidence.rerun.turn.id}
+									/>
+								) : (
+									<div className="p-3 text-sm rounded-lg border text-muted-foreground">
+										After 尚未完成；保留 Before 与干预记录，刷新历史后可恢复结果。
+									</div>
+								)}
 							</div>
 						))}
 					</div>
@@ -847,6 +835,8 @@ function toTestSessionTurnView(
 	turn: TestSessionDetail["turns"][number],
 	writable: boolean,
 ): TestTurnView {
+	const metadata = RuntimeMetadataSchema.safeParse(turn.runtimeMetadata);
+	if (!metadata.success) throw new Error("会话测试证据格式无效");
 	return {
 		turn: {
 			id: turn.id,
@@ -854,38 +844,44 @@ function toTestSessionTurnView(
 			capabilityVersionId: turn.capabilityVersionId,
 		},
 		answer: turn.answer,
-		metadata: turn.runtimeMetadata,
+		metadata: metadata.data,
 		feedbackAllowed: writable && !turn.interventionId,
 		feedbackMode:
-			turn.runtimeMetadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
-				? "revise"
-				: "supplement",
+			metadata.data.knowledgeEvidence?.knowledgeUnitOrigin === "merchant" ? "revise" : "supplement",
 		interventionId: turn.interventionId,
 		sourceTestTurnId: turn.sourceTestTurnId,
 	};
 }
 
-export function findInterventionEvidence(
-	sessions: Record<string, TestTurnView[]>,
-	selectedSessionId: string | null,
+export function toInterventionEvidence(
+	pairs: TestSessionDetail["interventionPairs"],
 ): InterventionEvidence[] {
-	if (!selectedSessionId) return [];
-	const selectedTurns = sessions[selectedSessionId] ?? [];
-	const allTurns = Object.values(sessions).flat();
-	return selectedTurns.flatMap((turn) => {
-		if (!turn.interventionId) return [];
-		const source = turn.sourceTestTurnId
-			? allTurns.find((candidate) => candidate.turn.id === turn.sourceTestTurnId)
-			: turn;
-		const rerun = turn.sourceTestTurnId
-			? turn
-			: allTurns.find(
-					(candidate) =>
-						candidate.interventionId === turn.interventionId &&
-						candidate.sourceTestTurnId === turn.turn.id,
-				);
-		return source && rerun ? [{ interventionId: turn.interventionId, source, rerun }] : [];
-	});
+	return pairs.map((pair) => ({
+		interventionId: pair.interventionId,
+		isComplete: pair.isComplete,
+		source: toInterventionTurnView(pair.before),
+		rerun: pair.after ? toInterventionTurnView(pair.after) : null,
+	}));
+}
+
+function toInterventionTurnView(
+	turn: TestSessionDetail["interventionPairs"][number]["before"],
+): TestTurnView {
+	const metadata = RuntimeMetadataSchema.safeParse(turn.runtimeMetadata);
+	if (!metadata.success) throw new Error("会话干预证据格式无效");
+	return {
+		turn: {
+			id: turn.id,
+			question: "已保存的干预问题",
+			capabilityVersionId: turn.capabilityVersionId,
+		},
+		answer: turn.answer,
+		metadata: metadata.data,
+		feedbackAllowed: false,
+		feedbackMode: "supplement",
+		interventionId: null,
+		sourceTestTurnId: null,
+	};
 }
 
 function normalizeTestSessionSummary(value: unknown): TestSessionSummary {
