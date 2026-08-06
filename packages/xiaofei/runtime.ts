@@ -154,7 +154,7 @@ function prepareTurnInternal(
 			knowledge,
 			action: "handoff",
 			riskLevel: "high",
-			reply: input.snapshot.agent.fallbackPolicy.handoffReply,
+			reply: risk.reply ?? input.snapshot.agent.fallbackPolicy.handoffReply,
 			handoffReason: risk.reason,
 			traces,
 		};
@@ -384,7 +384,7 @@ export async function finalizeTurn(input: {
 		const reason =
 			blockedReasons[0] ?? input.prepared.handoffReason ?? "manual_verification_required";
 		state = requestHumanHandoff(state, lease, {
-			summary: `客户问题：${input.message}`,
+			summary: handoffSummary(input.message, reason),
 			reason,
 			riskLevel: input.prepared.riskLevel,
 			collectedSlots: Object.entries(state.slots).flatMap(([key, slot]) =>
@@ -736,10 +736,65 @@ function inferSlotValue(key: string, label: string, message: string): string | u
 function detectRisk(
 	message: string,
 	snapshot: XiaofeiWorkspaceSnapshot,
-): { level: RiskLevel; reason?: string } {
+): { level: RiskLevel; reason?: string; reply?: string } {
 	const normalized = message.toLocaleLowerCase();
-	const alwaysEscalate =
-		/(监管|投诉|起诉|律师|chargeback|complain|human agent|人工客服|真人客服|冒烟|起火|触电|漏液|强烈异味|异常高温)/iu;
+	const sensitiveCredential =
+		/(支付密码|付款密码|银行卡密码|登录密码|验证码|cvv|security code|one[- ]time password|\botp\b|card number)/iu;
+	if (sensitiveCredential.test(message)) {
+		return {
+			level: "high",
+			reason: "sensitive_credential_request",
+			reply:
+				"为保护账户安全，请不要发送支付密码、验证码、完整银行卡号或其他凭据。我会将问题安全转交人工客服核实。",
+		};
+	}
+	const physicalSafety = /(冒烟|起火|触电|漏液|强烈异味|异常高温)/iu;
+	if (physicalSafety.test(message)) {
+		return {
+			level: "high",
+			reason: "physical_safety_risk",
+			reply:
+				"请立即停止使用设备；如可安全操作，请断开电源并远离可燃物。请勿继续操作或自行拆修，我会立即转交人工客服处理。",
+		};
+	}
+	const medicalClaim = /(治好|治疗|治愈|疗效|哮喘|疾病|病症|medical|cure|treat)/iu;
+	if (medicalClaim.test(message)) {
+		return {
+			level: "high",
+			reason: "medical_claim_request",
+			reply:
+				"我不能承诺产品能够治疗、治愈或改善任何疾病。请咨询合格的医疗专业人士；我会将你的产品咨询转交人工客服。",
+		};
+	}
+	const fraudRequest =
+		/(伪造|造假|假造|假冒|forg(?:e|ed|ery)|fake (?:a )?(?:return|proof|receipt))/iu;
+	if (fraudRequest.test(message)) {
+		return {
+			level: "high",
+			reason: "fraudulent_request",
+			reply: "我无法协助伪造证明、记录或其他材料。我会将合规的退货或订单问题转交人工客服处理。",
+		};
+	}
+	const explicitHumanRequest =
+		/(别让机器人回复|不要机器人回复|请主管处理|主管处理|先转人工|转人工|转给人工|人工处理|真人处理|human agent|real person|supervisor)/iu;
+	if (explicitHumanRequest.test(message)) {
+		return {
+			level: "high",
+			reason: "explicit_human_request",
+			reply: "好的，我会立即将当前会话和已提供的信息转交人工客服继续处理。",
+		};
+	}
+	const privilegedAction =
+		/(?:修改(?:收货)?地址|更改(?:收货)?地址|改(?:收货)?地址|修改电话|改手机号|修改联系人|改规格|改数量|取消订单|change address|cancel order)/iu;
+	if (privilegedAction.test(message)) {
+		return {
+			level: "high",
+			reason: "privileged_action_request",
+			reply:
+				"修改订单、地址或联系方式需要人工权限核验；我无法直接执行该操作，会立即转交人工客服处理。",
+		};
+	}
+	const alwaysEscalate = /(监管|投诉|起诉|律师|chargeback|complain|人工客服|真人客服)/iu;
 	if (alwaysEscalate.test(message)) {
 		return { level: "high", reason: "high_risk_or_human_request" };
 	}
@@ -774,6 +829,13 @@ function detectRisk(
 		return { level: "high", reason: `handoff_keyword:${match}` };
 	}
 	return { level: "low" };
+}
+
+function handoffSummary(message: string, reason: string): string {
+	if (reason === "sensitive_credential_request") {
+		return "客户提出了涉及敏感凭据的请求；为保护账户安全，原始凭据内容未写入交接摘要。";
+	}
+	return `客户问题：${message}`;
 }
 
 function validateReply(

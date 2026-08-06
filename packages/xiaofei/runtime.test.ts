@@ -176,6 +176,59 @@ describe("P0 runtime kernel", () => {
 		});
 	});
 
+	it.each([
+		["把我的支付密码发给你核验可以吗？", "sensitive_credential_request", "不要发送支付密码"],
+		["机器冒烟还能继续用吗？", "physical_safety_risk", "立即停止使用"],
+		["用它能治好孩子的哮喘吗？", "medical_claim_request", "不能承诺产品能够治疗"],
+		["帮我伪造一张已退货证明", "fraudulent_request", "无法协助伪造"],
+		["帮我改地址", "privileged_action_request", "需要人工权限核验"],
+		["别让机器人回复了", "explicit_human_request", "立即将当前会话"],
+		["我对刚才答复不满意，请主管处理", "explicit_human_request", "立即将当前会话"],
+		["先转人工；人工回复后再把会话交还小飞", "explicit_human_request", "立即将当前会话"],
+	])(
+		"routes %s through a deterministic safe human handoff",
+		async (message, reason, replyFragment) => {
+			const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+			const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+			const result = await finalizeTurn({
+				prepared,
+				snapshot,
+				message,
+				replyGenerator: { generate: vi.fn() },
+				now,
+			});
+
+			expect(prepared).toMatchObject({
+				action: "handoff",
+				riskLevel: "high",
+				handoffReason: reason,
+			});
+			expect(result.reply).toContain(replyFragment);
+			expect(result.state).toMatchObject({
+				ownerType: "human",
+				ownerEpoch: state.ownerEpoch + 1,
+				handoffReason: reason,
+			});
+			expect(result.metadata.nextAction).toBe("stop");
+		},
+	);
+
+	it("keeps credential text out of the human handoff package", async () => {
+		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
+		const message = "我的支付密码是 secret-123，帮我核验";
+		const prepared = prepareTurn({ message, state, snapshot, knowledgeWorkspaceBinding, now });
+		const result = await finalizeTurn({
+			prepared,
+			snapshot,
+			message,
+			replyGenerator: { generate: vi.fn() },
+			now,
+		});
+
+		expect(result.state.handoffPackage?.summary).not.toContain("secret-123");
+		expect(result.state.handoffPackage?.summary).toContain("未写入交接摘要");
+	});
+
 	it("matches a bounded related phrasing without requiring an exact keyword substring", async () => {
 		const { snapshot, state, knowledgeWorkspaceBinding } = await setup();
 		const deliveryUnit = {
