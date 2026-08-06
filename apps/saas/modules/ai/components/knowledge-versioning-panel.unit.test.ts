@@ -81,27 +81,40 @@ describe("symmetricDifferenceSize", () => {
 		expect(result.detail).toEqual({ id: "selected" });
 	});
 
-	it("publishes a writable zero-turn selection before its slow detail resolves", async () => {
-		let resolveDetail: ((detail: { id: string }) => void) | undefined;
-		const detail = vi.fn(() => new Promise<{ id: string }>((resolve) => (resolveDetail = resolve)));
+	it("does not request detail for a writable zero-turn session", async () => {
+		const detail = vi.fn(async () => ({ id: "empty" }));
 		const selected = vi.fn();
-		const recovery = recoverTestSession({
-			list: async () => ({ items: [{ id: "empty", writable: true, turnCount: 0 }] }),
-			detail,
-			onSelected: selected,
-		});
-
-		await vi.waitFor(() =>
-			expect(selected).toHaveBeenCalledWith({ id: "empty", writable: true, turnCount: 0 }, [
-				{ id: "empty", writable: true, turnCount: 0 },
-			]),
-		);
-		expect(detail).toHaveBeenCalledWith("empty");
-		resolveDetail?.({ id: "empty" });
-		await expect(recovery).resolves.toMatchObject({
+		await expect(
+			recoverTestSession({
+				list: async () => ({ items: [{ id: "empty", writable: true, turnCount: 0 }] }),
+				detail,
+				onSelected: selected,
+			}),
+		).resolves.toMatchObject({
 			selected: { id: "empty" },
-			detail: { id: "empty" },
+			detail: undefined,
 		});
+		expect(selected).toHaveBeenCalledWith({ id: "empty", writable: true, turnCount: 0 }, [
+			{ id: "empty", writable: true, turnCount: 0 },
+		]);
+		expect(detail).not.toHaveBeenCalled();
+	});
+
+	it("drops a deferred detail response after a newer session is selected", async () => {
+		let resolveDetail: ((detail: { id: string }) => void) | undefined;
+		let current = true;
+		const onDetail = vi.fn();
+		const recovery = recoverTestSession({
+			list: async () => ({ items: [{ id: "old", writable: true, turnCount: 1 }] }),
+			detail: () => new Promise<{ id: string }>((resolve) => (resolveDetail = resolve)),
+			isCurrent: () => current,
+			onDetail,
+		});
+		await vi.waitFor(() => expect(resolveDetail).toBeTypeOf("function"));
+		current = false;
+		resolveDetail?.({ id: "old" });
+		await expect(recovery).resolves.toMatchObject({ selected: { id: "old" }, detail: undefined });
+		expect(onDetail).not.toHaveBeenCalled();
 	});
 
 	it("requires canonical admission and current Test Active", () => {

@@ -78,7 +78,7 @@ export function KnowledgeVersioningPanel({
 		"idle" | "loading" | "ready" | "error"
 	>("idle");
 	const recoveryRequest = useRef(0);
-	const mounted = useRef(true);
+	const mounted = useRef(false);
 	const [busy, setBusy] = useState(false);
 	const [operation, setOperation] = useState<{
 		label: string;
@@ -158,6 +158,7 @@ export function KnowledgeVersioningPanel({
 					setSessionDetailState("loading");
 					if (selected.writable && selected.turnCount === 0) completeOperation();
 				},
+				isCurrent: () => mounted.current && request === recoveryRequest.current,
 			});
 			if (!mounted.current || request !== recoveryRequest.current) return result;
 			const detail = result.detail;
@@ -182,6 +183,7 @@ export function KnowledgeVersioningPanel({
 	}, [recoverSessionHistory]);
 
 	function storeSession(next: string) {
+		++recoveryRequest.current;
 		setTestSessionId(next);
 	}
 	async function resetSession() {
