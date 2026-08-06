@@ -471,15 +471,21 @@ function SupportAcceptance({
 }) {
 	const [text, setText] = useState("请用这份知识回答一个客户问题。");
 	const [conversationId, setConversationId] = useState<string | null>(null);
-	const [busy, setBusy] = useState(false);
+	const [busyAction, setBusyAction] = useState<"review" | "eval" | "support" | null>(null);
+	const busy = busyAction !== null;
 	const [externalId] = useState(() => globalThis.crypto.randomUUID());
 	const reviewed = capability?.capabilityPlan.reviewed === true;
 	const evalPassed =
 		capability?.evalSuite.status === "passed" &&
 		capability.evalSuite.capabilityPlanVersion === capability.capabilityPlan.version;
-	async function capabilityAction(action: () => Promise<unknown>, success: string) {
-		onStart("正在更新当前能力方案准入状态…");
-		setBusy(true);
+	async function capabilityAction(
+		action: () => Promise<unknown>,
+		success: string,
+		operationLabel: string,
+		actionType: "review" | "eval",
+	) {
+		onStart(operationLabel);
+		setBusyAction(actionType);
 		try {
 			await action();
 			await onRefreshCapability();
@@ -489,13 +495,13 @@ function SupportAcceptance({
 			onFail(error);
 			toastError("准入步骤失败", message(error));
 		} finally {
-			setBusy(false);
+			setBusyAction(null);
 		}
 	}
 	async function create() {
 		if (!canCreateSupportAcceptance({ canCreate, text, conversationId })) return;
 		onStart("校验 Active CA → 创建合成会话 → 投影首条消息…");
-		setBusy(true);
+		setBusyAction("support");
 		try {
 			const result = await orpcClient.xiaofei.sendSyntheticSupportMessage({
 				externalId,
@@ -511,7 +517,7 @@ function SupportAcceptance({
 			onFail(error);
 			toastError("无法创建 Support 验收会话", message(error));
 		} finally {
-			setBusy(false);
+			setBusyAction(null);
 		}
 	}
 	return (
@@ -544,10 +550,12 @@ function SupportAcceptance({
 						void capabilityAction(
 							() => orpcClient.xiaofei.reviewCapability({ reviewed: true }),
 							"能力方案已审核",
+							"校验能力方案 → 保存审核状态 → 确认生效…",
+							"review",
 						)
 					}
 				>
-					审核当前能力方案
+					{busyAction === "review" ? "正在审核当前能力方案…" : "审核当前能力方案"}
 				</Button>
 				<Button
 					variant="outline"
@@ -555,10 +563,15 @@ function SupportAcceptance({
 						busy || capabilityLoading || capabilityError !== null || !reviewed || evalPassed
 					}
 					onClick={() =>
-						void capabilityAction(() => orpcClient.xiaofei.runEval(), "当前版本 Eval 已通过")
+						void capabilityAction(
+							() => orpcClient.xiaofei.runEval(),
+							"当前版本 Eval 已通过",
+							"校验审核状态 → 运行当前版本 Eval → 保存结果…",
+							"eval",
+						)
 					}
 				>
-					运行当前版本 Eval
+					{busyAction === "eval" ? "正在运行当前版本 Eval…" : "运行当前版本 Eval"}
 				</Button>
 			</div>
 			<div>
@@ -584,7 +597,11 @@ function SupportAcceptance({
 					disabled={busy || !canCreateSupportAcceptance({ canCreate, text, conversationId })}
 					onClick={() => void create()}
 				>
-					{busy ? "正在创建验收会话…" : conversationId ? "验收会话已创建" : "创建 Support 验收会话"}
+					{busyAction === "support"
+						? "正在创建验收会话…"
+						: conversationId
+							? "验收会话已创建"
+							: "创建 Support 验收会话"}
 				</Button>
 				{conversationId ? (
 					<Button variant="outline" asChild>
@@ -594,7 +611,7 @@ function SupportAcceptance({
 					</Button>
 				) : null}
 			</div>
-			{busy ? (
+			{busyAction === "support" ? (
 				<output className="text-sm block text-muted-foreground" aria-live="polite">
 					正在校验 Active CA、创建合成会话并准备 Inbox 定位…
 				</output>

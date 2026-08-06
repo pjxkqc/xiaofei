@@ -61,6 +61,9 @@ describe("knowledge versioning panel Stage-3 contract", () => {
 
 	it("shows semantic pending and retry feedback for every long action", () => {
 		for (const value of [
+			"正在审核当前能力方案…",
+			"正在运行当前版本 Eval…",
+			'busyAction === "support"',
 			"排队 → 选择知识 → 生成候选 → Guardrail → 保存测试轮次",
 			"校验权限 → 保存不可变干预 → 生成新 CA → 同题复测",
 			"校验版本 → 更新托管指针/状态 → 确认生效",
