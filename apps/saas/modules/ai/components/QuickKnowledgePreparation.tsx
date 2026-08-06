@@ -43,7 +43,8 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 
 	async function upload(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const input = event.currentTarget.elements.namedItem("file");
+		const form = event.currentTarget;
+		const input = form.elements.namedItem("file");
 		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return;
 		const file = input.files[0];
 		if (file.size > MAX_FILE_BYTES) return toastError("上传失败", "文件不能超过 4 MB。");
@@ -63,7 +64,7 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 			setPreparation(null);
 			setPhase("idle");
 			setStartedAt(null);
-			event.currentTarget.reset();
+			resetFileUploadForm(form);
 			toastSuccess("资料已解析", "已生成可用于 Test CA 的候选条目。");
 		} catch (error) {
 			setPhase("failed");
@@ -225,6 +226,11 @@ export function QuickKnowledgePreparation({ onPrepared }: { onPrepared?: () => v
 function message(error: unknown) {
 	return error instanceof Error ? error.message : "请稍后重试。";
 }
+
+export function resetFileUploadForm(form: Pick<HTMLFormElement, "reset">) {
+	form.reset();
+}
+
 async function fileToBase64(file: File) {
 	const bytes = new Uint8Array(await file.arrayBuffer());
 	let binary = "";

@@ -23,7 +23,8 @@ type CapabilityVersion = NonNullable<NonNullable<Overview["binding"]>["activeCap
 type MembershipRow = CapabilityVersion["knowledgeUnits"][number];
 type TestTurn = Awaited<ReturnType<typeof orpcClient.xiaofei.runVersionedTest>>;
 type Correction = Awaited<ReturnType<typeof orpcClient.xiaofei.applyTestTurnCorrection>>;
-type TestTurnView = {
+type TestSessionDetail = Awaited<ReturnType<typeof orpcClient.xiaofei.getTestSession>>;
+export interface TestTurnView {
 	turn: {
 		id: string;
 		question: string;
@@ -33,7 +34,14 @@ type TestTurnView = {
 	metadata: TestTurn["metadata"];
 	feedbackAllowed: boolean;
 	feedbackMode: "revise" | "supplement";
-};
+	interventionId: string | null;
+	sourceTestTurnId: string | null;
+}
+export interface InterventionEvidence {
+	interventionId: string;
+	source: TestTurnView;
+	rerun: TestTurnView;
+}
 interface TestSessionSummary {
 	id: string;
 	turnCount: number;
@@ -59,6 +67,7 @@ export function KnowledgeVersioningPanel({
 	const [correction, setCorrection] = useState("");
 	const [rerun, setRerun] = useState<Correction | null>(null);
 	const [sessions, setSessions] = useState<TestSessionSummary[]>([]);
+	const [sessionTurns, setSessionTurns] = useState<Record<string, TestTurnView[]>>({});
 	const [busy, setBusy] = useState(false);
 	const [operation, setOperation] = useState<{
 		label: string;
@@ -87,29 +96,30 @@ export function KnowledgeVersioningPanel({
 		void refresh().catch(() => toastError("无法读取版本状态"));
 	}, [refresh]);
 	const loadSession = useCallback(async (next: string) => {
-		beginOperation("正在载入会话元数据 → 恢复有界测试轮次…");
+		beginOperation("正在载入会话元数据 → 恢复有界测试轮次与干预证据…");
 		try {
-			const detail = await orpcClient.xiaofei.getTestSession({ testSessionId: next });
-			setTestSessionId(next);
-			setTurns(
-				detail.turns
-					.slice()
-					.reverse()
-					.map((turn) => ({
-						turn: {
-							id: turn.id,
-							question: turn.question,
-							capabilityVersionId: turn.capabilityVersionId,
-						},
-						answer: turn.answer,
-						metadata: turn.runtimeMetadata as TestTurn["metadata"],
-						feedbackAllowed: detail.writable && !turn.interventionId,
-						feedbackMode:
-							turn.runtimeMetadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
-								? ("revise" as const)
-								: ("supplement" as const),
-					})),
+			const result = await orpcClient.xiaofei.listTestSessions({ limit: 20 });
+			const history = {
+				...result,
+				items: (result.items as unknown[]).map(normalizeTestSessionSummary),
+			};
+			setSessions(history.items);
+			const details = await Promise.all(
+				history.items.map((session) =>
+					orpcClient.xiaofei.getTestSession({ testSessionId: session.id }),
+				),
 			);
+			const turnsBySession = Object.fromEntries(
+				details.map((detail) => [
+					detail.id,
+					detail.turns.map((turn) => toTestSessionTurnView(turn, detail.writable)),
+				]),
+			);
+			const selectedTurns = turnsBySession[next];
+			if (!selectedTurns) throw new Error("所选 Test CA 会话已不在当前历史中。");
+			setTestSessionId(next);
+			setSessionTurns(turnsBySession);
+			setTurns(selectedTurns);
 			completeOperation();
 		} catch (error) {
 			failOperation(error);
@@ -216,6 +226,7 @@ export function KnowledgeVersioningPanel({
 	}
 	const active = overview?.binding?.activeCapabilityVersion ?? null;
 	const testVersion = overview?.binding?.testCapabilityVersion ?? null;
+	const interventionEvidence = findInterventionEvidence(sessionTurns, testSessionId);
 	return (
 		<div className="gap-6 flex flex-col">
 			<OperationFeedback operation={operation} />
@@ -243,6 +254,7 @@ export function KnowledgeVersioningPanel({
 					correction={correction}
 					setCorrection={setCorrection}
 					rerun={rerun}
+					interventionEvidence={interventionEvidence}
 					busy={busy}
 					ready={
 						testSessionId !== null &&
@@ -475,6 +487,7 @@ function TestConversation({
 	correction,
 	setCorrection,
 	rerun,
+	interventionEvidence,
 	busy,
 	ready,
 	hasTestVersion,
@@ -494,6 +507,7 @@ function TestConversation({
 	correction: string;
 	setCorrection: (value: string) => void;
 	rerun: Correction | null;
+	interventionEvidence: InterventionEvidence[];
 	busy: boolean;
 	ready: boolean;
 	hasTestVersion: boolean;
@@ -541,7 +555,8 @@ function TestConversation({
 							</option>
 							{sessions.map((session) => (
 								<option key={session.id} value={session.id}>
-									{session.writable ? "可继续" : "旧 CA（只读）"} · {session.turnCount} 轮 ·{" "}
+									{session.writable ? "可继续" : "旧 CA（只读）"} · {session.turnCount} 轮 · Before{" "}
+									{session.beforeInterventionCount} / After {session.afterInterventionCount} ·{" "}
 									{session.firstQuestion ?? "无首题"} · {formatSessionTime(session.latestAt)}
 								</option>
 							))}
@@ -574,7 +589,10 @@ function TestConversation({
 						</Button>
 						{!ready ? (
 							<output className="text-sm block text-muted-foreground">
-								正在恢复可写测试会话；若仅有历史 CA，请点击“重置测试会话”新建当前会话。
+								{testSessionId &&
+								sessions.some((session) => session.id === testSessionId && !session.writable)
+									? "这是历史 CA，只读；请在当前 Test CA 新建/选择可写会话。"
+									: "正在恢复可写测试会话；若仅有历史 CA，请点击“重置测试会话”新建当前会话。"}
 							</output>
 						) : null}
 					</>
@@ -647,6 +665,29 @@ function TestConversation({
 						/>
 					</div>
 				)}
+				{interventionEvidence.length ? (
+					<div className="gap-3 flex flex-col">
+						<p className="text-sm font-medium">已恢复的 Before / After 干预证据</p>
+						{interventionEvidence.map((evidence) => (
+							<div key={evidence.interventionId} className="gap-3 md:grid-cols-2 grid">
+								<AnswerEvidence
+									label="Before"
+									answer={evidence.source.answer}
+									metadata={evidence.source.metadata}
+									capabilityVersionId={evidence.source.turn.capabilityVersionId}
+									testTurnId={evidence.source.turn.id}
+								/>
+								<AnswerEvidence
+									label="After"
+									answer={evidence.rerun.answer}
+									metadata={evidence.rerun.metadata}
+									capabilityVersionId={evidence.rerun.turn.capabilityVersionId}
+									testTurnId={evidence.rerun.turn.id}
+								/>
+							</div>
+						))}
+					</div>
+				) : null}
 			</CardContent>
 		</Card>
 	);
@@ -797,7 +838,54 @@ function toTestTurnView(result: TestTurn): TestTurnView {
 		metadata: result.metadata,
 		feedbackAllowed: result.feedbackAllowed,
 		feedbackMode: result.feedbackMode,
+		interventionId: null,
+		sourceTestTurnId: null,
 	};
+}
+
+function toTestSessionTurnView(
+	turn: TestSessionDetail["turns"][number],
+	writable: boolean,
+): TestTurnView {
+	return {
+		turn: {
+			id: turn.id,
+			question: turn.question,
+			capabilityVersionId: turn.capabilityVersionId,
+		},
+		answer: turn.answer,
+		metadata: turn.runtimeMetadata,
+		feedbackAllowed: writable && !turn.interventionId,
+		feedbackMode:
+			turn.runtimeMetadata.knowledgeEvidence?.knowledgeUnitOrigin === "merchant"
+				? "revise"
+				: "supplement",
+		interventionId: turn.interventionId,
+		sourceTestTurnId: turn.sourceTestTurnId,
+	};
+}
+
+export function findInterventionEvidence(
+	sessions: Record<string, TestTurnView[]>,
+	selectedSessionId: string | null,
+): InterventionEvidence[] {
+	if (!selectedSessionId) return [];
+	const selectedTurns = sessions[selectedSessionId] ?? [];
+	const allTurns = Object.values(sessions).flat();
+	return selectedTurns.flatMap((turn) => {
+		if (!turn.interventionId) return [];
+		const source = turn.sourceTestTurnId
+			? allTurns.find((candidate) => candidate.turn.id === turn.sourceTestTurnId)
+			: turn;
+		const rerun = turn.sourceTestTurnId
+			? turn
+			: allTurns.find(
+					(candidate) =>
+						candidate.interventionId === turn.interventionId &&
+						candidate.sourceTestTurnId === turn.turn.id,
+				);
+		return source && rerun ? [{ interventionId: turn.interventionId, source, rerun }] : [];
+	});
 }
 
 function normalizeTestSessionSummary(value: unknown): TestSessionSummary {
