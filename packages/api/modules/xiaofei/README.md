@@ -16,7 +16,7 @@ persistence.
 | `processMirroredEmailJob`                      | Authenticated `/xiaofei` RPC                        | Run one persisted Email job through the governed runtime, then create/deliver an Outbox reply                         |
 | `sendEmailCallbackTest`                        | Authenticated `/xiaofei` RPC                        | Persist and deliver a status-event connectivity test against the latest Email conversation                            |
 | `list/get/retryEmailOutboundDelivery`          | Authenticated `/xiaofei` RPC                        | Observe scoped Outbox metadata/payload and retry failed delivery with the current destination                         |
-| `getConfig`                                    | `GET /xiaofei/config`                               | Load or create the active Organization workspace snapshot                                                             |
+| `getConfig`                                    | `GET /xiaofei/config`                               | Project the current Test CA into the review/Eval snapshot                                                             |
 | `saveAgentSettings`                            | `PATCH /xiaofei/agent-settings`                     | Update Agent/fallback behavior and revoke stale Eval evidence                                                         |
 | `saveConfig`                                   | `PUT /xiaofei/config`                               | Legacy Markdown rebuild plus Agent and managed-KU reconciliation                                                      |
 | `reviewCapability`                             | `POST /xiaofei/capability/review`                   | Review or revoke the capability plan derived from released KUs                                                        |
@@ -109,8 +109,13 @@ visible while revoking capability admission, then merge current managed rows,
 regenerate the capability plan, and clear stale Eval evidence. The legacy
 `saveConfig` Markdown rebuild remains available for compatibility and also
 re-synchronizes managed KUs instead of silently replacing product-specific
-knowledge. The API refuses to run Eval before the current capability plan is
-reviewed.
+knowledge. Versioned Test CA corrections are another immutable source of
+truth: `getConfig`, capability review, and Eval project the exact current
+manifest instead of a stale pre-correction snapshot. The manifest hash is the
+capability-plan version, and changed membership or content returns to
+unreviewed/warning until that CA is reviewed and evaluated. Activation repeats
+the same server-side admission check before moving the Active pointer. The API
+refuses to run Eval before the current capability plan is reviewed.
 
 P0 keeps Agent and runtime aggregates as JSON. Conversation status, assignment,
 last-seen/message timestamps, and message history are persisted on

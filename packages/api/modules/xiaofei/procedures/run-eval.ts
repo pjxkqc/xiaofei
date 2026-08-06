@@ -2,11 +2,8 @@ import { ORPCError } from "@orpc/server";
 import { deriveReleaseGates, runP0EvalSuite } from "@repo/xiaofei";
 
 import { supportProcedure } from "../../../orpc/procedures";
-import {
-	getOrCreateXiaofeiWorkspace,
-	requireXiaofeiOrganizationAdmin,
-	saveXiaofeiSnapshot,
-} from "../service";
+import { requireXiaofeiOrganizationAdmin, saveXiaofeiSnapshot } from "../service";
+import { getXiaofeiTestAdmissionSnapshot } from "../versioning-service";
 
 export const runXiaofeiEval = supportProcedure
 	.route({
@@ -17,7 +14,7 @@ export const runXiaofeiEval = supportProcedure
 	})
 	.handler(async ({ context }) => {
 		await requireXiaofeiOrganizationAdmin(context);
-		const { snapshot } = await getOrCreateXiaofeiWorkspace(context);
+		const snapshot = await getXiaofeiTestAdmissionSnapshot(context);
 		if (!snapshot.capabilityPlan.reviewed) {
 			throw new ORPCError("BAD_REQUEST", {
 				message: "Review the KU capability plan before running P0 Eval.",

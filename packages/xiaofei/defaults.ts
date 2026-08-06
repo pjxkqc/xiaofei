@@ -444,6 +444,17 @@ export function deriveReleaseGates(
 	];
 }
 
+/** The server-side release predicate shared by activation and runtime callers. */
+export function isCapabilityAdmitted(snapshot: XiaofeiWorkspaceSnapshot): boolean {
+	return (
+		snapshot.capabilityPlan.reviewed &&
+		snapshot.capabilityPlan.status === "review_ready" &&
+		snapshot.evalSuite.status === "passed" &&
+		snapshot.evalSuite.capabilityPlanVersion === snapshot.capabilityPlan.version &&
+		snapshot.capabilityPlan.knowledgeUnitIds.length > 0
+	);
+}
+
 function unique(values: string[]): string[] {
 	return [...new Set(values.filter(Boolean))];
 }

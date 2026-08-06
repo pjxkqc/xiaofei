@@ -2,9 +2,12 @@ import { ORPCError } from "@orpc/server";
 import {
 	createXiaofeiCapabilityVersion,
 	createXiaofeiKnowledgeUnitRevision,
+	getXiaofeiOrganizationHostingBinding,
 	listXiaofeiKnowledgeUnits,
+	loadXiaofeiRuntimeHostingCapability,
 	setXiaofeiOrganizationTestHostingVersion,
 } from "@repo/database";
+import { materializeTestCapabilityReviewSnapshot } from "@repo/xiaofei";
 
 import { freezeMerchantKnowledgeUnitRevisionContent } from "./procedures/versioning-knowledge";
 import {
@@ -15,6 +18,26 @@ import {
 } from "./service";
 
 const hostingKey = "xiaofei-hosting" as const;
+
+/**
+ * Returns the workspace projection for the exact current Test CA. This keeps
+ * review/Eval UI and activation aligned with the same immutable revisions that
+ * Test turns and Active runtime materialization use.
+ */
+export async function getXiaofeiTestAdmissionSnapshot(context: XiaofeiAuthContext) {
+	const organizationId = await getXiaofeiOrganizationId(context);
+	const [{ snapshot }, binding] = await Promise.all([
+		getOrCreateXiaofeiWorkspace(context),
+		getXiaofeiOrganizationHostingBinding(organizationId),
+	]);
+	if (!binding?.testCapabilityVersionId) return snapshot;
+	const capability = await loadXiaofeiRuntimeHostingCapability(organizationId, "test");
+	return materializeTestCapabilityReviewSnapshot({
+		base: snapshot,
+		manifest: capability.manifest,
+		revisions: capability.revisions,
+	});
+}
 
 /** Materializes a new immutable Test CA; it intentionally never changes Active. */
 export async function initializeXiaofeiTestHostingForTenant(context: XiaofeiAuthContext) {

@@ -10,7 +10,7 @@ import {
 	CardTitle,
 } from "@repo/ui/components/card";
 import { toastError, toastSuccess } from "@repo/ui/components/toast";
-import type { XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
+import { isCapabilityAdmitted, type XiaofeiWorkspaceSnapshot } from "@repo/xiaofei";
 import { orpcClient } from "@shared/lib/orpc-client";
 import { FlaskConicalIcon, MessageSquareIcon, ShieldCheckIcon } from "lucide-react";
 import Link from "next/link";
@@ -146,11 +146,5 @@ export function KnowledgeCapabilities() {
 }
 
 export function isAdmitted(snapshot: XiaofeiWorkspaceSnapshot): boolean {
-	return (
-		snapshot.capabilityPlan.reviewed &&
-		snapshot.capabilityPlan.status === "review_ready" &&
-		snapshot.evalSuite.status === "passed" &&
-		snapshot.evalSuite.capabilityPlanVersion === snapshot.capabilityPlan.version &&
-		snapshot.capabilityPlan.knowledgeUnitIds.length > 0
-	);
+	return isCapabilityAdmitted(snapshot);
 }

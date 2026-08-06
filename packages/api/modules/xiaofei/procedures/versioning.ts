@@ -18,7 +18,11 @@ import {
 	XiaofeiTestSessionConflictError,
 	XiaofeiVersioningNotFoundError,
 } from "@repo/database";
-import { createConversationState, RuntimeMetadataSchema } from "@repo/xiaofei";
+import {
+	createConversationState,
+	isCapabilityAdmitted,
+	RuntimeMetadataSchema,
+} from "@repo/xiaofei";
 import { z } from "zod";
 
 import { supportProcedure } from "../../../orpc/procedures";
@@ -28,7 +32,10 @@ import {
 	getXiaofeiOrganizationId,
 	requireXiaofeiOrganizationAdmin,
 } from "../service";
-import { initializeXiaofeiTestHostingForTenant } from "../versioning-service";
+import {
+	getXiaofeiTestAdmissionSnapshot,
+	initializeXiaofeiTestHostingForTenant,
+} from "../versioning-service";
 
 const hostingKey = "xiaofei-hosting" as const;
 const questionSchema = z.string().trim().min(1).max(10_000);
@@ -306,6 +313,11 @@ export function persistedCorrectionResult(rerun: {
 export const activateXiaofeiHostingVersion = supportProcedure.handler(async ({ context }) => {
 	await requireXiaofeiOrganizationAdmin(context);
 	const organizationId = await getXiaofeiOrganizationId(context);
+	const admissionSnapshot = await getXiaofeiTestAdmissionSnapshot(context);
+	if (!isCapabilityAdmitted(admissionSnapshot))
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Review and run the current Test CA Eval before activation.",
+		});
 	const binding = await getXiaofeiOrganizationHostingBinding(organizationId);
 	if (!binding?.testCapabilityVersionId)
 		throw new ORPCError("BAD_REQUEST", {

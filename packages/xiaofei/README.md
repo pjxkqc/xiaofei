@@ -81,6 +81,10 @@ enforce this decision again.
 `merchant-knowledge` manifests contain only merchant-origin revisions, and
 `xiaofei-hosting` may combine both. The runtime's active pointer must resolve to
 an active `xiaofei-hosting` manifest.
+The authenticated review projection materializes the exact current Test CA and
+uses its manifest hash as the capability-plan version. If the manifest or KU
+content changes after review/Eval, the projection is fail-closed as unreviewed
+until an owner/admin reviews and runs Eval for that exact CA.
 
 ## Hard invariants
 

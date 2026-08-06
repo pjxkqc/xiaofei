@@ -12,7 +12,7 @@ import {
 	type KnowledgeUnitRevision,
 	type KnowledgeVersioningSnapshot,
 } from "./contracts";
-import { deriveCapabilityPlan } from "./defaults";
+import { deriveCapabilityPlan, deriveReleaseGates } from "./defaults";
 
 export interface CreateKnowledgeUnitRevisionInput {
 	id: string;
@@ -138,6 +138,7 @@ function materializeExactCapabilitySnapshot(
 	const knowledgeUnits = exact.map((revision) => revision.knowledgeUnit);
 	const capabilityPlan = {
 		...deriveCapabilityPlan(knowledgeUnits, input.manifest.createdAt),
+		version: `ca-${input.manifest.manifestHash}`,
 		reviewed: true,
 	};
 	const evalSuite = canTransferEvalEvidence(input.base, input.revisions, capabilityPlan)
@@ -214,6 +215,54 @@ export function materializeTestCapabilitySnapshot(input: {
 	revisions: KnowledgeUnitRevision[];
 }): import("./contracts").XiaofeiWorkspaceSnapshot {
 	return materializeExactCapabilitySnapshot(input, "test");
+}
+
+/**
+ * Reconciles the authenticated capability-review view with the current Test CA.
+ * A changed manifest or KU content is deliberately unreviewed and has no Eval
+ * evidence until an owner/admin reviews and evaluates that exact version.
+ */
+export function materializeTestCapabilityReviewSnapshot(input: {
+	base: import("./contracts").XiaofeiWorkspaceSnapshot;
+	manifest: CapabilityVersionManifest;
+	revisions: KnowledgeUnitRevision[];
+}): import("./contracts").XiaofeiWorkspaceSnapshot {
+	const materialized = materializeExactCapabilitySnapshot(input, "test");
+	const basePlan = input.base.capabilityPlan;
+	const planMatches =
+		basePlan.version === materialized.capabilityPlan.version &&
+		basePlan.knowledgeUnitIds.length === materialized.capabilityPlan.knowledgeUnitIds.length &&
+		basePlan.knowledgeUnitIds.every((id) =>
+			materialized.capabilityPlan.knowledgeUnitIds.includes(id),
+		);
+	const evalIsCurrent =
+		materialized.evalSuite.status === "passed" &&
+		materialized.evalSuite.capabilityPlanVersion === materialized.capabilityPlan.version;
+	const reviewed = evalIsCurrent || (planMatches && basePlan.reviewed);
+	const capabilityPlan = { ...materialized.capabilityPlan, reviewed };
+	const evalSuite = reviewed
+		? materialized.evalSuite
+		: {
+				status: "warning" as const,
+				passed: 0,
+				failed: 0,
+				cases: [],
+				updatedAt: input.manifest.createdAt,
+				capabilityPlanVersion: null,
+			};
+	return XiaofeiWorkspaceSnapshotSchema.parse({
+		...materialized,
+		capabilityPlan,
+		evalSuite,
+		gates: deriveReleaseGates(
+			materialized.knowledgeUnits,
+			capabilityPlan,
+			evalSuite.status,
+			materialized.tools,
+		),
+		// The database pointer remains authoritative; this is a review projection.
+		knowledgeVersioning: input.base.knowledgeVersioning,
+	});
 }
 
 /** Materializes the persisted Active CA with the same exact-revision checks as Test CA. */

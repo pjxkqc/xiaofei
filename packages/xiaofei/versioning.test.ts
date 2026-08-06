@@ -8,10 +8,13 @@ import {
 	createDefaultWorkspaceSnapshot,
 	createKnowledgeUnitRevision,
 	evaluateCorrectionAdmission,
+	isCapabilityAdmitted,
 	materializeTestCapabilitySnapshot,
+	materializeTestCapabilityReviewSnapshot,
 	materializeActiveCapabilitySnapshot,
 	prepareTurn,
 	runP0EvalSuite,
+	setCapabilityPlanReview,
 	resolveRuntimeKnowledgeEvidence,
 } from "./index";
 
@@ -146,6 +149,62 @@ describe("knowledge revision and capability version contracts", () => {
 		expect(() =>
 			materializeTestCapabilitySnapshot({ base, manifest: draftManifest, revisions: [draft] }),
 		).toThrow();
+	});
+
+	it("fails closed when the current Test CA changes after review or Eval", async () => {
+		const base = createDefaultWorkspaceSnapshot(TENANT_ID, () => CREATED_AT);
+		base.capabilityPlan.reviewed = true;
+		base.evalSuite = await runP0EvalSuite(base, () => CREATED_AT);
+		const revisions = base.knowledgeUnits.map((knowledgeUnit, index) =>
+			createKnowledgeUnitRevision({
+				id: `test-revision-${index}`,
+				logicalKnowledgeUnitId: `logical-test-${index}`,
+				organizationId: null,
+				revision: 1,
+				origin: "platform",
+				knowledgeUnit:
+					index === 0
+						? { ...knowledgeUnit, standardReplyPolicy: "Changed after the previous Eval." }
+						: knowledgeUnit,
+				createdAt: CREATED_AT,
+			}),
+		);
+		const manifest = createCapabilityVersionManifest({
+			id: "ca-test-changed-after-eval",
+			organizationId: ORGANIZATION_ID,
+			capabilityKey: "xiaofei-hosting",
+			status: "test",
+			knowledgeUnitRevisionIds: revisions.map((revision) => revision.id),
+			createdAt: "2026-08-06T00:01:00.000Z",
+		});
+
+		const projection = materializeTestCapabilityReviewSnapshot({ base, manifest, revisions });
+
+		expect(projection.capabilityPlan.version).toBe(`ca-${manifest.manifestHash}`);
+		expect(projection.capabilityPlan.reviewed).toBe(false);
+		expect(projection.evalSuite.status).toBe("warning");
+		expect(projection.evalSuite.capabilityPlanVersion).toBeNull();
+
+		const reviewed = setCapabilityPlanReview(projection, true, () => CREATED_AT);
+		const reviewProjection = materializeTestCapabilityReviewSnapshot({
+			base: reviewed,
+			manifest,
+			revisions,
+		});
+		expect(reviewProjection.capabilityPlan.reviewed).toBe(true);
+		expect(reviewProjection.evalSuite.status).toBe("warning");
+
+		const evaluated = {
+			...reviewed,
+			evalSuite: await runP0EvalSuite(reviewed, () => CREATED_AT),
+		};
+		const admitted = materializeTestCapabilityReviewSnapshot({
+			base: evaluated,
+			manifest,
+			revisions,
+		});
+		expect(isCapabilityAdmitted(admitted)).toBe(true);
+		expect(admitted.evalSuite.capabilityPlanVersion).toBe(admitted.capabilityPlan.version);
 	});
 	it("rebinds passed Eval evidence to an unchanged Active CA and fails closed on drift", async () => {
 		const base = createDefaultWorkspaceSnapshot(TENANT_ID, () => CREATED_AT);
